@@ -1,0 +1,70 @@
+@import "tailwindcss";
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply antialiased text-gray-900;
+  }
+}
+
+@layer components {
+  .container {
+    @apply max-w-7xl;
+  }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gradient-to-b from-green-500 to-emerald-600 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gradient-to-b from-green-600 to-emerald-700;
+  }
+}
+
+/* Range slider styles */
+input[type="range"] {
+  @apply appearance-none bg-transparent;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  @apply appearance-none h-5 w-5 bg-green-600 rounded-full cursor-pointer border-0;
+}
+
+input[type="range"]::-moz-range-thumb {
+  @apply h-5 w-5 bg-green-600 rounded-full cursor-pointer border-0;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  @apply h-2 bg-gray-200 rounded-full;
+}
+
+input[type="range"]::-moz-range-track {
+  @apply h-2 bg-gray-200 rounded-full;
+}
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient 3s ease infinite;
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
