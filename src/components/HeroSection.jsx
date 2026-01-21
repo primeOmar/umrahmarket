@@ -99,7 +99,6 @@ const HeroSection = () => {
                     >
                       <option value="madinah">🕌 Madinah</option>
                       <option value="makkah">🕋 Makkah</option>
-                      <option value="both">🕌🕋 Makkah & Madinah</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   </div>
