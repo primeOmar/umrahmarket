@@ -152,48 +152,44 @@ const HeroSection = () => {
                 </div>
               </div>
 
-              {/* Quick Date Presets */}
-              <div className="flex flex-wrap gap-2 mt-6 justify-center">
-                <button 
-                  onClick={() => setSelectedDate(new Date())}
-                  className="px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-sm hover:bg-emerald-100 transition flex items-center"
-                >
-                  <Calendar className="h-3 w-3 mr-1" />
-                  Today
-                </button>
-                <button 
-                  onClick={() => {
-                    const tomorrow = new Date();
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    setSelectedDate(tomorrow);
-                  }}
-                  className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm hover:bg-blue-100 transition flex items-center"
-                >
-                  <Calendar className="h-3 w-3 mr-1" />
-                  Tomorrow
-                </button>
-                <button 
-                  onClick={() => {
-                    const nextWeek = new Date();
-                    nextWeek.setDate(nextWeek.getDate() + 7);
-                    setSelectedDate(nextWeek);
-                  }}
-                  className="px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm hover:bg-amber-100 transition flex items-center"
-                >
-                  <Calendar className="h-3 w-3 mr-1" />
-                  Next Week
-                </button>
-                <button 
-                  onClick={() => {
-                    // Set date to Ramadan 2024 start (example: March 10, 2024)
-                    setSelectedDate(new Date(2024, 2, 10));
-                  }}
-                  className="px-4 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm hover:bg-purple-100 transition flex items-center"
-                >
-                  <Calendar className="h-3 w-3 mr-1" />
-                  Ramadan 2024
-                </button>
-              </div>
+              {/* Quick Check-in Presets */}
+<div className="flex flex-wrap gap-2 mt-6 justify-center">
+  <button 
+    onClick={() => setCheckInLocation('makkah')}
+    className="px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-sm hover:bg-emerald-100 transition flex items-center"
+  >
+    <Hotel className="h-3 w-3 mr-1" />
+    Makkah Check-in
+  </button>
+  <button 
+    onClick={() => setCheckInLocation('madinah')}
+    className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm hover:bg-blue-100 transition flex items-center"
+  >
+    <Hotel className="h-3 w-3 mr-1" />
+    Madinah Check-in
+  </button>
+  <button 
+    onClick={() => {
+      const nextWeek = new Date();
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      setSelectedDate(nextWeek);
+    }}
+    className="px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm hover:bg-amber-100 transition flex items-center"
+  >
+    <Calendar className="h-3 w-3 mr-1" />
+    Next Week
+  </button>
+  <button 
+    onClick={() => {
+      // Set date to Ramadan 2024 start
+      setSelectedDate(new Date(2024, 2, 10));
+    }}
+    className="px-4 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm hover:bg-purple-100 transition flex items-center"
+  >
+    <Calendar className="h-3 w-3 mr-1" />
+    Ramadan 2024
+  </button>
+</div>
 
               {/* Selected Options Display */}
               {(checkInLocation || checkOutLocation || selectedDate) && (
