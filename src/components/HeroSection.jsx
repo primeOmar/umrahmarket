@@ -77,8 +77,8 @@ const HeroSection = () => {
                       onChange={(e) => setCheckInLocation(e.target.value)}
                       className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-200 appearance-none cursor-pointer bg-white"
                     >
-                      <option value="makkah">🕋 Makkah</option>
-                      <option value="madinah">🕌 Madinah</option>
+                      <option value="makkah" className="text-gray-900">🕋 Makkah</option>
+                      <option value="madinah"className="text-gray-900">🕌 Madinah</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   </div>
@@ -97,8 +97,8 @@ const HeroSection = () => {
                       onChange={(e) => setCheckOutLocation(e.target.value)}
                       className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-200 appearance-none cursor-pointer bg-white"
                     >
-                      <option value="madinah">🕌 Madinah</option>
-                      <option value="makkah">🕋 Makkah</option>
+                      <option value="madinah" className="text-gray-900">🕌 Madinah</option>
+                      <option value="makkah" className="text-gray-900">🕋 Makkah</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   </div>
