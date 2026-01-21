@@ -12,7 +12,6 @@ const HeroSection = () => {
   const locations = [
     { value: 'makkah', label: 'Makkah', icon: '🕋' },
     { value: 'madinah', label: 'Madinah', icon: '🕌' },
-    { value: 'both', label: 'Makkah & Madinah', icon: '🕌🕋' },
   ];
 
   const formatDate = (date) => {
@@ -80,7 +79,6 @@ const HeroSection = () => {
                     >
                       <option value="makkah">🕋 Makkah</option>
                       <option value="madinah">🕌 Madinah</option>
-                      <option value="both">🕌🕋 Makkah & Madinah</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   </div>
