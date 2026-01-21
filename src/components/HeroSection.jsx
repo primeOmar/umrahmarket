@@ -197,17 +197,17 @@ const HeroSection = () => {
                   <div className="flex flex-wrap items-center gap-3 text-sm">
                     <span className="font-medium text-emerald-800">Selected:</span>
                     {checkInLocation && (
-                      <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center">
-                        <Hotel className="h-3 w-3 mr-1" />
-                        Check-in: {checkInLocation === 'makkah' ? '🕋 Makkah' : checkInLocation === 'madinah' ? '🕌 Madinah' : '🕌🕋 Both'}
-                      </span>
-                    )}
-                    {checkOutLocation && (
-                      <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full flex items-center">
-                        <MapPin className="h-3 w-3 mr-1" />
-                        Check-out: {checkOutLocation === 'madinah' ? '🕌 Madinah' : checkOutLocation === 'makkah' ? '🕋 Makkah' : '🕌🕋 Both'}
-                      </span>
-                    )}
+  <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center">
+    <Hotel className="h-3 w-3 mr-1" />
+    Check-in: {checkInLocation === 'makkah' ? '🕋 Makkah' : '🕌 Madinah'}
+  </span>
+)}
+{checkOutLocation && (
+  <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full flex items-center">
+    <MapPin className="h-3 w-3 mr-1" />
+    Check-out: {checkOutLocation === 'madinah' ? '🕌 Madinah' : '🕋 Makkah'}
+  </span>
+)}
                     {selectedDate && (
                       <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full flex items-center">
                         <Calendar className="h-3 w-3 mr-1" />
