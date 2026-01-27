@@ -420,7 +420,6 @@ const HeroSection = () => {
         { id: 'all', label: 'All Packages', exclusive: true },
         { id: 'umrah', label: 'Umrah', icon: '🕌' },
         { id: 'hajj', label: 'Hajj', icon: '🕋' },
-        { id: 'tourism', label: 'Tourism', icon: '🌆' },
       ]
     },
     {
