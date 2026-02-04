@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Filter, ChevronDown, X, DollarSign, Star, Clock, Shield, Check, Heart, MapPin, Calendar, Hotel, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; 
 
-const HeroSection = () => {
+const HeroSection = ({ packages,toggleFavorite }) => {
+  const navigate = useNavigate(); 
   const [isScrolled, setIsScrolled] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedFilters, setSelectedFilters] = useState(['all']);
@@ -16,369 +18,6 @@ const HeroSection = () => {
   const filterRef = useRef(null);
   const dropdownRefs = useRef({});
 
-  // Dummy package data with actual photo URLs
-  const dummyPackages = [
-    {
-      id: 1,
-      title: "Luxury Makkah & Madinah 10-Day",
-      description: "5-star hotels with haram views",
-      price: 3500,
-      originalPrice: 4200,
-      duration: 10,
-      rating: 4.9,
-      reviews: 128,
-      hotelRating: "5★",
-      distance: "200m",
-      location: "makkah",
-      category: "luxury",
-      type: "umrah",
-      discount: 17,
-      includes: ["Flight", "Hotel", "Visa", "Transport"],
-      image: "https://images.unsplash.com/photo-1596394516093-501ba68a0ba6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 2,
-      title: "Ramadan Special 14-Day",
-      description: "Includes iftar and suhoor arrangements",
-      price: 2200,
-      originalPrice: 2800,
-      duration: 14,
-      rating: 4.7,
-      reviews: 89,
-      hotelRating: "4★",
-      distance: "500m",
-      location: "madinah",
-      category: "ramadan",
-      type: "umrah",
-      discount: 21,
-      includes: ["Hotel", "Visa", "Transport", "Iftar"],
-      image: "https://images.unsplash.com/photo-1562774053-701939374585?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 3,
-      title: "Family Package with Kids",
-      description: "Family-friendly hotels with kids club",
-      price: 4200,
-      originalPrice: 5000,
-      duration: 12,
-      rating: 4.8,
-      reviews: 156,
-      hotelRating: "5★",
-      distance: "300m",
-      location: "makkah",
-      category: "family",
-      type: "umrah",
-      discount: 16,
-      includes: ["Flight", "Hotel", "Family Guide"],
-      image: "https://images.unsplash.com/photo-1583416750470-965b2707b355?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 4,
-      title: "Jeddah Stopover",
-      description: "7-day trip with city tour",
-      price: 1800,
-      originalPrice: 2200,
-      duration: 7,
-      rating: 4.5,
-      reviews: 67,
-      hotelRating: "4★",
-      distance: "N/A",
-      location: "jeddah",
-      category: "short",
-      type: "tourism",
-      discount: 18,
-      includes: ["Hotel", "City Tour", "Transport"],
-      image: "https://images.unsplash.com/photo-1558889407-d9d6e5c8c7f9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 5,
-      title: "Hajj Premium Package",
-      description: "Complete Hajj arrangements",
-      price: 8500,
-      originalPrice: 10000,
-      duration: 25,
-      rating: 4.9,
-      reviews: 45,
-      hotelRating: "5★",
-      distance: "150m",
-      location: "makkah",
-      category: "luxury",
-      type: "hajj",
-      discount: 15,
-      includes: ["Hajj Guide", "Zamzam Water", "Transport"],
-      image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 6,
-      title: "Budget Makkah",
-      description: "Basic accommodation essential",
-      price: 1200,
-      originalPrice: 1500,
-      duration: 8,
-      rating: 4.3,
-      reviews: 112,
-      hotelRating: "3★",
-      distance: "800m",
-      location: "makkah",
-      category: "budget",
-      type: "umrah",
-      discount: 20,
-      includes: ["Hotel", "Transport"],
-      image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 7,
-      title: "Ramadan Premium",
-      description: "With taraweeh arrangements",
-      price: 3800,
-      originalPrice: 4500,
-      duration: 20,
-      rating: 4.9,
-      reviews: 92,
-      hotelRating: "5★",
-      distance: "250m",
-      location: "makkah",
-      category: "ramadan",
-      type: "umrah",
-      discount: 16,
-      includes: ["Hotel", "Taraweeh", "Iftar"],
-      image: "https://images.unsplash.com/photo-1562774053-701939374585?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 8,
-      title: "Family Luxury",
-      description: "Luxury with connecting rooms",
-      price: 5200,
-      originalPrice: 6200,
-      duration: 14,
-      rating: 4.8,
-      reviews: 78,
-      hotelRating: "5★",
-      distance: "350m",
-      location: "makkah",
-      category: ["luxury", "family"],
-      type: "umrah",
-      discount: 16,
-      includes: ["Flight", "Hotel", "Family Transport"],
-      image: "https://images.unsplash.com/photo-1584132967334-10e028bd69f7?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 9,
-      title: "Weekend Getaway",
-      description: "5-day spiritual journey",
-      price: 1600,
-      originalPrice: 1900,
-      duration: 5,
-      rating: 4.4,
-      reviews: 56,
-      hotelRating: "4★",
-      distance: "600m",
-      location: "madinah",
-      category: "short",
-      type: "umrah",
-      discount: 16,
-      includes: ["Hotel", "Guide"],
-      image: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 10,
-      title: "Extended Stay",
-      description: "30-day spiritual immersion",
-      price: 6800,
-      originalPrice: 8000,
-      duration: 30,
-      rating: 4.9,
-      reviews: 34,
-      hotelRating: "5★",
-      distance: "400m",
-      location: "makkah",
-      category: "luxury",
-      type: "umrah",
-      discount: 15,
-      includes: ["Hotel", "Guide", "Laundry"],
-      image: "https://images.unsplash.com/photo-1548013146-72479768bada?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 11,
-      title: "Group Package",
-      description: "Discount for 4+ people",
-      price: 950,
-      originalPrice: 1200,
-      duration: 10,
-      rating: 4.2,
-      reviews: 201,
-      hotelRating: "3★",
-      distance: "1km",
-      location: "makkah",
-      category: "budget",
-      type: "umrah",
-      discount: 21,
-      includes: ["Hotel", "Group Transport"],
-      image: "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 12,
-      title: "Business Class Hajj",
-      description: "Emirates business class",
-      price: 12000,
-      originalPrice: 14000,
-      duration: 30,
-      rating: 5.0,
-      reviews: 28,
-      hotelRating: "5★",
-      distance: "200m",
-      location: "madinah",
-      category: "luxury",
-      type: "hajj",
-      discount: 14,
-      includes: ["Business Class", "VIP Hotel"],
-      image: "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 13,
-      title: "Haram View",
-      description: "Direct Haram view rooms",
-      price: 3200,
-      originalPrice: 3800,
-      duration: 9,
-      rating: 4.9,
-      reviews: 145,
-      hotelRating: "5★",
-      distance: "100m",
-      location: "makkah",
-      category: "luxury",
-      type: "umrah",
-      discount: 16,
-      includes: ["Haram View", "VIP Transport"],
-      image: "https://images.unsplash.com/photo-1564507004663-b6dfb3e2ede5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 14,
-      title: "Economic Madinah",
-      description: "Budget friendly",
-      price: 1400,
-      originalPrice: 1700,
-      duration: 7,
-      rating: 4.5,
-      reviews: 89,
-      hotelRating: "3★",
-      distance: "700m",
-      location: "madinah",
-      category: "budget",
-      type: "umrah",
-      discount: 18,
-      includes: ["Hotel", "Transport"],
-      image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 15,
-      title: "Family Ramadan",
-      description: "Special family arrangements",
-      price: 4500,
-      originalPrice: 5300,
-      duration: 18,
-      rating: 4.8,
-      reviews: 67,
-      hotelRating: "4★",
-      distance: "400m",
-      location: "makkah",
-      category: ["family", "ramadan"],
-      type: "umrah",
-      discount: 15,
-      includes: ["Family Guide", "Kids Activities", "Iftar"],
-      image: "https://images.unsplash.com/photo-1551632811-561732d1e306?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 16,
-      title: "Jeddah Beach",
-      description: "Beach resort included",
-      price: 2100,
-      originalPrice: 2600,
-      duration: 8,
-      rating: 4.6,
-      reviews: 54,
-      hotelRating: "4★",
-      distance: "N/A",
-      location: "jeddah",
-      category: "luxury",
-      type: "tourism",
-      discount: 19,
-      includes: ["Beach Resort", "City Tour"],
-      image: "https://images.unsplash.com/photo-1516496636080-14fb876e029d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 17,
-      title: "Short Hajj Package",
-      description: "Haram proximity essential",
-      price: 6900,
-      originalPrice: 8200,
-      duration: 25,
-      rating: 4.7,
-      reviews: 123,
-      hotelRating: "4★",
-      distance: "250m",
-      location: "makkah",
-      category: "luxury",
-      type: "hajj",
-      discount: 16,
-      includes: ["Haram Access", "Guide", "Transport"],
-      image: "https://images.unsplash.com/photo-1596394516093-501ba68a0ba6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 18,
-      title: "Student Package",
-      description: "Budget for students",
-      price: 1100,
-      originalPrice: 1400,
-      duration: 10,
-      rating: 4.3,
-      reviews: 156,
-      hotelRating: "3★",
-      distance: "900m",
-      location: "madinah",
-      category: "budget",
-      type: "umrah",
-      discount: 21,
-      includes: ["Dormitory", "Group Transport"],
-      image: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 19,
-      title: "Premium Plus",
-      description: "All inclusive luxury",
-      price: 7500,
-      originalPrice: 9000,
-      duration: 21,
-      rating: 4.9,
-      reviews: 42,
-      hotelRating: "5★",
-      distance: "150m",
-      location: "makkah",
-      category: "luxury",
-      type: "umrah",
-      discount: 17,
-      includes: ["All Inclusive", "VIP Service"],
-      image: "https://images.unsplash.com/photo-1564507004663-b6dfb3e2ede5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    },
-    {
-      id: 20,
-      title: "Early Bird Special",
-      description: "Book 3 months advance",
-      price: 1900,
-      originalPrice: 2400,
-      duration: 12,
-      rating: 4.6,
-      reviews: 89,
-      hotelRating: "4★",
-      distance: "500m",
-      location: "madinah",
-      category: "budget",
-      type: "umrah",
-      discount: 21,
-      includes: ["Early Booking", "Guide"],
-      image: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-    }
-  ];
 
   useEffect(() => {
     const handleScroll = () => {
@@ -527,7 +166,7 @@ const HeroSection = () => {
     setLoading(true);
     
     setTimeout(() => {
-      let filtered = [...dummyPackages];
+      let filtered = [...packages];
 
       // Filter by location
       if (selectedLocations.length > 0) {
@@ -569,7 +208,7 @@ const HeroSection = () => {
       setFilteredPackages(filtered);
       setLoading(false);
     }, 500);
-  }, [selectedLocations, selectedFilters, priceRange, duration, rating]);
+  }, [selectedLocations, selectedFilters, priceRange, duration, rating, packages]);
 
   const getTotalPackages = () => filteredPackages.length;
 
@@ -580,13 +219,6 @@ const HeroSection = () => {
     return selectedFilters.includes(filterId);
   };
 
-  const toggleFavorite = (packageId) => {
-    setFavorites(prev => 
-      prev.includes(packageId)
-        ? prev.filter(id => id !== packageId)
-        : [...prev, packageId]
-    );
-  };
 
   const formatPrice = (price) => {
     return price.toLocaleString('en-US');
@@ -929,7 +561,8 @@ const HeroSection = () => {
         </div>
       )}
 
-      {/* Package Grid - 5 Columns */}
+   
+           {/* Package Grid - 5 Columns */}
       <div className="container mx-auto px-3 sm:px-4 py-6">
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -1003,7 +636,7 @@ const HeroSection = () => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleFavorite(pkg.id);
+                        toggleFavorite(pkg.id); 
                       }}
                       className="absolute top-2 right-10 p-1.5 bg-white/90 backdrop-blur-sm rounded-full hover:scale-110 transition-transform"
                     >
@@ -1038,8 +671,11 @@ const HeroSection = () => {
                       {pkg.description}
                     </p>
                     
-                    {/* View Details Button */}
-                    <button className="w-full mt-1 px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+                    {/* View Details Button - UPDATED TO NAVIGATE */}
+                    <button 
+                      onClick={() => navigate(`/package/${pkg.id}`)}
+                      className="w-full mt-1 px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+                    >
                       View details
                     </button>
                   </div>
