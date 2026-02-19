@@ -1,14 +1,53 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Header from './components/Header';
 import HeroSection from './components/HeroSection';
 import PackageDetailPage from './components/PackageDetailPage';
 import Footer from './components/Footer';
 import { packages } from './data/packages';
+import AgentDashboard from './components/AgentDashboard';
+import ClientDashboard from './components/ClientDashboard';
+import { userStore } from './api'; // Import userStore to check authentication
+
+// Protected Route Component - redirects to home if not authenticated as agent
+const ProtectedAgentRoute = ({ children }) => {
+  const user = userStore.get();
+  
+  // Check if user exists and is an agent
+  if (!user || user.role !== 'agent') {
+    console.warn('Access denied: User is not an authenticated agent');
+    return <Navigate to="/" replace />;
+  }
+  
+  return children;
+};
+
+// Protected Route Component - redirects to home if not authenticated as client
+const ProtectedClientRoute = ({ children }) => {
+  const user = userStore.get();
+  
+  // Check if user exists and is a client
+  if (!user || user.role !== 'client') {
+    console.warn('Access denied: User is not an authenticated client');
+    return <Navigate to="/" replace />;
+  }
+  
+  return children;
+};
 
 function App() {
   const [filteredPackages, setFilteredPackages] = useState(packages);
   const [favorites, setFavorites] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Check authentication on mount and when location changes
+  useEffect(() => {
+    const user = userStore.get();
+    if (user) {
+      setCurrentUser(user);
+      console.log('Current user (from userStore):', user);
+    }
+  }, []);
 
   // Initialize with all packages
   useEffect(() => {
@@ -23,6 +62,12 @@ function App() {
     );
   };
 
+  const handleLogout = () => {
+    userStore.clear();
+    setCurrentUser(null);
+    window.location.href = '/';
+  };
+
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
@@ -30,7 +75,7 @@ function App() {
           {/* Home Page */}
           <Route path="/" element={
             <>
-              <Header />
+              <Header currentUser={currentUser} />
               <HeroSection 
                 packages={packages}
                 filteredPackages={filteredPackages}
@@ -51,6 +96,29 @@ function App() {
               />
             </>
           } />
+          
+          {/* Agent Dashboard - Protected Route */}
+          <Route 
+            path="/agent/dashboard" 
+            element={
+              <ProtectedAgentRoute>
+                <AgentDashboard />
+              </ProtectedAgentRoute>
+            } 
+          />
+
+          {/* Client Dashboard - Protected Route */}
+          <Route 
+            path="/client/dashboard" 
+            element={
+              <ProtectedClientRoute>
+                <ClientDashboard user={currentUser} onLogout={handleLogout} />
+              </ProtectedClientRoute>
+            } 
+          />
+
+          {/* 404 Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </Router>
