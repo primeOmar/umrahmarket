@@ -26,7 +26,7 @@ const Header = () => {
     setShowAuthModal(false);
   }, [location.pathname]);
 
-<<<<<<< HEAD
+
   const navItems = [
     { name: 'Home', href: '#' },
     { name: 'Packages', href: '#' },
@@ -34,7 +34,7 @@ const Header = () => {
     { name: 'Guidance', href: '#' },
     { name: 'Reviews', href: '#' },
     { name: 'Contact', href: '#' }
-=======
+  ];
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
@@ -59,7 +59,7 @@ const Header = () => {
       icon: <BookOpen className="h-4 w-4" />,
       activeIcon: <BookOpen className="h-4 w-4" fill="currentColor" />
     }
->>>>>>> 2d2df1683f5f14d5330f39c7c3df6afcb0d64356
+
   ];
 
   return (
