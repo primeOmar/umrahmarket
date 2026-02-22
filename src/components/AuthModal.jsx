@@ -518,6 +518,31 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
   const showSuccess = (msg) => setAlert({ type: 'success', message: msg });
   const clearAlert = () => setAlert({ type: null, message: null });
 
+  // Check for Google OAuth result written by GoogleCallback.jsx
+useEffect(() => {
+  const raw = localStorage.getItem('google_auth_result');
+  if (!raw) return;
+  localStorage.removeItem('google_auth_result');
+
+  let result;
+  try { result = JSON.parse(raw); } catch { return; }
+
+  if (result.type !== 'GOOGLE_OAUTH_SUCCESS' || !result.idToken) return;
+
+  setIsLoading(true);
+  googleLogin(result.idToken)
+    .then((res) => {
+      const user = res.data?.data?.user || res.data?.user;
+      if (!user) throw new Error('User data missing from server response');
+      onClose();
+      onAuthSuccess(user);
+    })
+    .catch((err) => {
+      showError(err.message || 'Google login failed.');
+      setIsLoading(false);
+    });
+}, [onClose, onAuthSuccess]);
+
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -1050,47 +1075,105 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
     }
   }, [uploadedFiles, isLoading, pendingUserId]);
 
-  const handleGoogleLogin = useCallback(async () => {
-    if (isLoading) return;
-    clearAlert();
-    setIsLoading(true);
+
+const handleGoogleLogin = useCallback(() => {
+  if (isLoading) return;
+  clearAlert();
+  setIsLoading(true);
+
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    showError('VITE_GOOGLE_CLIENT_ID not set in .env');
+    setIsLoading(false);
+    return;
+  }
+
+ localStorage.removeItem('google_auth_result');
+  localStorage.removeItem('google_auth_nonce');
+
+  const rawNonce = Math.random().toString(36).substring(2) + Date.now();
+
+  const params = new URLSearchParams({
+    client_id:     clientId,
+    redirect_uri:  `${window.location.origin}/auth/google/callback`,
+    response_type: 'id_token',
+    scope:         'openid email profile',
+    nonce:         rawNonce,
+  });
+
+  const left  = window.screenX + (window.outerWidth  - 500) / 2;
+  const top   = window.screenY + (window.outerHeight - 600) / 2;
+  const popup = window.open(
+    `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
+    'google-signin',
+    `width=500,height=600,left=${left},top=${top}`
+  );
+
+  if (!popup) {
+    showError('Popup blocked — please allow popups for this site.');
+    localStorage.removeItem('google_auth_nonce');
+    setIsLoading(false);
+    return;
+  }
+
+  let processed  = false;
+  let pollTimer  = null;   // declared here so processResult can access it
+
+  const processResult = async (raw) => {
+    if (processed) return;
+    processed = true;
+    if (pollTimer) clearInterval(pollTimer);
+
+    localStorage.removeItem('google_auth_result');
+    localStorage.removeItem('google_auth_nonce');
+
+    let result;
+    try { result = JSON.parse(raw); }
+    catch {
+      showError('Invalid auth response.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (result.type === 'GOOGLE_OAUTH_ERROR') {
+      showError(result.error || 'Google sign-in failed.');
+      setIsLoading(false);
+      return;
+    }
 
     try {
-      // Google Sign-In implementation
-      if (typeof window.google !== 'undefined' && window.google.accounts) {
-        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        if (!clientId) {
-          throw new Error('Google Client ID not configured');
-        }
-
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: async (response) => {
-            try {
-              const res = await googleLogin(response.credential);
-              setIsLoading(false);
-              if (res.data.user.role === 'agent') {
-                window.location.href = '/agent/dashboard';
-              } else {
-                window.location.href = '/client/dashboard';
-              }
-            } catch (error) {
-              showError(error.message || 'Google login failed');
-              setIsLoading(false);
-            }
-          },
-        });
-        window.google.accounts.id.prompt();
-      } else {
-        showError('Google Sign-In is not available. Please try again later.');
-        setIsLoading(false);
-      }
+      const res = await googleLogin(result.idToken);
+      const user = res.data?.data?.user || res.data?.user;
+      if (!user) throw new Error('User data missing from server response');
+      onClose();
+      onAuthSuccess(user);
     } catch (err) {
       showError(err.message || 'Google login failed.');
       setIsLoading(false);
     }
-  }, [isLoading]);
+  };
 
+  pollTimer = setInterval(() => {
+    const raw = localStorage.getItem('google_auth_result');
+    if (raw) { processResult(raw); return; }
+
+    try {
+      if (popup.closed && !processed) {
+        clearInterval(pollTimer);
+        setIsLoading(false);
+      }
+    } catch { /* COOP blocks popup.closed — ignore */ }
+  }, 300);
+
+  setTimeout(() => {
+    if (!processed) {
+      clearInterval(pollTimer);
+      localStorage.removeItem('google_auth_result');
+      setIsLoading(false);
+    }
+  }, 300000);
+
+}, [isLoading, onClose, onAuthSuccess]);
   const formProps = useMemo(() => ({
     formData, authType, isLoading, showPassword, alert,
     onInputChange: handleInputChange,
@@ -1103,18 +1186,29 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-lg animate-fadeIn">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(20)].map((_, i) => (
-          <div key={i} className="absolute rounded-full opacity-10 animate-float"
-            style={{
-              left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%`,
-              width: `${Math.random() * 8 + 4}px`, height: `${Math.random() * 8 + 4}px`,
-              background: authMode === 'client'
-                ? 'linear-gradient(135deg, #10b981, #0d9488)'
-                : 'linear-gradient(135deg, #3b82f6, #6366f1)',
-              animationDelay: `${Math.random() * 5}s`,
-              animationDuration: `${Math.random() * 10 + 10}s`,
-            }} />
-        ))}
+        {[...Array(20)].map((_, i) => {
+          const left = Math.random() * 100;
+          const top = Math.random() * 100;
+          const size = Math.random() * 8 + 4;
+          const bg = authMode === 'client'
+            ? 'linear-gradient(135deg, #10b981, #0d9488)'
+            : 'linear-gradient(135deg, #3b82f6, #6366f1)';
+          const delay = `${Math.random() * 5}s`;
+          const duration = `${Math.random() * 10 + 10}s`;
+          return (
+            <div key={i} className="absolute rounded-full opacity-10 animate-float"
+              style={{
+                left: left + '%',
+                top: top + '%',
+                width: size + 'px',
+                height: size + 'px',
+                background: bg,
+                animationDelay: delay,
+                animationDuration: duration,
+              }}>
+            </div>
+          );
+        })}
       </div>
 
       <div ref={modalRef}
@@ -1241,35 +1335,38 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
               </div>
             ) : (
               <>
-                <div className="space-y-4 mb-8">
-                  <button onClick={handleGoogleLogin} disabled={isLoading}
-                    className={`w-full group relative px-6 py-4 bg-white border-2 rounded-xl transition-all duration-500 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none ${
-                      authMode === 'client'
-                        ? 'border-gray-200 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-500/10'
-                        : 'border-gray-200 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/10'
-                    }`}>
-                    <div className="absolute left-6 top-1/2 transform -translate-y-1/2">
-                      <div className="w-6 h-6 bg-gradient-to-br from-[#4285F4] via-[#34A853] to-[#FBBC05] rounded-full flex items-center justify-center">
-                        <span className="text-white text-xs font-bold">G</span>
+                {/* Google Sign-In Button - CLIENT MODE ONLY */}
+                {authMode === 'client' && (
+                  <div className="space-y-4 mb-8">
+                   {/* Google Sign-In Button */}
+<button
+  onClick={handleGoogleLogin}
+  disabled={isLoading}
+  id="google-signin-btn"
+  className="w-full group relative px-6 py-4 bg-white border-2 border-gray-200 rounded-xl transition-all duration-500 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-500/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
+  <div className="absolute left-6 top-1/2 transform -translate-y-1/2">
+    <div className="w-6 h-6 bg-gradient-to-br from-[#4285F4] via-[#34A853] to-[#FBBC05] rounded-full flex items-center justify-center">
+      <span className="text-white text-xs font-bold">G</span>
+    </div>
+  </div>
+  <span className="text-gray-700 font-semibold">
+    {isLoading ? 'Connecting...' : 'Continue with Google'}
+  </span>
+</button>
+
+{/* Hidden target for Google to render its button into - we trigger the click programmatically */}
+<div id="google-btn-target" className="hidden" />
+
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-200" />
+                      </div>
+                      <div className="relative flex justify-center text-sm">
+                        <span className="px-4 bg-white text-gray-500">or continue with email</span>
                       </div>
                     </div>
-                    <span className="text-gray-700 font-semibold">
-                      {isLoading ? 'Connecting...' : 'Continue with Google'}
-                    </span>
-                    <div className="absolute right-6 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <ChevronRight className={`h-4 w-4 ${authMode === 'client' ? 'text-emerald-500' : 'text-blue-500'}`} />
-                    </div>
-                  </button>
-
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-gray-200" />
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                      <span className="px-4 bg-white text-gray-500">or continue with email</span>
-                    </div>
                   </div>
-                </div>
+                )}
 
                 {authMode === 'client'
                   ? <ClientForm {...formProps} />

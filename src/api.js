@@ -122,7 +122,11 @@ export const login = async (formData) => {
 };
 
 export const googleLogin = async (idToken) => {
-  const res = await request({ method: 'post', url: '/auth/google', data: { idToken } });
+  const res = await request({
+    method: 'post',
+    url: '/auth/google',
+    data: { idToken },   // ← no nonce
+  });
   if (res?.data?.data?.accessToken) tokenStore.set(res.data.data.accessToken);
   if (res?.data?.data?.user)        userStore.set(res.data.data.user);
   return res;

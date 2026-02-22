@@ -7,8 +7,9 @@ import Footer from './components/Footer';
 import { packages } from './data/packages';
 import AgentDashboard from './components/AgentDashboard';
 import ClientDashboard from './components/ClientDashboard';
-import { userStore } from './api'; // Import userStore to check authentication
-
+import GoogleCallback from './pages/GoogleCallback';
+import { userStore } from './api';
+import GoogleDone     from './pages/GoogleDone';
 // Protected Route Component - redirects to home if not authenticated as agent
 const ProtectedAgentRoute = ({ children }) => {
   const user = userStore.get();
@@ -116,6 +117,10 @@ function App() {
               </ProtectedClientRoute>
             } 
           />
+
+          {/* Google OAuth Callback */}
+          <Route path="/auth/google/callback" element={<GoogleCallback />} />
+          <Route path="/auth/google/done"     element={<GoogleDone />} />
 
           {/* 404 Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
