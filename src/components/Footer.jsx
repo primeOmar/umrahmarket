@@ -14,7 +14,7 @@ const Footer = () => {
               </div>
               <div>
                 <h3 className="text-2xl font-bold">Umrah Market</h3>
-                <p className="text-gray-400 text-sm">Trusted Journeys, Spiritual Returns</p>
+                <p className="text-gray-400 text-sm">Your Trusted Pilgrimage Market</p>
               </div>
             </div>
             <p className="text-gray-400 mb-6">
