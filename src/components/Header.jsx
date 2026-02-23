@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { 
-  Search, 
-  Menu, 
-  User, 
-  Shield, 
+import {
+  Search,
+  Menu,
+  X,
+  User,
+  Shield,
   Sparkles,
   Briefcase,
   Compass,
   Globe,
-  BookOpen
+  BookOpen,
 } from 'lucide-react';
 import logoImage from '../assets/umramarket.png';
 import AuthModal from './AuthModal';
@@ -18,191 +19,303 @@ const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeNav, setActiveNav] = useState('Packages');
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Close modal when route changes (e.g., after successful login/registration)
   useEffect(() => {
     setShowAuthModal(false);
+    setMobileMenuOpen(false);
   }, [location.pathname]);
 
-
-  const navItems = [
-    { name: 'Home', href: '#' },
-    { name: 'Packages', href: '#' },
-    // { name: 'Agencies', href: '#' },
-    { name: 'Guidance', href: '#' },
-    { name: 'Reviews', href: '#' },
-    { name: 'Contact', href: '#' }
-  ];
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10);
-    };
+    const handleScroll = () => setIsScrolled(window.scrollY > 10);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenuOpen]);
+
   const navigationItems = [
-    { 
+    {
       label: 'Packages',
       icon: <Briefcase className="h-4 w-4" />,
-      activeIcon: <Briefcase className="h-4 w-4" /> 
+      activeIcon: <Briefcase className="h-4 w-4" />,
     },
-    { 
+    {
       label: 'Experiences',
       icon: <Compass className="h-4 w-4" />,
-      activeIcon: <Globe className="h-4 w-4" />
+      activeIcon: <Globe className="h-4 w-4" />,
     },
-    { 
+    {
       label: 'Guidance',
       icon: <BookOpen className="h-4 w-4" />,
-      activeIcon: <BookOpen className="h-4 w-4" fill="currentColor" />
-    }
-
+      activeIcon: <BookOpen className="h-4 w-4" fill="currentColor" />,
+    },
   ];
 
   return (
     <>
-      <header className={`sticky top-0 z-50 transition-all duration-500 ${
-        isScrolled 
-          ? 'bg-white/95 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] border-b border-gray-100' 
-          : 'bg-white'
-      }`}>
+      {/* ── HEADER ───────────────────────────────────────────── */}
+      <header
+        className={`sticky top-0 z-50 transition-all duration-500 ${
+          isScrolled
+            ? 'bg-white/95 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] border-b border-gray-100'
+            : 'bg-white border-b border-gray-100'
+        }`}
+      >
         <div className="container mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16 sm:h-20">
-            
-            {/* Logo - Left */}
-            <div className="flex items-center flex-shrink-0 lg:flex-1">
-              <img 
-                src={logoImage} 
-                alt="Umrah Market Logo" 
-                className="h-8 sm:h-10 w-auto hover:opacity-90 transition-opacity duration-300 cursor-pointer"
+          <div className="flex items-center justify-between h-16">
+
+            {/* ── Logo ── */}
+            <div className="flex-shrink-0">
+              <img
+                src={logoImage}
+                alt="Umrah Market Logo"
+                className="h-8 sm:h-9 w-auto cursor-pointer hover:opacity-90 transition-opacity duration-300"
+                onClick={() => navigate('/')}
               />
             </div>
 
-            {/* Desktop Navigation - Absolutely Centered */}
-            <nav className="hidden lg:flex items-center absolute left-1/2 transform -translate-x-1/2">
+            {/* ── Desktop Nav (centered, lg+) ── */}
+            <nav className="hidden lg:flex absolute left-1/2 -translate-x-1/2">
               <div className="flex space-x-1 bg-gray-50/80 backdrop-blur-sm rounded-2xl p-1.5 border border-gray-200/60 shadow-sm">
                 {navigationItems.map((item) => (
                   <button
                     key={item.label}
                     onClick={() => setActiveNav(item.label)}
-                    className={`flex items-center space-x-2 px-4 lg:px-6 py-2 lg:py-3 rounded-xl text-sm font-medium transition-all duration-300 whitespace-nowrap ${
-                      activeNav === item.label 
-                        ? 'bg-white text-emerald-700 shadow-lg shadow-emerald-100/50 border border-emerald-100/30' 
-                        : 'text-gray-700 hover:text-emerald-600 hover:bg-white/50'
+                    className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${
+                      activeNav === item.label
+                        ? 'bg-white text-emerald-700 shadow-lg shadow-emerald-100/50 border border-emerald-100/30'
+                        : 'text-gray-600 hover:text-emerald-600 hover:bg-white/50'
                     }`}
                   >
-                    <span className={`transition-colors duration-300 ${
-                      activeNav === item.label ? 'text-emerald-600' : 'text-gray-500 group-hover:text-emerald-500'
-                    }`}>
+                    <span className={activeNav === item.label ? 'text-emerald-600' : 'text-gray-400'}>
                       {activeNav === item.label ? item.activeIcon : item.icon}
                     </span>
-                    <span className="font-semibold text-xs lg:text-sm">{item.label}</span>
+                    <span>{item.label}</span>
                   </button>
                 ))}
               </div>
             </nav>
 
-            {/* Right Side Actions */}
-            <div className="flex items-center justify-end space-x-2 sm:space-x-4 lg:flex-1">
-              
-              {/* Trust Badge */}
-              <div className="hidden lg:flex items-center px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/50 hover:border-emerald-200/70 transition-all duration-300 group cursor-default mr-4">
-                <Shield className="h-4 w-4 text-emerald-600 mr-2" />
-                <span className="text-sm font-semibold text-emerald-700">Verified</span>
-                <Sparkles className="h-3 w-3 ml-1.5 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            {/* ── Right actions ── */}
+            <div className="flex items-center gap-2">
+
+              {/* Verified badge — lg+ only */}
+              <div className="hidden lg:flex items-center px-3 py-2 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/50 hover:border-emerald-200/70 transition-all duration-300 cursor-default">
+                <Shield className="h-3.5 w-3.5 text-emerald-600 mr-1.5" />
+                <span className="text-xs font-semibold text-emerald-700">Verified</span>
+                <Sparkles className="h-3 w-3 ml-1 text-emerald-500 opacity-60" />
               </div>
 
-              {/* User Menu */}
-              <div className="flex items-center space-x-2">
-                {/* Search Button - Desktop */}
-                <button className="hidden lg:flex items-center justify-center h-10 w-10 rounded-full hover:bg-gray-100 transition-all duration-300 group">
-                  <Search className="h-4 w-4 text-gray-600 group-hover:text-emerald-600 transition-colors" />
-                </button>
-
-                {/* User Profile - Updated to open modal */}
-                <button
-                  onClick={() => setShowAuthModal(true)}
-                  className="flex items-center space-x-2 sm:space-x-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full hover:shadow-lg hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-teal-50/50 transition-all duration-300 border border-gray-200 hover:border-emerald-200 group"
-                >
-                  <Menu className="h-4 w-4 text-gray-600 group-hover:text-emerald-600 transition-colors" />
-                  <div className="p-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 group-hover:from-emerald-600 group-hover:to-teal-500 transition-all duration-300 shadow-sm group-hover:shadow-md">
-                    <User className="h-4 w-4 text-white" />
-                  </div>
-                  <span className="hidden lg:inline text-sm font-medium text-gray-700 group-hover:text-emerald-700">
-                    Account
-                  </span>
-                </button>
-              </div>
-
-              {/* Mobile Menu Button - COMMENTED OUT/REMOVED */}
-              {/* 
-              <button className="lg:hidden flex items-center justify-center h-10 w-10 rounded-full hover:bg-gray-100 transition-colors">
-                <Menu className="h-6 w-6 text-gray-700" />
+              {/* Search — desktop */}
+              <button className="hidden lg:flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 transition-all duration-300 group">
+                <Search className="h-4 w-4 text-gray-500 group-hover:text-emerald-600 transition-colors" />
               </button>
-              */}
+
+              {/* Search toggle — mobile/tablet */}
+              <button
+                onClick={() => setShowMobileSearch((v) => !v)}
+                className="lg:hidden flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 transition-all duration-300"
+                aria-label="Toggle search"
+              >
+                {showMobileSearch
+                  ? <X className="h-4 w-4 text-gray-500" />
+                  : <Search className="h-4 w-4 text-gray-500" />}
+              </button>
+
+              {/* Account button — sm+ (tablet shows this, not the hamburger) */}
+              <button
+                onClick={() => setShowAuthModal(true)}
+                className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 hover:border-emerald-200 hover:shadow-md hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-teal-50/50 transition-all duration-300 group"
+              >
+                <Menu className="h-4 w-4 text-gray-500 group-hover:text-emerald-600 transition-colors" />
+                <div className="p-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm">
+                  <User className="h-3.5 w-3.5 text-white" />
+                </div>
+                <span className="hidden lg:inline text-sm font-medium text-gray-700 group-hover:text-emerald-700">
+                  Account
+                </span>
+              </button>
+
+              {/* Hamburger — xs/mobile only */}
+              <button
+                onClick={() => setMobileMenuOpen((v) => !v)}
+                className="sm:hidden flex items-center justify-center h-9 w-9 rounded-full border border-gray-200 hover:bg-gray-50 transition-all duration-300"
+                aria-label="Open menu"
+              >
+                {mobileMenuOpen
+                  ? <X className="h-4 w-4 text-gray-600" />
+                  : <Menu className="h-4 w-4 text-gray-600" />}
+              </button>
             </div>
           </div>
 
-          {/* Mobile Search Bar */}
-          <div className="lg:hidden mb-4">
+          {/* ── Expandable mobile search ── */}
+          <div
+            className={`lg:hidden overflow-hidden transition-all duration-300 ${
+              showMobileSearch ? 'max-h-16 pb-3 opacity-100' : 'max-h-0 opacity-0'
+            }`}
+          >
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search Umrah packages..."
-                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-300"
+                className="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-300"
               />
             </div>
           </div>
         </div>
 
-        {/* Mobile Navigation - Fixed at bottom for better UX */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] py-3 px-4 z-40">
-          <div className="flex justify-around">
-            {navigationItems.map((item) => (
-              <button
-                key={item.label}
-                onClick={() => setActiveNav(item.label)}
-                className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl transition-all duration-300 ${
-                  activeNav === item.label 
-                    ? 'text-emerald-600' 
-                    : 'text-gray-500 hover:text-emerald-500'
-                }`}
-              >
-                <div className={`${
-                  activeNav === item.label ? 'text-emerald-600' : 'text-gray-500'
-                }`}>
-                  {activeNav === item.label ? item.activeIcon : item.icon}
-                </div>
-                <div className={`text-xs font-medium mt-1 ${
-                  activeNav === item.label ? 'font-semibold' : 'font-medium'
-                }`}>
-                  {item.label}
-                </div>
-                {activeNav === item.label && (
-                  <div className="h-1 w-6 bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full mt-1"></div>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
       </header>
 
-      {/* Authentication Modal */}
+      {/* ── Tablet bottom nav (sm → lg) ── */}
+      <div className="hidden sm:flex lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
+        <div className="flex justify-around w-full px-2 py-2">
+          {navigationItems.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => setActiveNav(item.label)}
+              className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all duration-300 ${
+                activeNav === item.label ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500'
+              }`}
+            >
+              <div>{activeNav === item.label ? item.activeIcon : item.icon}</div>
+              <span className={`text-[10px] mt-0.5 font-semibold ${
+                activeNav === item.label ? 'text-emerald-600' : 'text-gray-400'
+              }`}>
+                {item.label}
+              </span>
+              {activeNav === item.label && (
+                <div className="h-0.5 w-5 mt-1 bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" />
+              )}
+            </button>
+          ))}
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl text-gray-400 hover:text-emerald-500 transition-all duration-300"
+          >
+            <User className="h-4 w-4" />
+            <span className="text-[10px] mt-0.5 font-semibold">Account</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Mobile slide-in drawer ── */}
+      {/* Backdrop */}
+      <div
+        className={`sm:hidden fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300 ${
+          mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setMobileMenuOpen(false)}
+      />
+
+      {/* Drawer panel */}
+      <div
+        className={`sm:hidden fixed top-0 right-0 z-50 h-full w-72 max-w-[85vw] bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${
+          mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {/* Drawer header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <img src={logoImage} alt="Umrah Market" className="h-7 w-auto" />
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+          >
+            <X className="h-4 w-4 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Nav links */}
+        <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+          {navigationItems.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => { setActiveNav(item.label); setMobileMenuOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                activeNav === item.label
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-emerald-600'
+              }`}
+            >
+              <span className={activeNav === item.label ? 'text-emerald-600' : 'text-gray-400'}>
+                {activeNav === item.label ? item.activeIcon : item.icon}
+              </span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Drawer footer */}
+        <div className="px-4 py-5 border-t border-gray-100 space-y-3">
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+            <Shield className="h-4 w-4 text-emerald-600" />
+            <span className="text-sm font-semibold text-emerald-700">Verified Platform</span>
+            <Sparkles className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
+          </div>
+          <button
+            onClick={() => { setMobileMenuOpen(false); setShowAuthModal(true); }}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold shadow-md shadow-emerald-200 hover:from-emerald-600 hover:to-teal-600 transition-all duration-300"
+          >
+            <User className="h-4 w-4" />
+            Sign In / Register
+          </button>
+        </div>
+      </div>
+
+      {/* ── Mobile bottom nav bar ── */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
+        <div className="flex justify-around px-2 py-2">
+          {navigationItems.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => setActiveNav(item.label)}
+              className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all duration-300 ${
+                activeNav === item.label ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500'
+              }`}
+            >
+              <div>{activeNav === item.label ? item.activeIcon : item.icon}</div>
+              <span className={`text-[10px] mt-0.5 font-semibold ${
+                activeNav === item.label ? 'text-emerald-600' : 'text-gray-400'
+              }`}>
+                {item.label}
+              </span>
+              {activeNav === item.label && (
+                <div className="h-0.5 w-5 mt-1 bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" />
+              )}
+            </button>
+          ))}
+
+          {/* Account in bottom nav */}
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl text-gray-400 hover:text-emerald-500 transition-all duration-300"
+          >
+            <User className="h-4 w-4" />
+            <span className="text-[10px] mt-0.5 font-semibold">Account</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Auth Modal ── */}
       {showAuthModal && (
         <div className="fixed inset-0 z-[100]">
-          <AuthModal 
+          <AuthModal
             onClose={() => setShowAuthModal(false)}
             onAuthSuccess={(user) => {
-              console.log('Auth success:', user);
               setShowAuthModal(false);
-              // Navigate to appropriate dashboard
-              const targetUrl = user?.role === 'agent' 
-                ? '/agent/dashboard?welcome=true' 
-                : '/client/dashboard?welcome=true';
+              const targetUrl =
+                user?.role === 'agent'
+                  ? '/agent/dashboard?welcome=true'
+                  : '/client/dashboard?welcome=true';
               navigate(targetUrl);
             }}
           />

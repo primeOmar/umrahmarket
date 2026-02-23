@@ -126,10 +126,8 @@ const buildClientPayload = (data) => ({
  * Maps frontend state to Backend Agent requirements
  */
 const buildAgentPayload = (data) => {
-  const director = data.directorName?.trim() || '';
-  const parts = director ? director.split(/\s+/) : [];
-  const firstName = parts[0] || data.firstName?.trim() || '';
-  const lastName = parts.slice(1).join(' ') || data.lastName?.trim() || '-';
+  const firstName = data.directorFirstName?.trim() || '';
+  const lastName = data.directorLastName?.trim() || '';
   return {
     firstName,
     lastName,
@@ -148,11 +146,12 @@ const validateAgentForm = (data) => {
   if (!data.agencyName?.trim())
     errs.push('Agency/Business Name is required.');
 
-  const director = data.directorName?.trim() || '';
-  if (!director || director.length < 2)
-    errs.push('Director/Owner Name must be at least 2 characters.');
-  else if (director.split(/\s+/).length < 2)
-    errs.push('Please enter the full name (first and last) of the director/owner.');
+  const directorFirstName = data.directorFirstName?.trim() || '';
+  const directorLastName = data.directorLastName?.trim() || '';
+  if (!directorFirstName || directorFirstName.length < 2)
+    errs.push('Director/Owner First Name must be at least 2 characters.');
+  if (!directorLastName || directorLastName.length < 2)
+    errs.push('Director/Owner Last Name must be at least 2 characters.');
 
   if (!data.licenseNumber?.trim())
     errs.push('Travel License Number is required.');
@@ -354,16 +353,30 @@ const AgentForm = React.memo(({
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Director/Owner Name <span className="text-blue-500">*</span>
-          </label>
-          <div className="relative group">
-            <User className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
-            <input type="text" name="directorName" value={formData.directorName || ''} onChange={onInputChange}
-              placeholder="Full Name"
-              className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
-              required autoComplete="name" />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Director/Owner First Name <span className="text-blue-500">*</span>
+            </label>
+            <div className="relative group">
+              <User className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
+              <input type="text" name="directorFirstName" value={formData.directorFirstName || ''} onChange={onInputChange}
+                placeholder="First Name"
+                className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+                required autoComplete="given-name" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Director/Owner Last Name <span className="text-blue-500">*</span>
+            </label>
+            <div className="relative group">
+              <User className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
+              <input type="text" name="directorLastName" value={formData.directorLastName || ''} onChange={onInputChange}
+                placeholder="Last Name"
+                className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+                required autoComplete="family-name" />
+            </div>
           </div>
         </div>
 
@@ -511,7 +524,7 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
   const [formData, setFormData] = useState({
     email: '', password: '', phone: '',
     firstName: '', lastName: '',
-    agencyName: '', directorName: '', licenseNumber: '',
+    agencyName: '', directorFirstName: '', directorLastName: '', licenseNumber: '',
   });
 
   const showError = (msg) => setAlert({ type: 'error', message: msg });
@@ -587,7 +600,7 @@ useEffect(() => {
     clearAlert();
     setFormData({ 
       email: '', password: '', phone: '', firstName: '', lastName: '',
-      agencyName: '', directorName: '', licenseNumber: '' 
+      agencyName: '', directorFirstName: '', directorLastName: '', licenseNumber: '' 
     });
   }, []);
 
