@@ -9,8 +9,8 @@ import {
   BookOpen, Headphones, Image, Video, Camera, Lock,
   Printer, Share2, Copy, Check, RefreshCw
 } from 'lucide-react';
-import CreatePackageModal from './agent/CreatePackageModal';
-import DocumentUploadModal from './agent/DocumentUploadModal';
+import CreatePackageModal from './agent/packages/creation/CreatePackageModal';
+import PackagesTab from './agent/packages/display/PackagesTab';
 // ==================== STATS CARD COMPONENT ====================
 const StatCard = ({ icon: Icon, label, value, change, trend, color }) => (
   <div className="bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100">
@@ -136,65 +136,6 @@ const BookingCard = ({ booking, onView, onUpdate }) => (
   </div>
 );
 
-// ==================== PACKAGE CARD COMPONENT ====================
-const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete }) => (
-  <div className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100">
-    <div className="relative h-48 overflow-hidden group">
-      <img src={pkg.image} alt={pkg.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-      <div className="absolute top-4 right-4 flex space-x-2">
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-          pkg.status === 'active' ? 'bg-emerald-500 text-white' : 'bg-gray-500 text-white'
-        }`}>
-          {pkg.status}
-        </span>
-      </div>
-    </div>
-
-    <div className="p-6">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h4 className="font-semibold text-gray-900">{pkg.name}</h4>
-          <p className="text-sm text-gray-500">{pkg.duration}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-lg font-bold text-emerald-600">${pkg.price}</p>
-          <p className="text-xs text-gray-500">per person</p>
-        </div>
-      </div>
-
-      <p className="text-sm text-gray-600 mb-4 line-clamp-2">{pkg.description}</p>
-
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2 text-sm text-gray-500">
-          <Star className="h-4 w-4 text-amber-400 fill-current" />
-          <span>{pkg.rating}</span>
-          <span className="text-gray-300">|</span>
-          <Users className="h-4 w-4" />
-          <span>{pkg.bookings}+ bookings</span>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-        <div className="flex space-x-2">
-          <button onClick={() => onEdit(pkg)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors">
-            <Edit className="h-4 w-4 text-blue-600" />
-          </button>
-          <button onClick={() => onDuplicate(pkg)} className="p-2 hover:bg-purple-50 rounded-lg transition-colors">
-            <Copy className="h-4 w-4 text-purple-600" />
-          </button>
-          <button onClick={() => onDelete(pkg)} className="p-2 hover:bg-red-50 rounded-lg transition-colors">
-            <Trash2 className="h-4 w-4 text-red-600" />
-          </button>
-        </div>
-        <button className="text-sm text-emerald-600 font-medium hover:text-emerald-700">
-          View Details →
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
 // ==================== MAIN DASHBOARD COMPONENT ====================
 const AgentDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -313,12 +254,6 @@ const AgentDashboard = ({ user, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Document Upload Modal */}
-      <DocumentUploadModal
-        isOpen={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
-        onUpload={handleDocumentUpload}
-      />
 
       {/* Create Package Modal */}
       <CreatePackageModal
@@ -680,33 +615,15 @@ const AgentDashboard = ({ user, onLogout }) => {
               </div>
             </div>
           )}
-
-          {activeTab === 'packages' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Travel Packages</h2>
-                <button
-                  onClick={() => setShowCreatePackage(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span className="text-sm font-medium">Create Package</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {packages.map((pkg) => (
-                  <PackageCard
-                    key={pkg.id}
-                    pkg={pkg}
-                    onEdit={handleEditPackage}
-                    onDuplicate={handleDuplicatePackage}
-                    onDelete={handleDeletePackage}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+{activeTab === 'packages' && (
+  <PackagesTab
+    packages={packages}
+    onCreatePackage={() => setShowCreatePackage(true)}
+    onEditPackage={handleEditPackage}
+    onDuplicatePackage={handleDuplicatePackage}
+    onDeletePackage={handleDeletePackage}
+  />
+)}
 
           {activeTab === 'analytics' && (
             <div className="space-y-6">
