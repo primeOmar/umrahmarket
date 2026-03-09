@@ -1,8 +1,11 @@
 import React, { useState, useRef } from "react";
-import { X, Upload, Trash2, Loader2, CheckCircle2, AlertCircle, MapPin, Building2} from "lucide-react";
+import { X, Upload, Trash2, Loader2, CheckCircle2, MapPin, Building2 } from "lucide-react";
 import { createPackage } from "../services/packagesApi";
-import { Field, sanitizeText,sanitizeNumber,sanitizeDate, InputEl, TextareaEl, Sel, Stars,TagInput,HotelBlock, } from "./Packageformcomponents";
-
+import {
+  Field, sanitizeText, sanitizeNumber, sanitizeDate,
+  InputEl, TextareaEl, Sel, Stars, TagInput, HotelBlock,
+} from "./Packageformcomponents";
+import toast from "./Toast";           // ← no provider needed
 
 const STEPS = ["Basic Info", "Hotels", "Pricing & Dates", "Details & Images"];
 
@@ -18,48 +21,34 @@ const EMPTY = {
   highlights: [], inclusions: [], exclusions: [],
 };
 
-
 function sanitizeFormPayload(form) {
   return {
     ...form,
-    // ── text fields ─────────────────────────────────────────────────────────
     name:                  sanitizeText(form.name, 120),
     type:                  ["umrah", "hajj"].includes(form.type) ? form.type : "umrah",
     location:              ["makkah", "madinah", "jeddah"].includes(form.location)
                              ? form.location : "makkah",
     description:           sanitizeText(form.description, 1200),
-
-    // ── pricing ─────────────────────────────────────────────────────────────
     price:                 sanitizeNumber(form.price),
     original_price:        sanitizeNumber(form.original_price),
     discount:              sanitizeNumber(form.discount),
     duration:              sanitizeNumber(form.duration),
-
-    // ── group sizes ─────────────────────────────────────────────────────────
     min_group_size:        sanitizeNumber(form.min_group_size),
     max_group_size:        sanitizeNumber(form.max_group_size),
-
-    // ── dates ───────────────────────────────────────────────────────────────
     available_from:        sanitizeDate(form.available_from),
     available_to:          sanitizeDate(form.available_to),
-
-    // ── hotel fields (makkah) ───────────────────────────────────────────────
     makkah_hotel_name:     sanitizeText(form.makkah_hotel_name, 120),
     makkah_hotel_rating:   Number(form.makkah_hotel_rating) || "",
     makkah_hotel_distance: sanitizeText(form.makkah_hotel_distance, 30),
     makkah_hotel_address:  sanitizeText(form.makkah_hotel_address, 120),
     makkah_check_in_date:  sanitizeDate(form.makkah_check_in_date),
     makkah_check_out_date: sanitizeDate(form.makkah_check_out_date),
-
-    // ── hotel fields (madinah) ──────────────────────────────────────────────
     madinah_hotel_name:     sanitizeText(form.madinah_hotel_name, 120),
     madinah_hotel_rating:   Number(form.madinah_hotel_rating) || "",
     madinah_hotel_distance: sanitizeText(form.madinah_hotel_distance, 30),
     madinah_hotel_address:  sanitizeText(form.madinah_hotel_address, 120),
     madinah_check_in_date:  sanitizeDate(form.madinah_check_in_date),
     madinah_check_out_date: sanitizeDate(form.madinah_check_out_date),
-
-    // ── tag arrays ──────────────────────────────────────────────────────────
     highlights: form.highlights.map((t) => sanitizeText(t, 80)).filter(Boolean),
     inclusions: form.inclusions.map((t) => sanitizeText(t, 80)).filter(Boolean),
     exclusions: form.exclusions.map((t) => sanitizeText(t, 80)).filter(Boolean),
@@ -100,7 +89,6 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
   const [previews, setPrev] = useState([]);
   const [drag, setDrag]     = useState(false);
   const [status, setStatus] = useState("idle");
-  const [err, setErr]       = useState("");
   const fileRef             = useRef(null);
 
   if (!isOpen) return null;
@@ -151,11 +139,11 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
 
   const submit = async () => {
     setStatus("loading");
-    setErr("");
     try {
       const cleanForm = sanitizeFormPayload(form);
       const result    = await createPackage(cleanForm, images);
       setStatus("success");
+      toast.success("Package created!", "Your package has been saved successfully.");
       onSave?.(result.package);
       setTimeout(() => {
         setStatus("idle");
@@ -166,7 +154,8 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
         onClose?.();
       }, 1500);
     } catch (e) {
-      setErr(sanitizeText(e.message || "Something went wrong", 200));
+      const msg = sanitizeText(e.message || "Something went wrong", 200);
+      toast.error("Failed to create package", msg);
       setStatus("error");
     }
   };
@@ -215,21 +204,6 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
         </div>
 
         <StepBar current={step} total={STEPS.length} />
-
-        {/* ── error banner ───────────────────────────────────────────────────── */}
-        {status === "error" && (
-          <div
-            className="mx-6 mb-3 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
-            style={{
-              background: "rgba(220,38,38,0.06)",
-              border: "1px solid rgba(220,38,38,0.2)",
-              color: "#b91c1c",
-            }}
-          >
-            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-            {err}
-          </div>
-        )}
 
         {/* ── scrollable content ─────────────────────────────────────────────── */}
         <div className="overflow-y-auto flex-1 px-6 pb-3 space-y-4">
@@ -304,14 +278,10 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                       $
                     </span>
                     <InputEl
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="number" min="0" step="0.01"
                       value={form.price}
                       onChange={(e) => set("price", e.target.value)}
-                      placeholder="0.00"
-                      className="pl-7"
-                      sanitize="number"
+                      placeholder="0.00" className="pl-7" sanitize="number"
                     />
                   </div>
                 </Field>
@@ -324,78 +294,51 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                       $
                     </span>
                     <InputEl
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="number" min="0" step="0.01"
                       value={form.original_price}
                       onChange={(e) => set("original_price", e.target.value)}
-                      placeholder="0.00"
-                      className="pl-7"
-                      sanitize="number"
+                      placeholder="0.00" className="pl-7" sanitize="number"
                     />
                   </div>
                 </Field>
                 <Field label="Discount %" hint="0–100">
                   <InputEl
-                    type="number"
-                    min="0"
-                    max="100"
+                    type="number" min="0" max="100"
                     value={form.discount}
                     onChange={(e) => set("discount", e.target.value)}
-                    placeholder="0"
-                    sanitize="number"
+                    placeholder="0" sanitize="number"
                   />
                 </Field>
               </div>
 
               <Field label="Duration (days)" required>
                 <InputEl
-                  type="number"
-                  min="1"
+                  type="number" min="1"
                   value={form.duration}
                   onChange={(e) => set("duration", e.target.value)}
-                  placeholder="e.g. 14"
-                  sanitize="number"
+                  placeholder="e.g. 14" sanitize="number"
                 />
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Available From">
-                  <InputEl
-                    type="date"
-                    value={form.available_from}
-                    onChange={(e) => set("available_from", e.target.value)}
-                    sanitize="date"
-                  />
+                  <InputEl type="date" value={form.available_from}
+                    onChange={(e) => set("available_from", e.target.value)} sanitize="date" />
                 </Field>
                 <Field label="Available To">
-                  <InputEl
-                    type="date"
-                    value={form.available_to}
-                    onChange={(e) => set("available_to", e.target.value)}
-                    sanitize="date"
-                  />
+                  <InputEl type="date" value={form.available_to}
+                    onChange={(e) => set("available_to", e.target.value)} sanitize="date" />
                 </Field>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Min Group Size">
-                  <InputEl
-                    type="number"
-                    min="1"
-                    value={form.min_group_size}
-                    onChange={(e) => set("min_group_size", e.target.value)}
-                    sanitize="number"
-                  />
+                  <InputEl type="number" min="1" value={form.min_group_size}
+                    onChange={(e) => set("min_group_size", e.target.value)} sanitize="number" />
                 </Field>
                 <Field label="Max Group Size">
-                  <InputEl
-                    type="number"
-                    min="1"
-                    value={form.max_group_size}
-                    onChange={(e) => set("max_group_size", e.target.value)}
-                    sanitize="number"
-                  />
+                  <InputEl type="number" min="1" value={form.max_group_size}
+                    onChange={(e) => set("max_group_size", e.target.value)} sanitize="number" />
                 </Field>
               </div>
             </>
@@ -414,20 +357,12 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
               </Field>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Inclusions">
-                  <TagInput
-                    placeholder="e.g. Hotel, Visa"
-                    items={form.inclusions}
-                    onChange={(v) => set("inclusions", v)}
-                    color="green"
-                  />
+                  <TagInput placeholder="e.g. Hotel, Visa" items={form.inclusions}
+                    onChange={(v) => set("inclusions", v)} color="green" />
                 </Field>
                 <Field label="Exclusions">
-                  <TagInput
-                    placeholder="e.g. Flights"
-                    items={form.exclusions}
-                    onChange={(v) => set("exclusions", v)}
-                    color="red"
-                  />
+                  <TagInput placeholder="e.g. Flights" items={form.exclusions}
+                    onChange={(v) => set("exclusions", v)} color="red" />
                 </Field>
               </div>
 
@@ -442,8 +377,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                       >
                         <img src={src} alt="" className="w-full h-full object-cover" />
                         <button
-                          type="button"
-                          onClick={() => removeImg(i)}
+                          type="button" onClick={() => removeImg(i)}
                           className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <Trash2 className="h-4 w-4 text-white" />
@@ -471,18 +405,14 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                   </div>
                   <p className="text-sm" style={{ color: "#4a7c5f" }}>
                     Drop images or{" "}
-                    <span className="underline font-semibold" style={{ color: "#C9A84C" }}>
-                      browse
-                    </span>
+                    <span className="underline font-semibold" style={{ color: "#C9A84C" }}>browse</span>
                   </p>
                   <p className="text-xs" style={{ color: "#7aaa8a" }}>
                     PNG, JPG, WEBP · {images.length}/10 selected
                   </p>
                 </label>
                 <input
-                  ref={fileRef}
-                  type="file"
-                  multiple
+                  ref={fileRef} type="file" multiple
                   accept="image/jpeg,image/png,image/webp"
                   className="hidden"
                   onChange={(e) => addFiles(e.target.files)}
@@ -510,7 +440,6 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
           </button>
 
           <div className="flex items-center gap-3">
-            {/* dot indicators */}
             <div className="flex gap-1">
               {STEPS.map((_, i) => (
                 <div

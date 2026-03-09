@@ -49,6 +49,14 @@ const handleResponse = async (res) => {
 
 // ── Package API ───────────────────────────────────────────────────────────────
 
+
+
+/** Fetch all packages belonging to the logged-in agent */
+export const getAgentPackages = async () => {
+  const res = await apiFetch("/packages/getagentpackages");
+  return handleResponse(res);
+};
+
 /** Create a new package (multipart/form-data) */
 export const createPackage = async (formData, imageFiles = []) => {
   const body = buildFormData(formData, imageFiles);
@@ -58,13 +66,6 @@ export const createPackage = async (formData, imageFiles = []) => {
   });
   return handleResponse(res);
 };
-
-/** Fetch all packages belonging to the logged-in agent */
-export const getAgentPackages = async () => {
-  const res = await apiFetch("/packages/getagentpackages");
-  return handleResponse(res);
-};
-
 /** Fetch a single package by ID */
 export const getPackageById = async (id) => {
   const res = await apiFetch(`/packages/${id}`);
