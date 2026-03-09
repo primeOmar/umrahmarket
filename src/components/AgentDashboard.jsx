@@ -9,7 +9,8 @@ import {
   BookOpen, Headphones, Image, Video, Camera, Lock,
   Printer, Share2, Copy, Check, RefreshCw
 } from 'lucide-react';
-
+import CreatePackageModal from './agent/packages/creation/CreatePackageModal';
+import PackagesTab from './agent/packages/display/PackagesTab';
 // ==================== STATS CARD COMPONENT ====================
 const StatCard = ({ icon: Icon, label, value, change, trend, color }) => (
   <div className="bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100">
@@ -135,270 +136,6 @@ const BookingCard = ({ booking, onView, onUpdate }) => (
   </div>
 );
 
-// ==================== PACKAGE CARD COMPONENT ====================
-const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete }) => (
-  <div className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100">
-    <div className="relative h-48 overflow-hidden group">
-      <img src={pkg.image} alt={pkg.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-      <div className="absolute top-4 right-4 flex space-x-2">
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-          pkg.status === 'active' ? 'bg-emerald-500 text-white' : 'bg-gray-500 text-white'
-        }`}>
-          {pkg.status}
-        </span>
-      </div>
-    </div>
-
-    <div className="p-6">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h4 className="font-semibold text-gray-900">{pkg.name}</h4>
-          <p className="text-sm text-gray-500">{pkg.duration}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-lg font-bold text-emerald-600">${pkg.price}</p>
-          <p className="text-xs text-gray-500">per person</p>
-        </div>
-      </div>
-
-      <p className="text-sm text-gray-600 mb-4 line-clamp-2">{pkg.description}</p>
-
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2 text-sm text-gray-500">
-          <Star className="h-4 w-4 text-amber-400 fill-current" />
-          <span>{pkg.rating}</span>
-          <span className="text-gray-300">|</span>
-          <Users className="h-4 w-4" />
-          <span>{pkg.bookings}+ bookings</span>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-        <div className="flex space-x-2">
-          <button onClick={() => onEdit(pkg)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors">
-            <Edit className="h-4 w-4 text-blue-600" />
-          </button>
-          <button onClick={() => onDuplicate(pkg)} className="p-2 hover:bg-purple-50 rounded-lg transition-colors">
-            <Copy className="h-4 w-4 text-purple-600" />
-          </button>
-          <button onClick={() => onDelete(pkg)} className="p-2 hover:bg-red-50 rounded-lg transition-colors">
-            <Trash2 className="h-4 w-4 text-red-600" />
-          </button>
-        </div>
-        <button className="text-sm text-emerald-600 font-medium hover:text-emerald-700">
-          View Details →
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
-// ==================== DOCUMENT UPLOAD MODAL ====================
-const DocumentUploadModal = ({ isOpen, onClose, onUpload }) => {
-  const [files, setFiles] = useState({});
-  const [uploading, setUploading] = useState(false);
-
-  if (!isOpen) return null;
-
-  const handleFileChange = (e, type) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFiles(prev => ({ ...prev, [type]: file }));
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setUploading(true);
-    await onUpload(files);
-    setUploading(false);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg">
-      <div className="relative w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl">
-        <div className="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500" />
-        
-        <button onClick={onClose} className="absolute top-6 right-6 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors">
-          <X className="h-5 w-5 text-gray-600" />
-        </button>
-
-        <div className="p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Upload Verification Documents</h2>
-          <p className="text-gray-500 mb-6">Please upload the required documents for agency verification</p>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {[
-              { id: 'incorporation', label: 'Certificate of Incorporation', accept: '.pdf,.jpg,.png' },
-              { id: 'license', label: 'Travel Agency License', accept: '.pdf,.jpg,.png' },
-              { id: 'tax', label: 'Tax Registration (KRAPIN)', accept: '.pdf,.jpg,.png' },
-              { id: 'directorId', label: 'Director ID/Passport', accept: '.pdf,.jpg,.png' }
-            ].map((doc) => (
-              <div key={doc.id} className="p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-blue-300 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium text-gray-900">{doc.label}</h4>
-                    <p className="text-xs text-gray-500 mt-1">Accepted: PDF, JPG, PNG (Max 10MB)</p>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      accept={doc.accept}
-                      onChange={(e) => handleFileChange(e, doc.id)}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      required={!files[doc.id]}
-                    />
-                    <button type="button" className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      files[doc.id] 
-                        ? 'bg-green-100 text-green-700 border border-green-300'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-400'
-                    }`}>
-                      {files[doc.id] ? 'Uploaded ✓' : 'Choose File'}
-                    </button>
-                  </div>
-                </div>
-                {files[doc.id] && (
-                  <p className="text-xs text-green-600 mt-2">{files[doc.id].name}</p>
-                )}
-              </div>
-            ))}
-
-            <button
-              type="submit"
-              disabled={uploading || Object.keys(files).length < 4}
-              className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-blue-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {uploading ? 'Uploading...' : 'Submit for Verification'}
-            </button>
-
-            <p className="text-xs text-center text-gray-500">
-              Documents will be reviewed within 24-48 hours. You'll receive an email notification once verified.
-            </p>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==================== CREATE PACKAGE MODAL ====================
-const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    duration: '',
-    price: '',
-    description: '',
-    inclusions: [],
-    exclusions: [],
-    itinerary: [],
-    images: []
-  });
-
-  if (!isOpen) return null;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSave(formData);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg overflow-y-auto">
-      <div className="relative w-full max-w-4xl bg-white rounded-3xl overflow-hidden shadow-2xl my-8">
-        <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500" />
-        
-        <button onClick={onClose} className="absolute top-6 right-6 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors z-10">
-          <X className="h-5 w-5 text-gray-600" />
-        </button>
-
-        <div className="p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Create New Package</h2>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Package Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Duration</label>
-                <input
-                  type="text"
-                  value={formData.duration}
-                  onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                  placeholder="e.g., 7 Days / 6 Nights"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Price (USD)</label>
-                <input
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={4}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Upload Images</label>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center hover:border-emerald-300 transition-colors">
-                  <Upload className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-                  <p className="text-sm text-gray-600 mb-2">Drag and drop images here, or click to browse</p>
-                  <p className="text-xs text-gray-500">PNG, JPG, JPEG up to 10MB</p>
-                  <input type="file" multiple accept="image/*" className="hidden" />
-                  <button type="button" className="mt-4 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors">
-                    Browse Files
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-4 pt-6">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-3 border border-gray-200 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium rounded-xl hover:shadow-lg hover:shadow-emerald-500/30 transition-all"
-              >
-                Create Package
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ==================== MAIN DASHBOARD COMPONENT ====================
 const AgentDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -517,12 +254,6 @@ const AgentDashboard = ({ user, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Document Upload Modal */}
-      <DocumentUploadModal
-        isOpen={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
-        onUpload={handleDocumentUpload}
-      />
 
       {/* Create Package Modal */}
       <CreatePackageModal
@@ -884,33 +615,15 @@ const AgentDashboard = ({ user, onLogout }) => {
               </div>
             </div>
           )}
-
-          {activeTab === 'packages' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Travel Packages</h2>
-                <button
-                  onClick={() => setShowCreatePackage(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span className="text-sm font-medium">Create Package</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {packages.map((pkg) => (
-                  <PackageCard
-                    key={pkg.id}
-                    pkg={pkg}
-                    onEdit={handleEditPackage}
-                    onDuplicate={handleDuplicatePackage}
-                    onDelete={handleDeletePackage}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+{activeTab === 'packages' && (
+  <PackagesTab
+    packages={packages}
+    onCreatePackage={() => setShowCreatePackage(true)}
+    onEditPackage={handleEditPackage}
+    onDuplicatePackage={handleDuplicatePackage}
+    onDeletePackage={handleDeletePackage}
+  />
+)}
 
           {activeTab === 'analytics' && (
             <div className="space-y-6">
