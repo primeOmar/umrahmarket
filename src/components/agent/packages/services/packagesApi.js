@@ -1,21 +1,15 @@
 // services/packagesApi.js
 const BASE_URL = import.meta.env.VITE_API_URL;
 
-// ── Core fetch wrapper ────────────────────────────────────────────────────────
-// credentials: "include" tells the browser to send the access_token cookie
-// automatically on every request — no manual token handling needed.
 const apiFetch = async (path, { headers = {}, ...options } = {}) => {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     credentials: "include",
-    headers: {
-      ...headers,
-    },
+    headers: { ...headers },
   });
   return res;
 };
 
-// ── FormData builder ──────────────────────────────────────────────────────────
 const PACKAGE_SCALARS = [
   "name", "type", "location", "description",
   "price", "original_price", "discount", "duration",
@@ -38,7 +32,6 @@ const buildFormData = (formData, imageFiles = []) => {
   return body;
 };
 
-// ── Error helper ──────────────────────────────────────────────────────────────
 const handleResponse = async (res) => {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -47,9 +40,11 @@ const handleResponse = async (res) => {
   return res.json();
 };
 
-// ── Package API ───────────────────────────────────────────────────────────────
-
-
+/** Fetch all ACTIVE packages from every agent (public listing page) */
+export const getAllActivePackages = async () => {
+  const res = await apiFetch("/packages/all-active");
+  return handleResponse(res);
+};
 
 /** Fetch all packages belonging to the logged-in agent */
 export const getAgentPackages = async () => {
@@ -66,6 +61,7 @@ export const createPackage = async (formData, imageFiles = []) => {
   });
   return handleResponse(res);
 };
+
 /** Fetch a single package by ID */
 export const getPackageById = async (id) => {
   const res = await apiFetch(`/packages/${id}`);
