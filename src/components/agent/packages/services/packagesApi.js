@@ -42,7 +42,7 @@ const handleResponse = async (res) => {
 
 /** Fetch all ACTIVE packages from every agent (public listing page) */
 export const getAllActivePackages = async () => {
-  const res = await apiFetch("/packages/all-active");
+const res = await apiFetch("/api/packages/all-active");
   return handleResponse(res);
 };
 
