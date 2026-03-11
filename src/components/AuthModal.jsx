@@ -613,12 +613,15 @@ useEffect(() => {
     try {
       if (authType === 'login') {
         showSuccess('Authenticating...');
-        
-        const res = await login(formData);
-        if (res.data?.data?.accessToken) localStorage.setItem('accessToken', res.data.data.accessToken);
-        
-        // Debug: log the full response to see structure
-        if (import.meta?.env?.DEV) {
+
+const res = await login(formData);
+
+// Save access token for Bearer auth
+const accessToken = res.data?.data?.accessToken || res.data?.accessToken;
+if (accessToken) localStorage.setItem('accessToken', accessToken);
+
+// Debug: log the full response to see structure
+if (import.meta?.env?.DEV)  {
           console.debug('[Login] Full response:', JSON.stringify(res?.data));
           console.debug('[Login] User:', res.data?.data?.user || res.data?.user || 'NOT FOUND');
         }
