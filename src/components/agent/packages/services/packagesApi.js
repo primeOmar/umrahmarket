@@ -2,10 +2,15 @@
 const BASE_URL = import.meta.env.VITE_API_URL;
 
 const apiFetch = async (path, { headers = {}, ...options } = {}) => {
+  const token = localStorage.getItem('accessToken');
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     credentials: "include",
-    headers: { ...headers },
+    headers: {
+      ...headers,
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
   });
   return res;
 };
@@ -42,13 +47,13 @@ const handleResponse = async (res) => {
 
 /** Fetch all ACTIVE packages from every agent (public listing page) */
 export const getAllActivePackages = async () => {
-const res = await apiFetch("/api/packages/all-active");
+  const res = await apiFetch("/api/packages/all-active");
   return handleResponse(res);
 };
 
 /** Fetch all packages belonging to the logged-in agent */
 export const getAgentPackages = async () => {
-  const res = await apiFetch("/packages/getagentpackages");
+  const res = await apiFetch("/api/packages/getagentpackages");
   return handleResponse(res);
 };
 
