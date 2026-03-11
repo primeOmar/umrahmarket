@@ -1,7 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Plane, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Youtube } from 'lucide-react';
 import logoImage from '../assets/umramarket1.png';
+import { useNavigate } from 'react-router-dom';
+import AuthModal from './AuthModal';
 const Footer = () => {
+  const navigate = useNavigate();
+  const [showAgentModal, setShowAgentModal] = useState(false);
   return (
     <footer className="bg-gray-900 text-white">
       <div className="container mx-auto px-4 py-12">
@@ -62,7 +66,7 @@ const Footer = () => {
           <div>
             <h4 className="text-lg font-bold mb-4">For Agencies</h4>
             <ul className="space-y-2">
-              <li><a href="#" className="text-gray-400 hover:text-white">Register</a></li>
+              <li><button onClick={() => setShowAgentModal(true)} className="text-gray-400 hover:text-white transition-colors">Register</button></li>
               <li><a href="#" className="text-gray-400 hover:text-white">Dashboard</a></li>
               <li><a href="#" className="text-gray-400 hover:text-white">Commission</a></li>
               <li><a href="#" className="text-gray-400 hover:text-white">Resources</a></li>
@@ -104,6 +108,18 @@ const Footer = () => {
           </div>
         </div>
       </div>
+          {showAgentModal && (
+        <div className="fixed inset-0 z-[100]">
+          <AuthModal
+            initialMode="agent"
+            onClose={() => setShowAgentModal(false)}
+            onAuthSuccess={(user) => {
+              setShowAgentModal(false);
+              navigate("/agent/dashboard?welcome=true");
+            }}
+          />
+        </div>
+      )}
     </footer>
   );
 };
