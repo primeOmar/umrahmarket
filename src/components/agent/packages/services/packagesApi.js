@@ -2,34 +2,33 @@
 const BASE_URL = import.meta.env.VITE_API_URL;
 
 // ─────────────────────────────────────────────
-// TOKEN HELPERS
+// TOKEN HELPERS — key matches api.js tokenStore
 // ─────────────────────────────────────────────
-
 
 const getAccessToken = () => localStorage.getItem('access_token');
 const setAccessToken = (token) => localStorage.setItem('access_token', token);
-const clearAccessToken = () => localStorage.removeItem('access_token');
+const clearAccessToken = () => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('user');
+};
+
 /**
- * Attempts to refresh the access token using the refresh token cookie.
- * Returns true if a new access token was obtained, false otherwise.
+ * Silently refresh the access token using the refresh token cookie.
+ * Mirrors the /api/auth/refresh call in api.js
  */
 const refreshAccessToken = async () => {
   try {
     const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
       method: 'POST',
-      credentials: 'include', // sends httpOnly refresh token cookie
+      credentials: 'include',
     });
-
     if (!res.ok) return false;
-
     const data = await res.json();
     const newToken = data.data?.accessToken || data.accessToken;
-
     if (newToken) {
       setAccessToken(newToken);
       return true;
     }
-
     return false;
   } catch {
     return false;
@@ -40,12 +39,6 @@ const refreshAccessToken = async () => {
 // CORE FETCH WRAPPER
 // ─────────────────────────────────────────────
 
-/**
- * Authenticated fetch with automatic token refresh on 401.
- * - Attaches Bearer token from localStorage on every request
- * - On TOKEN_EXPIRED: silently refreshes and retries once
- * - On hard 401 (bad token, user not found): clears token and throws
- */
 const apiFetch = async (path, { headers = {}, ...options } = {}, _retry = true) => {
   const token = getAccessToken();
 
@@ -58,7 +51,7 @@ const apiFetch = async (path, { headers = {}, ...options } = {}, _retry = true) 
     },
   });
 
-  // Handle token expiry — refresh once and retry
+  // Token expired — refresh once and retry
   if (res.status === 401 && _retry) {
     let body = {};
     try { body = await res.clone().json(); } catch { /* ignore */ }
@@ -66,12 +59,11 @@ const apiFetch = async (path, { headers = {}, ...options } = {}, _retry = true) 
     if (body.code === 'TOKEN_EXPIRED') {
       const refreshed = await refreshAccessToken();
       if (refreshed) {
-        // Retry original request with new token
         return apiFetch(path, { headers, ...options }, false);
       }
     }
 
-    // Refresh failed or different 401 — clear stale token
+    // Hard 401 — clear stale token
     clearAccessToken();
   }
 
@@ -111,17 +103,13 @@ const PACKAGE_SCALARS = [
 
 const buildFormData = (formData, imageFiles = []) => {
   const body = new FormData();
-
   PACKAGE_SCALARS.forEach((k) => {
     if (formData[k] != null && formData[k] !== '') body.append(k, formData[k]);
   });
-
   body.append('highlights', JSON.stringify(formData.highlights ?? []));
   body.append('inclusions',  JSON.stringify(formData.inclusions  ?? []));
   body.append('exclusions',  JSON.stringify(formData.exclusions  ?? []));
-
   imageFiles.forEach((file) => body.append('images', file));
-
   return body;
 };
 
@@ -129,19 +117,16 @@ const buildFormData = (formData, imageFiles = []) => {
 // API METHODS
 // ─────────────────────────────────────────────
 
-/** Fetch all ACTIVE packages (public — no auth required) */
 export const getAllActivePackages = async () => {
   const res = await apiFetch('/api/packages/all-active');
   return handleResponse(res);
 };
 
-/** Fetch all packages belonging to the logged-in agent */
 export const getAgentPackages = async () => {
   const res = await apiFetch('/api/packages/getagentpackages');
   return handleResponse(res);
 };
 
-/** Create a new package (multipart/form-data) */
 export const createPackage = async (formData, imageFiles = []) => {
   const body = buildFormData(formData, imageFiles);
   const res  = await apiFetch('/api/packages/create-packages', {
@@ -151,13 +136,11 @@ export const createPackage = async (formData, imageFiles = []) => {
   return handleResponse(res);
 };
 
-/** Fetch a single package by ID */
 export const getPackageById = async (id) => {
   const res = await apiFetch(`/api/packages/${id}`);
   return handleResponse(res);
 };
 
-/** Update an existing package (multipart/form-data) */
 export const updatePackage = async (id, formData, imageFiles = []) => {
   const body = buildFormData(formData, imageFiles);
   const res  = await apiFetch(`/api/packages/${id}`, {
@@ -167,7 +150,6 @@ export const updatePackage = async (id, formData, imageFiles = []) => {
   return handleResponse(res);
 };
 
-/** Delete a package by ID */
 export const deletePackage = async (id) => {
   const res = await apiFetch(`/api/packages/${id}`, { method: 'DELETE' });
   return handleResponse(res);
