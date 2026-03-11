@@ -55,7 +55,7 @@ export const getAgentPackages = async () => {
 /** Create a new package (multipart/form-data) */
 export const createPackage = async (formData, imageFiles = []) => {
   const body = buildFormData(formData, imageFiles);
-  const res  = await apiFetch("/packages/create-packages", {
+  const res  = await apiFetch("/api/packages/create-packages", {
     method: "POST",
     body,
   });
