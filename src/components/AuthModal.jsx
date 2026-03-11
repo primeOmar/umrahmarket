@@ -615,6 +615,7 @@ useEffect(() => {
         showSuccess('Authenticating...');
         
         const res = await login(formData);
+        if (res.data?.data?.accessToken) localStorage.setItem('accessToken', res.data.data.accessToken);
         
         // Debug: log the full response to see structure
         if (import.meta?.env?.DEV) {
