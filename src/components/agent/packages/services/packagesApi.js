@@ -64,14 +64,14 @@ export const createPackage = async (formData, imageFiles = []) => {
 
 /** Fetch a single package by ID */
 export const getPackageById = async (id) => {
-  const res = await apiFetch(`/packages/${id}`);
+  const res = await apiFetch(`/api/packages/${id}`);
   return handleResponse(res);
 };
 
 /** Update an existing package (multipart/form-data) */
 export const updatePackage = async (id, formData, imageFiles = []) => {
   const body = buildFormData(formData, imageFiles);
-  const res  = await apiFetch(`/packages/${id}`, {
+  const res  = await apiFetch(`/api/packages/${id}`, {
     method: "PUT",
     body,
   });
@@ -80,6 +80,6 @@ export const updatePackage = async (id, formData, imageFiles = []) => {
 
 /** Delete a package by ID */
 export const deletePackage = async (id) => {
-  const res = await apiFetch(`/packages/${id}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/packages/${id}`, { method: "DELETE" });
   return handleResponse(res);
 };
