@@ -5,10 +5,10 @@ const BASE_URL = import.meta.env.VITE_API_URL;
 // TOKEN HELPERS
 // ─────────────────────────────────────────────
 
-const getAccessToken = () => localStorage.getItem('accessToken');
-const setAccessToken = (token) => localStorage.setItem('accessToken', token);
-const clearAccessToken = () => localStorage.removeItem('accessToken');
 
+const getAccessToken = () => localStorage.getItem('access_token');
+const setAccessToken = (token) => localStorage.setItem('access_token', token);
+const clearAccessToken = () => localStorage.removeItem('access_token');
 /**
  * Attempts to refresh the access token using the refresh token cookie.
  * Returns true if a new access token was obtained, false otherwise.
