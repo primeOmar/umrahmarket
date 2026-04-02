@@ -1,5 +1,5 @@
-// ClientDashboard.jsx
-import React, { useState, useEffect } from 'react';
+// ClientDashboard.jsx - Complete Production Ready Version
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   LayoutDashboard, Calendar, Heart, Clock, Star, MapPin, 
   Hotel, Users, ChevronRight, Bell, Search, Menu, X, 
@@ -12,573 +12,201 @@ import {
   Printer, Bookmark, Flag, HelpCircle, PieChart, TrendingUp,
   Home, Grid, List, SlidersHorizontal, Wifi, Coffee, Car,
   Dumbbell, Utensils, Tv, Wind, Droplets, Bed, Bath,
-  Maximize2, Minus, Plus, Headphones
+  Maximize2, Minus, Plus, Headphones, Loader2, Info
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { userStore, request } from '../api';
+import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
+import BookingModal from './BookingModal';
 
-// ==================== MOBILE MENU COMPONENT ====================
-const MobileMenu = ({ isOpen, onClose, menuItems, activeTab, setActiveTab, user, onLogout, darkMode }) => {
-  if (!isOpen) return null;
+// ==================== TOAST NOTIFICATION SYSTEM ====================
+const Toast = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-emerald-500' : 'bg-blue-500';
+  const Icon = type === 'error' ? AlertCircle : type === 'success' ? CheckCircle : Info;
 
   return (
-    <div className="fixed inset-0 z-50 lg:hidden">
-      {/* Overlay */}
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      
-      {/* Menu Panel */}
-      <div className={`fixed top-0 right-0 bottom-0 w-80 max-w-[90vw] ${darkMode ? 'bg-gray-900' : 'bg-white'} shadow-2xl transform transition-transform duration-300 ease-in-out`}>
-        <div className="h-full flex flex-col">
-          {/* Header */}
-          <div className={`p-6 border-b ${darkMode ? 'border-gray-800' : 'border-gray-200'}`}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Menu</h2>
-              <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
-                <X className={`h-5 w-5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`} />
-              </button>
-            </div>
-            
-            {/* User Profile */}
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-lg">
-                {user?.firstName?.charAt(0) || 'U'}
-              </div>
-              <div>
-                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {user?.firstName || 'User'} {user?.lastName || ''}
-                </h3>
-                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {user?.email || 'user@example.com'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Menu Items */}
-          <nav className="flex-1 overflow-y-auto p-4">
-            {menuItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  onClose();
-                }}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl mb-1 transition-all ${
-                  activeTab === item.id
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
-                    : darkMode 
-                      ? 'text-gray-400 hover:bg-gray-800' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <item.icon className="h-5 w-5" />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-                {item.count > 0 && (
-                  <span className={`px-2 py-1 rounded-full text-xs ${
-                    activeTab === item.id
-                      ? 'bg-white/20 text-white'
-                      : darkMode
-                        ? 'bg-gray-800 text-gray-300'
-                        : 'bg-gray-200 text-gray-600'
-                  }`}>
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-
-          {/* Logout */}
-          <div className={`p-4 border-t ${darkMode ? 'border-gray-800' : 'border-gray-200'}`}>
-            <button
-              onClick={onLogout}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${
-                darkMode 
-                  ? 'text-gray-400 hover:bg-gray-800 hover:text-red-400' 
-                  : 'text-gray-600 hover:bg-red-50 hover:text-red-600'
-              }`}
-            >
-              <LogOut className="h-5 w-5" />
-              <span className="font-medium">Logout</span>
-            </button>
-          </div>
-        </div>
-      </div>
+    <div className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-white ${bgColor} animate-slide-up`}>
+      <Icon className="h-5 w-5" />
+      <span className="text-sm font-medium">{message}</span>
     </div>
   );
 };
 
-// ==================== PACKAGE DISCOVERY SECTION ====================
-const PackageDiscovery = ({ darkMode, onPackageSelect }) => {
-  const navigate = useNavigate();
-  const [packages, setPackages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState('all');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
-  const [sortBy, setSortBy] = useState('popular');
+const useToast = () => {
+  const [toasts, setToasts] = useState([]);
 
-  useEffect(() => {
-    // Simulate API call to fetch packages
-    setTimeout(() => {
-      setPackages([
-        {
-          id: 1,
-          title: 'Premium Umrah Package',
-          agency: 'Al-Haram Travels',
-          price: 2499,
-          duration: '10 Days',
-          rating: 4.9,
-          reviews: 234,
-          image: 'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-          location: 'Makkah & Madinah',
-          distance: '200m from Haram',
-          hotelRating: '5-star',
-          type: 'premium',
-          discount: 15,
-          amenities: ['Visa Included', 'Meals', 'Transport', 'Guide']
-        },
-        {
-          id: 2,
-          title: 'Deluxe Umrah Package',
-          agency: 'Qibla Tours',
-          price: 1899,
-          duration: '7 Days',
-          rating: 4.7,
-          reviews: 156,
-          image: 'https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-          location: 'Makkah',
-          distance: '500m from Haram',
-          hotelRating: '4-star',
-          type: 'deluxe',
-          discount: 10,
-          amenities: ['Visa Included', 'Transport', 'Guide']
-        },
-        {
-          id: 3,
-          title: 'Economy Umrah Package',
-          agency: 'Makkah Golden',
-          price: 1299,
-          duration: '7 Days',
-          rating: 4.5,
-          reviews: 89,
-          image: 'https://images.unsplash.com/photo-1564769625905-50e93615e769?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-          location: 'Makkah',
-          distance: '800m from Haram',
-          hotelRating: '3-star',
-          type: 'economy',
-          discount: 5,
-          amenities: ['Transport', 'Guide']
-        },
-        {
-          id: 4,
-          title: 'Ramadan Special Umrah',
-          agency: 'Al-Haram Travels',
-          price: 3299,
-          duration: '14 Days',
-          rating: 4.9,
-          reviews: 312,
-          image: 'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-          location: 'Makkah & Madinah',
-          distance: '150m from Haram',
-          hotelRating: '5-star',
-          type: 'premium',
-          discount: 20,
-          amenities: ['Visa Included', 'Meals', 'Transport', 'Guide', 'Iftar']
-        },
-        {
-          id: 5,
-          title: 'Family Umrah Package',
-          agency: 'Qibla Tours',
-          price: 4599,
-          duration: '12 Days',
-          rating: 4.8,
-          reviews: 67,
-          image: 'https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-          location: 'Makkah & Madinah',
-          distance: '300m from Haram',
-          hotelRating: '4-star',
-          type: 'family',
-          discount: 12,
-          amenities: ['Visa Included', 'Meals', 'Transport', 'Guide', 'Kids Activities']
-        },
-        {
-          id: 6,
-          title: 'VIP Umrah Experience',
-          agency: 'Makkah Golden',
-          price: 5999,
-          duration: '10 Days',
-          rating: 5.0,
-          reviews: 45,
-          image: 'https://images.unsplash.com/photo-1564769625905-50e93615e769?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-          location: 'Makkah & Madinah',
-          distance: '100m from Haram',
-          hotelRating: '5-star',
-          type: 'vip',
-          discount: 25,
-          amenities: ['Visa Included', 'All Meals', 'Private Transport', 'Personal Guide', 'VIP Lounge']
-        }
-      ]);
-      setLoading(false);
-    }, 1000);
+  const showToast = useCallback((message, type = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
   }, []);
 
-  const filteredPackages = packages
-    .filter(pkg => 
-      pkg.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pkg.agency.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .filter(pkg => filterType === 'all' ? true : pkg.type === filterType)
-    .sort((a, b) => {
-      if (sortBy === 'price-low') return a.price - b.price;
-      if (sortBy === 'price-high') return b.price - a.price;
-      if (sortBy === 'rating') return b.rating - a.rating;
-      return b.reviews - a.reviews; // popular
-    });
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
 
-  const handleViewPackage = (pkg) => {
-    navigate(`/package/${pkg.id}`);
-  };
-
-  const handleBookNow = (pkg) => {
-    navigate(`/package/${pkg.id}?book=true`);
-  };
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="animate-pulse">
-            <div className={`aspect-[4/3] rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-200'} mb-3`}></div>
-            <div className={`h-4 ${darkMode ? 'bg-gray-800' : 'bg-gray-200'} rounded w-3/4 mb-2`}></div>
-            <div className={`h-3 ${darkMode ? 'bg-gray-800' : 'bg-gray-200'} rounded w-1/2 mb-2`}></div>
-            <div className={`h-6 ${darkMode ? 'bg-gray-800' : 'bg-gray-200'} rounded w-1/3`}></div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className={`text-xl md:text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            Discover Umrah Packages
-          </h2>
-          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            Find your perfect spiritual journey from {packages.length}+ packages
-          </p>
-        </div>
-        
-        {/* View Toggle - Hidden on mobile, visible on tablet+ */}
-        <div className="hidden sm:flex items-center space-x-2">
-          <button
-            onClick={() => setViewMode('grid')}
-            className={`p-2 rounded-lg transition-colors ${
-              viewMode === 'grid'
-                ? 'bg-emerald-600 text-white'
-                : darkMode
-                  ? 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <Grid className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={`p-2 rounded-lg transition-colors ${
-              viewMode === 'list'
-                ? 'bg-emerald-600 text-white'
-                : darkMode
-                  ? 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <List className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Search & Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
-          <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
-          <input
-            type="text"
-            placeholder="Search packages or agencies..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full pl-9 pr-4 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-              darkMode 
-                ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' 
-                : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-            }`}
-          />
-        </div>
-        
-        <div className="flex gap-2">
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className={`px-3 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-              darkMode 
-                ? 'bg-gray-800 border-gray-700 text-white' 
-                : 'bg-white border-gray-200 text-gray-900'
-            }`}
-          >
-            <option value="all">All Packages</option>
-            <option value="premium">Premium</option>
-            <option value="deluxe">Deluxe</option>
-            <option value="economy">Economy</option>
-            <option value="family">Family</option>
-            <option value="vip">VIP</option>
-          </select>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className={`px-3 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-              darkMode 
-                ? 'bg-gray-800 border-gray-700 text-white' 
-                : 'bg-white border-gray-200 text-gray-900'
-            }`}
-          >
-            <option value="popular">Most Popular</option>
-            <option value="rating">Top Rated</option>
-            <option value="price-low">Price: Low to High</option>
-            <option value="price-high">Price: High to Low</option>
-          </select>
-
-          {/* Mobile Filter Button */}
-          <button className="sm:hidden px-3 py-2.5 border border-gray-200 rounded-xl">
-            <SlidersHorizontal className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Package Grid/List */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {filteredPackages.map((pkg) => (
-            <div 
-              key={pkg.id}
-              className={`group cursor-pointer rounded-2xl overflow-hidden border transition-all duration-300 hover:shadow-xl ${
-                darkMode 
-                  ? 'bg-gray-800 border-gray-700 hover:border-emerald-600' 
-                  : 'bg-white border-gray-100 hover:border-emerald-300'
-              }`}
-              onClick={() => handleViewPackage(pkg)}
-            >
-              {/* Image Container */}
-              <div className="relative aspect-[4/3] overflow-hidden">
-                <img
-                  src={pkg.image}
-                  alt={pkg.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                
-                {/* Gradient Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
-                
-                {/* Discount Badge */}
-                {pkg.discount > 0 && (
-                  <div className="absolute top-3 left-3">
-                    <span className="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-lg">
-                      -{pkg.discount}%
-                    </span>
-                  </div>
-                )}
-                
-                {/* Price */}
-                <div className="absolute bottom-3 left-3">
-                  <div className="flex items-baseline">
-                    <span className="text-xl font-bold text-white">${pkg.price}</span>
-                    <span className="text-xs text-white/80 ml-1">/person</span>
-                  </div>
-                </div>
-                
-                {/* Rating */}
-                <div className="absolute top-3 right-3">
-                  <div className="flex items-center bg-black/60 backdrop-blur-sm px-2 py-1 rounded-full">
-                    <Star className="h-3 w-3 text-amber-400 fill-current" />
-                    <span className="ml-1 text-xs font-medium text-white">{pkg.rating}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Content */}
-              <div className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'} line-clamp-1`}>
-                      {pkg.title}
-                    </h3>
-                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {pkg.agency}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Details */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <div className="flex items-center text-xs text-gray-500">
-                    <Calendar className="h-3 w-3 mr-1" />
-                    {pkg.duration}
-                  </div>
-                  <div className="flex items-center text-xs text-gray-500">
-                    <MapPin className="h-3 w-3 mr-1" />
-                    {pkg.distance}
-                  </div>
-                  <div className="flex items-center text-xs text-gray-500">
-                    <Hotel className="h-3 w-3 mr-1" />
-                    {pkg.hotelRating}
-                  </div>
-                </div>
-
-                {/* Amenities */}
-                <div className="flex flex-wrap gap-1 mb-4">
-                  {pkg.amenities.slice(0, 3).map((item, i) => (
-                    <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-full">
-                      {item}
-                    </span>
-                  ))}
-                  {pkg.amenities.length > 3 && (
-                    <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
-                      +{pkg.amenities.length - 3}
-                    </span>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleViewPackage(pkg);
-                    }}
-                    className="flex-1 py-2.5 border border-emerald-600 text-emerald-600 text-sm font-medium rounded-lg hover:bg-emerald-50 transition-colors"
-                  >
-                    View Details
-                  </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleBookNow(pkg);
-                    }}
-                    className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
-                  >
-                    Book Now
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        // List View
-        <div className="space-y-4">
-          {filteredPackages.map((pkg) => (
-            <div 
-              key={pkg.id}
-              className={`flex flex-col sm:flex-row rounded-2xl overflow-hidden border transition-all duration-300 hover:shadow-xl cursor-pointer ${
-                darkMode 
-                  ? 'bg-gray-800 border-gray-700 hover:border-emerald-600' 
-                  : 'bg-white border-gray-100 hover:border-emerald-300'
-              }`}
-              onClick={() => handleViewPackage(pkg)}
-            >
-              {/* Image */}
-              <div className="sm:w-48 h-48 sm:h-auto relative overflow-hidden">
-                <img
-                  src={pkg.image}
-                  alt={pkg.title}
-                  className="w-full h-full object-cover"
-                />
-                {pkg.discount > 0 && (
-                  <span className="absolute top-2 left-2 px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-lg">
-                    -{pkg.discount}%
-                  </span>
-                )}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 p-4">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-3">
-                  <div>
-                    <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {pkg.title}
-                    </h3>
-                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {pkg.agency}
-                    </p>
-                  </div>
-                  <div className="flex items-center mt-2 sm:mt-0">
-                    <Star className="h-4 w-4 text-amber-400 fill-current" />
-                    <span className={`ml-1 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {pkg.rating}
-                    </span>
-                    <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'} ml-1`}>
-                      ({pkg.reviews})
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                  <div className="flex items-center text-sm text-gray-500">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    {pkg.duration}
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <MapPin className="h-4 w-4 mr-2" />
-                    {pkg.distance}
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <Hotel className="h-4 w-4 mr-2" />
-                    {pkg.hotelRating}
-                  </div>
-                  <div className="flex items-center text-sm font-semibold text-emerald-600">
-                    ${pkg.price}/person
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {pkg.amenities.map((item, i) => (
-                    <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-full">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Load More */}
-      {filteredPackages.length > 0 && (
-        <div className="text-center pt-6">
-          <button className={`px-6 py-3 rounded-xl font-medium transition-colors ${
-            darkMode
-              ? 'bg-gray-800 text-white hover:bg-gray-700'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}>
-            Load More Packages
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  return { toasts, showToast, removeToast };
 };
 
+// ==================== CONSTANTS ====================
+const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_VERSION = 'v3'; // bump this whenever normalise() changes shape
+
+// ==================== UTILITIES ====================
+
+/**
+ * normalise — maps raw backend package fields to a consistent frontend shape.
+ * Handles every known backend response variant so components always get
+ * the same field names regardless of API version.
+ */
+const normalise = (pkg) => {
+  // image_urls may be plain strings OR objects like { url, path, secure_url }
+  const rawImageUrls = pkg.image_urls ?? pkg.imageUrls ?? pkg.images ?? [];
+  const imageUrls = rawImageUrls
+    .map(img => (typeof img === 'string' ? img : img?.url ?? img?.secure_url ?? img?.path ?? ''))
+    .filter(Boolean);
+  const firstImage =
+    imageUrls[0] ||
+    pkg.image ||
+    pkg.thumbnail ||
+    'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80';
+
+  const rawPrice = pkg.price_per_person ?? pkg.pricePerPerson ?? pkg.price ?? 0;
+  const rawOriginal = pkg.original_price ?? pkg.originalPrice ?? rawPrice;
+
+  const discount =
+    rawOriginal > rawPrice
+      ? Math.round(((rawOriginal - rawPrice) / rawOriginal) * 100)
+      : 0;
+
+  return {
+    // identity — prefer Supabase UUID (pkg.id); fall back to Mongo _id only if id absent
+    id:            String(pkg.id ?? pkg._id ?? ''),
+
+    // status — preserved so backend can validate package availability
+    status:        pkg.status ?? 'active',
+
+    // display
+    title:         pkg.name ?? pkg.title ?? pkg.packageName ?? 'Umrah Package',
+    description:   pkg.description ?? '',
+    image:         firstImage,
+    images:        imageUrls.length ? imageUrls : [firstImage],
+
+    // pricing
+    price:         Number(rawPrice),
+    originalPrice: Number(rawOriginal),
+    discount,
+
+    // trip info
+    duration:      Number(pkg.duration_days ?? pkg.durationDays ?? pkg.duration ?? 0),
+    type:          (pkg.package_type ?? pkg.packageType ?? pkg.type ?? 'umrah').toLowerCase(),
+    location:      (pkg.location ?? pkg.city ?? 'makkah').toLowerCase(),
+    distance:      pkg.makkah_hotel_distance ?? pkg.distance ?? '',
+    hotelRating:   pkg.hotel_stars ? `${pkg.hotel_stars}★ Hotel` : (pkg.hotelRating ?? ''),
+    hotelStars:    Number(pkg.hotel_stars ?? pkg.hotelStars ?? 0),
+
+    // meta
+    rating:        Number(pkg.average_rating ?? pkg.rating ?? 0),
+    reviews:       Number(pkg.review_count ?? pkg.reviews ?? 0),
+    availableSeats:Number(pkg.available_seats ?? pkg.availableSeats ?? pkg.seats ?? 0),
+    featured:      Boolean(pkg.is_featured ?? pkg.featured ?? false),
+    verified:      Boolean(pkg.is_verified ?? pkg.verified ?? false),
+
+    // agency
+    agencyName:    pkg.agency?.name ?? pkg.agencyName ?? pkg.company_name ?? '',
+    agencyId:      String(pkg.agency?._id ?? pkg.agency?.id ?? pkg.agencyId ?? ''),
+
+    // extras
+    includes:      pkg.includes ?? pkg.amenities ?? [],
+    startDate:     pkg.start_date ?? pkg.startDate ?? pkg.dates ?? null,
+    _tags:         pkg.tags ?? [],
+    _islamicMonth: pkg.islamic_month ?? pkg.islamicMonth ?? null,
+  };
+};
+
+// ==================== CUSTOM HOOKS ====================
+const usePackages = (showToast) => {
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchPackages = useCallback(async (force = false) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const cacheKey     = `packages_cache_${CACHE_VERSION}`;
+      const cacheTimeKey = `packages_cache_time_${CACHE_VERSION}`;
+      const cached       = localStorage.getItem(cacheKey);
+      const cacheTime    = localStorage.getItem(cacheTimeKey);
+
+      if (!force && cached && cacheTime && (Date.now() - parseInt(cacheTime)) < CACHE_TTL) {
+        setPackages(JSON.parse(cached));
+        setLoading(false);
+        return;
+      }
+
+      const data = await getAllActivePackages();
+      const raw = Array.isArray(data)
+        ? data
+        : (data.packages ?? data.data?.packages ?? data.data ?? []);
+
+      // Debug: log the first raw package so you can confirm the image field name
+      if (raw.length > 0) {
+        const sample = raw[0];
+        console.log('[PackageDebug] image fields on first package:', {
+          image:      sample.image,
+          images:     sample.images,
+          image_urls: sample.image_urls,
+          imageUrls:  sample.imageUrls,
+        });
+        if (sample.image_urls?.length) {
+          console.log('[PackageDebug] image_urls[0] structure:', JSON.stringify(sample.image_urls[0]));
+        }
+      }
+
+      const packagesList = raw.map(normalise);
+
+      localStorage.setItem(cacheKey,     JSON.stringify(packagesList));
+      localStorage.setItem(cacheTimeKey, Date.now().toString());
+
+      setPackages(packagesList);
+    } catch (err) {
+      console.error('Error fetching packages:', err);
+      setError(err.message || 'Failed to load packages');
+
+      // Fall back to cache if available
+      const cached = localStorage.getItem(`packages_cache_${CACHE_VERSION}`);
+      if (cached) {
+        try {
+          // Cache already normalised — do NOT re-normalise
+          setPackages(JSON.parse(cached));
+          if (showToast) showToast('Using cached packages — refresh to update', 'info');
+        } catch {
+          setPackages([]);
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    fetchPackages();
+  }, [fetchPackages]);
+
+  return { packages, loading, error, refetch: () => fetchPackages(true) };
+};
+
+
 // ==================== STAT CARD COMPONENT ====================
-const StatCard = ({ icon: Icon, label, value, change, color, darkMode }) => (
-  <div className={`rounded-2xl p-6 shadow-lg border transition-all duration-300 ${
-    darkMode 
-      ? 'bg-gray-800 border-gray-700' 
-      : 'bg-white border-gray-100'
+const StatCard = ({ icon: Icon, label, value, change, color, darkMode, loading }) => (
+  <div className={`rounded-2xl p-6 shadow-lg border transition-all duration-300 hover:shadow-xl ${
+    darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'
   }`}>
     <div className="flex items-start justify-between mb-4">
       <div className={`p-3 rounded-xl bg-gradient-to-br ${color}`}>
@@ -591,7 +219,11 @@ const StatCard = ({ icon: Icon, label, value, change, color, darkMode }) => (
         </span>
       )}
     </div>
-    <h3 className={`text-2xl font-bold mb-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{value}</h3>
+    {loading ? (
+      <div className="h-8 w-20 bg-gray-200 rounded animate-pulse mb-1"></div>
+    ) : (
+      <h3 className={`text-2xl font-bold mb-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{value}</h3>
+    )}
     <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{label}</p>
   </div>
 );
@@ -599,74 +231,103 @@ const StatCard = ({ icon: Icon, label, value, change, color, darkMode }) => (
 // ==================== BOOKING CARD COMPONENT ====================
 const BookingCard = ({ booking, darkMode, onView }) => {
   const getStatusColor = (status) => {
-    switch(status) {
+    switch(status?.toLowerCase()) {
       case 'confirmed': return 'bg-emerald-100 text-emerald-700';
-      case 'pending': return 'bg-amber-100 text-amber-700';
+      case 'pending':   return 'bg-amber-100 text-amber-700';
       case 'completed': return 'bg-blue-100 text-blue-700';
       case 'cancelled': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
+      default:          return 'bg-gray-100 text-gray-700';
     }
   };
+
+  // Supabase join returns booking.package as an object
+  const pkg = booking.package ?? {};
+
+  const rawImgs = pkg.image_urls ?? pkg.imageUrls ?? pkg.images ?? [];
+  const firstImg = (typeof rawImgs[0] === 'string' ? rawImgs[0] : rawImgs[0]?.url ?? rawImgs[0]?.secure_url ?? null)
+    || 'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
+
+  // agent_name lives directly on the package row (no agencies join table)
+  const agencyName = pkg.agent_name ?? booking.agency_name ?? 'Travel Agency';
+  const packageName = pkg.name ?? booking.title ?? 'Umrah Package';
+  // schema uses `duration` (integer days), not duration_days
+  const duration = pkg.duration ? `${pkg.duration} Days` : '—';
+  // schema uses makkah_hotel_rating (string "1"–"6"), not hotel_stars
+  const hotelRating = pkg.makkah_hotel_rating ? `${pkg.makkah_hotel_rating}★ Hotel` : '—';
+  const distance = pkg.makkah_hotel_distance ?? 'Makkah & Madinah';
+
+  // amount_paid is KES; show with currency
+  const currency = booking.currency ?? 'KES';
+  const totalDisplay = booking.amount_paid
+    ? `${currency} ${Number(booking.amount_paid).toLocaleString()}`
+    : '—';
+
+  const dateDisplay = booking.confirmed_at
+    ? new Date(booking.confirmed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : booking.created_at
+      ? new Date(booking.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      : 'TBD';
 
   return (
     <div className={`rounded-2xl overflow-hidden border transition-all duration-300 hover:shadow-xl ${
       darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'
     }`}>
       <div className="relative h-40 overflow-hidden">
-        <img src={booking.image} alt={booking.title} className="w-full h-full object-cover" />
+        <img src={firstImg} alt={packageName} className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
         <div className="absolute top-3 left-3">
           <span className={`px-2 py-1 rounded-full text-xs font-bold ${getStatusColor(booking.status)}`}>
-            {booking.status.toUpperCase()}
+            {booking.status?.toUpperCase() || 'PENDING'}
           </span>
         </div>
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
           <div className="flex items-center">
             <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white flex items-center justify-center text-white text-xs font-bold">
-              {booking.agencyName.charAt(0)}
+              {agencyName.charAt(0)}
             </div>
-            <span className="ml-2 text-white text-xs font-medium">{booking.agencyName}</span>
+            <span className="ml-2 text-white text-xs font-medium">{agencyName}</span>
           </div>
           <div className="flex items-center bg-black/40 backdrop-blur-sm px-2 py-1 rounded-full">
-            <Star className="h-2 w-2 text-amber-400 fill-current" />
-            <span className="ml-1 text-xs text-white">{booking.rating}</span>
+            <span className="text-xs text-white">{booking.payment_method ?? 'CARD'}</span>
           </div>
         </div>
       </div>
 
       <div className="p-4">
-        <h3 className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-          {booking.title}
+        <h3 className={`font-semibold mb-2 line-clamp-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+          {packageName}
         </h3>
-        
+
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="flex items-center text-xs text-gray-500">
             <Calendar className="h-3 w-3 mr-1" />
-            {booking.duration}
-          </div>
-          <div className="flex items-center text-xs text-gray-500">
-            <Users className="h-3 w-3 mr-1" />
-            {booking.travelers} travelers
+            {duration}
           </div>
           <div className="flex items-center text-xs text-gray-500">
             <MapPin className="h-3 w-3 mr-1" />
-            {booking.distance}
+            {distance}
           </div>
           <div className="flex items-center text-xs text-gray-500">
             <Hotel className="h-3 w-3 mr-1" />
-            {booking.hotelRating}
+            {hotelRating}
+          </div>
+          <div className="flex items-center text-xs text-gray-500">
+            <Clock className="h-3 w-3 mr-1" />
+            {dateDisplay}
           </div>
         </div>
 
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-xs text-gray-500 mb-1">Total</p>
-            <p className="text-lg font-bold text-emerald-600">${booking.price.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mb-1">Total Paid</p>
+            <p className="text-lg font-bold text-emerald-600">{totalDisplay}</p>
           </div>
-          <p className="text-xs text-gray-500">{booking.startDate}</p>
+          {booking.payment?.result_code && (
+            <p className="text-xs text-gray-400 font-mono">#{booking.payment.result_code}</p>
+          )}
         </div>
 
-        <button 
+        <button
           onClick={() => onView(booking)}
           className="w-full py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
         >
@@ -684,22 +345,22 @@ const MessageCard = ({ message, darkMode }) => (
   } ${!message.read && (darkMode ? 'bg-gray-700/30' : 'bg-emerald-50/30')}`}>
     <div className="flex items-start space-x-3">
       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0 flex items-center justify-center text-white font-bold">
-        {message.sender.charAt(0)}
+        {message.sender?.charAt(0) || 'A'}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
           <h4 className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {message.sender}
+            {message.sender || 'Agency'}
           </h4>
           <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-            {message.time}
+            {message.created_at ? new Date(message.created_at).toLocaleTimeString() : message.time}
           </span>
         </div>
         <p className={`text-xs mb-1 line-clamp-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-          {message.preview}
+          {message.preview || message.content || 'No message preview'}
         </p>
         <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-          {message.bookingRef}
+          {message.booking_ref || message.subject || 'Booking reference'}
         </p>
       </div>
       {!message.read && <div className="w-2 h-2 bg-emerald-500 rounded-full flex-shrink-0 mt-2"></div>}
@@ -707,488 +368,900 @@ const MessageCard = ({ message, darkMode }) => (
   </div>
 );
 
+// ==================== PACKAGE CARD COMPONENT (HeroSection-style) ====================
+const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav }) => {
+  const imageUrl = pkg.image || (pkg.image_urls?.[0]) ||
+    'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
+
+  return (
+    <div className="group cursor-pointer" onClick={() => onView(pkg)}>
+      {/* Image block */}
+      <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-2.5 bg-gray-100">
+        <img
+          src={imageUrl}
+          alt={pkg.name || pkg.title}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          loading="lazy"
+          onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80'; }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
+
+        {/* Price */}
+        <div className="absolute bottom-2 left-2">
+          <div className="flex items-baseline gap-1">
+            <span className="text-sm sm:text-base font-bold text-white leading-none">
+              ${(pkg.price || 0).toLocaleString()}
+            </span>
+            <span className="text-[10px] text-white/75">/ person</span>
+          </div>
+          {pkg.originalPrice > pkg.price && (
+            <span className="text-[10px] text-white/55 line-through block">
+              ${(pkg.originalPrice || 0).toLocaleString()}
+            </span>
+          )}
+        </div>
+
+        {/* Duration badge */}
+        {pkg.duration > 0 && (
+          <div className="absolute top-2 left-2">
+            <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-sm rounded-full text-[10px] sm:text-xs font-medium text-gray-900">
+              {pkg.duration}d
+            </span>
+          </div>
+        )}
+
+        {/* Discount badge */}
+        {pkg.discount > 0 && (
+          <div className="absolute top-2 right-8 sm:right-10">
+            <span className="px-1.5 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] sm:text-xs font-semibold">
+              -{pkg.discount}%
+            </span>
+          </div>
+        )}
+
+        {/* Heart button */}
+        {onToggleFav && (
+          <button
+            onClick={e => { e.stopPropagation(); onToggleFav(pkg); }}
+            className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur-sm rounded-full hover:scale-110 transition-transform"
+          >
+            <Heart className={`h-3 w-3 ${isFav ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
+          </button>
+        )}
+
+        {/* Rating */}
+        {pkg.rating > 0 && (
+          <div className="absolute bottom-2 right-2">
+            <div className="flex items-center px-1.5 py-0.5 bg-black/60 backdrop-blur-sm rounded-full">
+              <Star className="h-2.5 w-2.5 text-amber-400 fill-current" />
+              <span className="ml-0.5 text-[10px] font-medium text-white">{pkg.rating}★</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Text below image */}
+      <div className="space-y-1">
+        <h3 className={`font-medium line-clamp-1 text-xs sm:text-sm group-hover:text-emerald-700 transition-colors ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+          {pkg.title || pkg.name}
+        </h3>
+        <p className={`text-[10px] sm:text-xs line-clamp-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          {[pkg.distance, pkg.hotelRating, pkg.type && (pkg.type.charAt(0).toUpperCase() + pkg.type.slice(1))].filter(Boolean).join(' · ')}
+        </p>
+        {pkg.description && (
+          <p className={`text-[10px] sm:text-xs line-clamp-2 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+            {pkg.description}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-1.5 mt-2">
+          <button
+            onClick={e => { e.stopPropagation(); onView(pkg); }}
+            className="px-2 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 active:scale-[0.98] transition-all"
+          >
+            View Details
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onBook(pkg); }}
+            className={`px-2 py-1.5 text-xs font-medium rounded-lg border active:scale-[0.98] transition-all ${
+              darkMode
+                ? 'border-gray-600 text-gray-300 hover:border-emerald-500 hover:text-emerald-400'
+                : 'border-gray-300 text-gray-700 hover:border-emerald-500 hover:text-emerald-600'
+            }`}
+          >
+            Book Now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== PACKAGE DISCOVERY SECTION ====================
+const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], loading = false, error = null, onRetry, favorites = [], onToggleFav }) => {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState({
+    type: 'all',
+    stars: 'all',
+    duration: 'all',
+    priceRange: { min: 0, max: 10000 }
+  });
+  const [sortBy, setSortBy] = useState('newest');
+  const [viewMode, setViewMode] = useState('grid');
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [priceCeil, setPriceCeil] = useState(10000);
+
+  useEffect(() => {
+    if (packages.length) {
+      const maxPrice = Math.max(...packages.map(p => p.price || 0), 1000);
+      const ceil = Math.ceil(maxPrice / 500) * 500;
+      setPriceCeil(ceil);
+      setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, max: ceil } }));
+    }
+  }, [packages]);
+
+  const filteredAndSorted = useMemo(() => {
+    let result = [...packages];
+
+    if (search.trim()) {
+      const query = search.toLowerCase();
+      result = result.filter(p => 
+        (p.name || '').toLowerCase().includes(query) ||
+        (p.description || '').toLowerCase().includes(query) ||
+        (p.location || '').toLowerCase().includes(query) ||
+        (p.agency_name || '').toLowerCase().includes(query)
+      );
+    }
+
+    if (filters.type !== 'all') {
+      result = result.filter(p => p.type === filters.type);
+    }
+
+    if (filters.stars !== 'all') {
+      const minStars = parseInt(filters.stars);
+      result = result.filter(p => (p.rating || 0) >= minStars);
+    }
+
+    if (filters.duration !== 'all') {
+      const [min, max] = filters.duration.split('-').map(Number);
+      result = result.filter(p => {
+        const duration = p.duration || 0;
+        return duration >= min && (max ? duration <= max : true);
+      });
+    }
+
+    result = result.filter(p => {
+      const price = p.price || 0;
+      return price >= filters.priceRange.min && price <= filters.priceRange.max;
+    });
+
+    result.sort((a, b) => {
+      switch(sortBy) {
+        case 'price-asc': return (a.price || 0) - (b.price || 0);
+        case 'price-desc': return (b.price || 0) - (a.price || 0);
+        case 'rating': return (b.rating || 0) - (a.rating || 0);
+        case 'duration': return (a.duration || 0) - (b.duration || 0);
+        default: return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      }
+    });
+
+    return result;
+  }, [packages, search, filters, sortBy]);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.type !== 'all') count++;
+    if (filters.stars !== 'all') count++;
+    if (filters.duration !== 'all') count++;
+    if (filters.priceRange.min > 0 || filters.priceRange.max < priceCeil) count++;
+    return count;
+  }, [filters, priceCeil]);
+
+  const clearFilters = () => {
+    setFilters({
+      type: 'all',
+      stars: 'all',
+      duration: 'all',
+      priceRange: { min: 0, max: priceCeil }
+    });
+    setSearch('');
+    setSortBy('newest');
+  };
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="animate-pulse">
+            <div className={`aspect-[4/3] rounded-xl mb-3 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+            <div className={`h-4 rounded w-3/4 mb-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+            <div className={`h-3 rounded w-1/2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={`text-center py-16 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+        <AlertCircle className="h-12 w-12 mx-auto mb-3 text-red-500" />
+        <p className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Failed to load packages</p>
+        <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{error}</p>
+        <button 
+          onClick={onRetry}
+          className="px-5 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 flex items-center gap-2 mx-auto"
+        >
+          <RefreshCw className="h-4 w-4" /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className={`sticky top-0 z-10 -mx-1 px-1 pb-3 pt-1 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search packages by name, destination, or agency..."
+              className={`w-full pl-9 pr-8 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                darkMode 
+                  ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' 
+                  : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
+              }`}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+                <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+              </button>
+            )}
+          </div>
+          
+          <div className={`flex rounded-xl border overflow-hidden flex-shrink-0 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+            <button onClick={() => setViewMode('grid')} className={`p-2.5 transition-colors ${viewMode === 'grid' ? 'bg-emerald-600 text-white' : darkMode ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-500'}`}>
+              <Grid className="h-4 w-4" />
+            </button>
+            <button onClick={() => setViewMode('list')} className={`p-2.5 transition-colors ${viewMode === 'list' ? 'bg-emerald-600 text-white' : darkMode ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-500'}`}>
+              <List className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <button onClick={() => setShowMobileFilters(true)} className="lg:hidden flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold bg-white shadow-sm">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filters {activeFilterCount > 0 && <span className="w-4 h-4 bg-emerald-600 text-white text-[10px] rounded-full flex items-center justify-center">{activeFilterCount}</span>}
+          </button>
+
+          <div className="relative flex-shrink-0">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`appearance-none pl-3 pr-7 py-2 rounded-xl border text-sm font-semibold cursor-pointer ${
+              sortBy !== 'newest' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+            }`}>
+              <option value="newest">Latest</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="rating">Top Rated</option>
+              <option value="duration">Shortest Duration</option>
+            </select>
+            <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none ${sortBy !== 'newest' ? 'text-white' : ''}`} />
+          </div>
+
+          <button onClick={() => setFilters(prev => ({ ...prev, type: prev.type === 'umrah' ? 'all' : 'umrah' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
+            filters.type === 'umrah' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+          }`}>🕌 Umrah</button>
+          
+          <button onClick={() => setFilters(prev => ({ ...prev, type: prev.type === 'hajj' ? 'all' : 'hajj' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
+            filters.type === 'hajj' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+          }`}>🏕 Hajj</button>
+
+          {[3, 4, 5].map(star => (
+            <button key={star} onClick={() => setFilters(prev => ({ ...prev, stars: prev.stars === star.toString() ? 'all' : star.toString() }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border flex items-center gap-1 ${
+              filters.stars === star.toString() ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+            }`}>
+              <Star className="h-3 w-3 fill-current" /> {star}+
+            </button>
+          ))}
+
+          <button onClick={() => setFilters(prev => ({ ...prev, duration: prev.duration === '1-7' ? 'all' : '1-7' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
+            filters.duration === '1-7' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+          }`}>⏱ 1-7 Days</button>
+          
+          <button onClick={() => setFilters(prev => ({ ...prev, duration: prev.duration === '8-14' ? 'all' : '8-14' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
+            filters.duration === '8-14' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+          }`}>⏱ 8-14 Days</button>
+          
+          <button onClick={() => setFilters(prev => ({ ...prev, duration: prev.duration === '15-999' ? 'all' : '15-999' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
+            filters.duration === '15-999' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+          }`}>⏱ 15+ Days</button>
+
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters} className="flex-shrink-0 flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50">
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
+          )}
+        </div>
+
+        <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          <span className="font-semibold text-emerald-600">{filteredAndSorted.length}</span> packages found
+          {activeFilterCount > 0 && <span> · {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active</span>}
+        </p>
+      </div>
+
+      {showMobileFilters && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)} />
+          <div className={`fixed right-0 top-0 bottom-0 w-80 max-w-[90vw] overflow-y-auto shadow-2xl ${darkMode ? 'bg-gray-900' : 'bg-white'}`}>
+            <div className="sticky top-0 p-4 border-b flex items-center justify-between bg-inherit">
+              <h3 className="font-bold text-lg">Filters</h3>
+              <button onClick={() => setShowMobileFilters(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-6">
+              <div>
+                <label className="block text-sm font-medium mb-2">Price Range</label>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>${filters.priceRange.min.toLocaleString()}</span>
+                    <span>${filters.priceRange.max.toLocaleString()}</span>
+                  </div>
+                  <input type="range" min={0} max={priceCeil} value={filters.priceRange.min} onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, min: parseInt(e.target.value) } }))} className="w-full accent-emerald-600" />
+                  <input type="range" min={0} max={priceCeil} value={filters.priceRange.max} onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, max: parseInt(e.target.value) } }))} className="w-full accent-emerald-600" />
+                </div>
+              </div>
+              <button onClick={() => setShowMobileFilters(false)} className="w-full py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700">
+                Apply Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {filteredAndSorted.length === 0 ? (
+        <div className={`text-center py-16 rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+          <Search className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+          <p className={`font-semibold mb-1 ${darkMode ? 'text-white' : 'text-gray-800'}`}>No packages found</p>
+          <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Try adjusting your filters</p>
+          <button onClick={clearFilters} className="px-5 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Clear Filters</button>
+        </div>
+      ) : viewMode === 'grid' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+          {filteredAndSorted.map(pkg => (
+            <PackageCard
+              key={pkg.id}
+              pkg={pkg}
+              darkMode={darkMode}
+              onView={onPackageSelect || (p => navigate(`/package/${p.id}`))}
+              onBook={onBook || (p => navigate(`/package/${p.id}`))}
+              isFav={favorites.some(f => String(f.id) === String(pkg.id))}
+              onToggleFav={onToggleFav}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredAndSorted.map(pkg => (
+            <div key={pkg.id} onClick={() => onPackageSelect?.(pkg) || navigate(`/package/${pkg.id}`)} className={`flex rounded-2xl overflow-hidden border cursor-pointer transition-all hover:shadow-md ${
+              darkMode ? 'bg-gray-800 border-gray-700 hover:border-emerald-600' : 'bg-white border-gray-100 hover:border-emerald-300'
+            }`}>
+              <div className="w-32 h-28 flex-shrink-0 overflow-hidden relative">
+                <img src={pkg.image} alt={pkg.name} className="w-full h-full object-cover" loading="lazy" />
+              </div>
+              <div className="flex-1 p-3.5 min-w-0">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <h3 className={`font-semibold text-sm truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{pkg.name}</h3>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-emerald-600 font-bold text-sm">${(pkg.price || 0).toLocaleString()}</span>
+                    {onToggleFav && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onToggleFav(pkg); }}
+                        className={`p-1 rounded-full transition-colors ${
+                          favorites.some(f => String(f.id) === String(pkg.id))
+                            ? 'text-red-500'
+                            : darkMode ? 'text-gray-500 hover:text-red-400' : 'text-gray-400 hover:text-red-500'
+                        }`}
+                        title={favorites.some(f => String(f.id) === String(pkg.id)) ? 'Remove from favourites' : 'Save to favourites'}
+                      >
+                        <Heart className={`h-4 w-4 ${favorites.some(f => String(f.id) === String(pkg.id)) ? 'fill-current' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mb-1.5">
+                  <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {pkg.location?.split(',')[0] || 'Makkah'}</span>
+                  <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {pkg.duration}d</span>
+                  <span className="flex items-center gap-1"><Star className="h-3 w-3 text-amber-400 fill-current" /> {pkg.rating}★</span>
+                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${pkg.type === 'hajj' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{pkg.type?.toUpperCase()}</span>
+                </div>
+                {pkg.description && <p className={`text-xs line-clamp-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{pkg.description}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ==================== MAIN CLIENT DASHBOARD ====================
 const ClientDashboard = ({ user, onLogout }) => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('overview');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { toasts, showToast, removeToast } = useToast();
+  const [activeTab, setActiveTab] = useState(() => {
+    // If user was just redirected back from a successful payment, land on bookings
+    if (sessionStorage.getItem('booking_just_confirmed')) {
+      sessionStorage.removeItem('booking_just_confirmed');
+      return 'bookings';
+    }
+    return 'packages';
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    return saved ? JSON.parse(saved) : false;
+  });
   const [showNotifications, setShowNotifications] = useState(false);
+  
+  const [bookings, setBookings] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [loading, setLoading] = useState({ bookings: true, messages: true, favorites: true, stats: true });
+  const [stats, setStats] = useState({ activeBookings: 0, favorites: 0, pastJourneys: 0, rewardPoints: 1250 });
 
-  // Sample Data
-  const [bookings, setBookings] = useState([
-    {
-      id: 1,
-      title: 'Premium Umrah Package',
-      agencyName: 'Al-Haram Travels',
-      image: 'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-      price: 2499,
-      duration: '10 Days',
-      startDate: 'Mar 15, 2024',
-      travelers: 2,
-      status: 'confirmed',
-      rating: 4.9,
-      distance: '200m from Haram',
-      hotelRating: '5-star'
-    },
-    {
-      id: 2,
-      title: 'Deluxe Umrah Package',
-      agencyName: 'Qibla Tours',
-      image: 'https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-      price: 1899,
-      duration: '7 Days',
-      startDate: 'Apr 10, 2024',
-      travelers: 1,
-      status: 'pending',
-      rating: 4.7,
-      distance: '500m from Haram',
-      hotelRating: '4-star'
+  const { packages: availablePackages, loading: packagesLoading, error: packagesError, refetch: refetchPackages } = usePackages(showToast);
+
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+    if (darkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, [darkMode]);
+
+  // If there's no user, immediately clear loading states so nothing spins forever
+  useEffect(() => {
+    if (!user?.id) {
+      setLoading({ bookings: false, messages: false, favorites: false, stats: false });
     }
-  ]);
+  }, [user?.id]);
 
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      sender: 'Al-Haram Travels',
-      preview: 'Your visa documents have been processed...',
-      time: '5 min ago',
-      bookingRef: 'Booking #UMR-001',
-      read: false
-    },
-    {
-      id: 2,
-      sender: 'Qibla Tours',
-      preview: 'Your itinerary has been updated...',
-      time: '2 hours ago',
-      bookingRef: 'Booking #UMR-002',
-      read: true
-    }
-  ]);
+  useEffect(() => {
+    if (!user?.id) return;
 
-  const stats = [
-    { icon: Calendar, label: 'Active Bookings', value: '2', change: '+1', color: 'from-emerald-500 to-teal-600' },
-    { icon: Heart, label: 'Favorites', value: '4', change: '+2', color: 'from-red-500 to-pink-600' },
-    { icon: Clock, label: 'Past Journeys', value: '3', change: '+1', color: 'from-blue-500 to-indigo-600' },
-    { icon: Star, label: 'Reward Points', value: '2,450', change: '+350', color: 'from-amber-500 to-orange-600' }
-  ];
+    // ── Fetch favourites from backend ─────────────────────────────────────────
+    const fetchFavourites = async () => {
+      try {
+        const favData = await getFavourites();
+        // Backend returns: { success, favourites: Package[], packageIds: string[] }
+        const rawFavs = favData.favourites ?? [];
+        const favList = rawFavs.map(normalise);
+        setFavorites(favList);
+        setStats(prev => ({ ...prev, favorites: favList.length }));
+      } catch (err) {
+        console.error('[fetchFavourites]', err.message);
+        showToast('Failed to load favourites', 'error');
+      } finally {
+        setLoading(prev => ({ ...prev, favorites: false, stats: false }));
+      }
+    };
+
+    // ── Fetch bookings from backend ───────────────────────────────────────────
+    const fetchBookings = async () => {
+      try {
+        const res = await request({ method: 'get', url: '/bookings/my' });
+        const raw = res?.data?.bookings ?? [];
+        setBookings(raw);
+        // Update stats: active = confirmed/pending, past = completed
+        const active = raw.filter(b => ['confirmed', 'pending'].includes(b.status?.toLowerCase())).length;
+        const past   = raw.filter(b => b.status?.toLowerCase() === 'completed').length;
+        setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past }));
+      } catch (err) {
+        console.error('[fetchBookings]', err.message);
+        showToast('Could not load bookings', 'error');
+      } finally {
+        setLoading(prev => ({ ...prev, bookings: false }));
+      }
+    };
+
+    // ── Fetch messages (real API to be wired when endpoint is ready) ──────────
+    const fetchMessages = async () => {
+      try {
+        // TODO: replace with real messages API call
+        setMessages([]);
+      } catch (err) {
+        console.error('[fetchMessages]', err.message);
+      } finally {
+        setLoading(prev => ({ ...prev, messages: false }));
+      }
+    };
+
+    fetchFavourites();
+    fetchBookings();
+    fetchMessages();
+  }, [user?.id, showToast]);
 
   const menuItems = [
     { id: 'overview', icon: LayoutDashboard, label: 'Overview', count: 0 },
     { id: 'bookings', icon: Calendar, label: 'My Bookings', count: bookings.length },
-    { id: 'favorites', icon: Heart, label: 'Favorites', count: 4 },
+    { id: 'favorites', icon: Heart, label: 'Favorites', count: favorites.length },
     { id: 'messages', icon: MessageCircle, label: 'Messages', count: messages.filter(m => !m.read).length },
     { id: 'packages', icon: Home, label: 'Discover Packages', count: 0 },
     { id: 'settings', icon: Settings, label: 'Settings', count: 0 }
   ];
 
-  const handleViewBooking = (booking) => {
-    navigate(`/package/${booking.id}?booking=true`);
+  const handleViewPackage = (pkg) => navigate(`/package/${pkg.id}`);
+  const handleBookPackage  = (pkg) => setBookingPkg(pkg);
+  const handleViewBooking = (booking) => navigate(`/package/${booking.package_id ?? booking.package?.id}`);
+
+  // isFavourited — checks by id (compare as strings to handle mixed types)
+  const isFavourited = (pkgId) =>
+    favorites.some(f => String(f.id) === String(pkgId));
+
+  // Unified toggle — works for both adding and removing from any tab
+  const handleToggleFavourite = async (pkg) => {
+    if (!user?.id) {
+      showToast('Please sign in to save favourites', 'info');
+      return;
+    }
+    const alreadySaved = isFavourited(pkg.id);
+    const original = [...favorites];
+
+    // Optimistic update
+    if (alreadySaved) {
+      setFavorites(prev => prev.filter(f => String(f.id) !== String(pkg.id)));
+      setStats(prev => ({ ...prev, favorites: Math.max(0, prev.favorites - 1) }));
+    } else {
+      const normPkg = normalise(pkg);
+      setFavorites(prev => [normPkg, ...prev]);
+      setStats(prev => ({ ...prev, favorites: prev.favorites + 1 }));
+    }
+
+    try {
+      await toggleFavourite(pkg.id);
+      showToast(alreadySaved ? 'Removed from favourites' : 'Saved to favourites', 'success');
+    } catch (err) {
+      // Revert on failure
+      setFavorites(original);
+      setStats(prev => ({ ...prev, favorites: original.length }));
+      showToast('Failed to update favourites', 'error');
+    }
   };
 
-  const handleViewPackage = (pkg) => {
-    navigate(`/package/${pkg.id}`);
-  };
+  // Kept for the explicit "remove" button in the Favorites tab
+  const handleUnfavourite = (pkg) => handleToggleFavourite(pkg);
+
+  // ── Booking modal state ──────────────────────────────────────────────────
+  const [bookingPkg, setBookingPkg] = useState(null);
+
+  const refreshBookings = useCallback(async () => {
+    try {
+      const res = await request({ method: 'get', url: '/bookings/my' });
+      const raw = res?.data?.bookings ?? [];
+      setBookings(raw);
+      const active = raw.filter(b => ['confirmed', 'pending'].includes(b.status?.toLowerCase())).length;
+      const past   = raw.filter(b => b.status?.toLowerCase() === 'completed').length;
+      setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past }));
+    } catch (err) {
+      console.error('[refreshBookings]', err.message);
+    }
+  }, []);
+
+  const handleBookingSuccess = useCallback((_newBooking) => {
+    refreshBookings();
+    setBookingPkg(null);
+    setActiveTab('bookings');
+    showToast('Package booked successfully! 🎉', 'success');
+  }, [showToast, refreshBookings]);
 
   const handleLogout = () => {
     localStorage.removeItem('userData');
-    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('packages_cache');
+    localStorage.removeItem('packages_cache_time');
+    userStore.clear();
     onLogout?.();
     navigate('/');
   };
 
-  return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      {/* Mobile Menu */}
-      <MobileMenu
-        isOpen={mobileMenuOpen}
-        onClose={() => setMobileMenuOpen(false)}
-        menuItems={menuItems}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        user={user}
-        onLogout={handleLogout}
-        darkMode={darkMode}
-      />
+  const renderContent = () => {
+    switch(activeTab) {
+      case 'overview':
+        return (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 text-white">
+              <h2 className="text-xl sm:text-2xl font-bold mb-2 text-center sm:text-left">Welcome back, {user?.firstName || user?.name || 'Pilgrim'}! 🎉</h2>
+              <p className="text-emerald-100 text-sm sm:text-base mb-4">May your journey to the Holy Lands be blessed and fulfilling.</p>
+              <button onClick={() => setActiveTab('packages')} className="px-4 py-2 bg-white text-emerald-600 text-sm font-semibold rounded-lg hover:shadow-lg">Explore Packages →</button>
+            </div>
 
-      {/* Desktop Sidebar */}
-      <div className={`hidden lg:block fixed inset-y-0 left-0 w-72 ${
-        darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-      } border-r transition-colors duration-300`}>
-        <div className="h-full flex flex-col">
-          {/* User Profile */}
-          <div className={`p-6 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-2xl">
-                  {user?.firstName?.charAt(0) || 'U'}
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-4 border-white rounded-full"></div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard icon={Calendar} label="Active Bookings" value={stats.activeBookings || bookings.length} color="from-emerald-500 to-teal-600" darkMode={darkMode} loading={loading.bookings} />
+              <StatCard icon={Heart} label="Favorites" value={stats.favorites} color="from-red-500 to-pink-600" darkMode={darkMode} loading={loading.favorites} />
+              <StatCard icon={Clock} label="Past Journeys" value={stats.pastJourneys} color="from-blue-500 to-indigo-600" darkMode={darkMode} loading={loading.bookings} />
+              <StatCard icon={Award} label="Reward Points" value={stats.rewardPoints.toLocaleString()} color="from-amber-500 to-orange-600" darkMode={darkMode} loading={loading.stats} />
+            </div>
+
+            <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
+                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Upcoming Journeys</h3>
+                <button onClick={() => setActiveTab('bookings')} className="text-emerald-600 text-sm font-medium">View all</button>
               </div>
-              <div className="flex-1">
-                <h3 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {user?.firstName || 'User'} {user?.lastName || ''}
-                </h3>
-                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {user?.email || 'user@example.com'}
-                </p>
-                <div className="flex items-center mt-1">
-                  <Star className="h-3 w-3 text-amber-400 fill-current" />
-                  <span className={`text-xs ml-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Level 2 Pilgrim
-                  </span>
-                </div>
+              <div className="p-4">
+                {bookings.length === 0 ? (
+                  <div className="text-center py-8"><p className="text-gray-500">No bookings yet</p><button onClick={() => setActiveTab('packages')} className="mt-2 text-emerald-600 text-sm font-medium">Explore packages →</button></div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {bookings.slice(0, 2).map(booking => <BookingCard key={booking.id} booking={booking} darkMode={darkMode} onView={handleViewBooking} />)}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
+                <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Recent Messages</h3>
+                <button onClick={() => setActiveTab('messages')} className="text-emerald-600 text-sm font-medium">View all</button>
+              </div>
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {messages.length === 0 ? (
+                  <div className="text-center py-8"><p className="text-gray-500">No messages yet</p></div>
+                ) : (
+                  messages.slice(0, 2).map(message => <MessageCard key={message.id} message={message} darkMode={darkMode} />)
+                )}
               </div>
             </div>
           </div>
+        );
 
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto p-4">
-            {menuItems.map((item) => (
+      case 'bookings':
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>My Bookings</h2>
               <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl mb-1 transition-all ${
-                  activeTab === item.id
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
-                    : darkMode 
-                      ? 'text-gray-400 hover:bg-gray-700' 
-                      : 'text-gray-600 hover:bg-gray-100'
-                }`}
+                onClick={refreshBookings}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition-colors"
               >
-                <div className="flex items-center space-x-3">
-                  <item.icon className="h-5 w-5" />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-                {item.count > 0 && (
-                  <span className={`px-2 py-1 rounded-full text-xs ${
-                    activeTab === item.id
-                      ? 'bg-white/20 text-white'
-                      : darkMode
-                        ? 'bg-gray-700 text-gray-300'
-                        : 'bg-gray-200 text-gray-600'
-                  }`}>
-                    {item.count}
-                  </span>
-                )}
+                <RefreshCw className="h-4 w-4" /> Refresh
               </button>
-            ))}
-          </nav>
-
-          {/* Logout */}
-          <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-            <button
-              onClick={handleLogout}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${
-                darkMode 
-                  ? 'text-gray-400 hover:bg-gray-700 hover:text-red-400' 
-                  : 'text-gray-600 hover:bg-red-50 hover:text-red-600'
-              }`}
-            >
-              <LogOut className="h-5 w-5" />
-              <span className="font-medium">Logout</span>
-            </button>
+            </div>
+            {loading.bookings ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className={`rounded-2xl overflow-hidden border animate-pulse ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                    <div className={`h-40 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+                    <div className="p-4 space-y-3">
+                      <div className={`h-4 rounded w-3/4 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+                      <div className={`h-3 rounded w-1/2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : bookings.length === 0 ? (
+              <div className={`rounded-2xl border p-12 text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                <p className={`font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>No bookings yet</p>
+                <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Your confirmed bookings will appear here after payment</p>
+                <button onClick={() => setActiveTab('packages')} className="mt-2 px-5 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Explore Packages</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {bookings.map(booking => <BookingCard key={booking.id} booking={booking} darkMode={darkMode} onView={handleViewBooking} />)}
+              </div>
+            )}
           </div>
+        );
+
+      case 'favorites':
+        return (
+          <div className="space-y-4">
+            <h2 className={`text-xl font-bold text-center sm:text-left ${darkMode ? 'text-white' : 'text-gray-900'}`}>Favorite Packages</h2>
+            {favorites.length === 0 ? (
+              <div className={`rounded-2xl border p-12 text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                <Heart className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>You haven't saved any packages yet</p>
+                <button onClick={() => setActiveTab('packages')} className="mt-4 px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Explore Packages</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                {favorites.map(pkg => (
+                  <PackageCard
+                    key={pkg.id}
+                    pkg={pkg}
+                    darkMode={darkMode}
+                    onView={handleViewPackage}
+                    onBook={handleBookPackage}
+                    isFav={true}
+                    onToggleFav={handleUnfavourite}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'messages':
+        return (
+          <div className="space-y-4">
+            <h2 className={`text-xl font-bold text-center sm:text-left ${darkMode ? 'text-white' : 'text-gray-900'}`}>Messages</h2>
+            <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              {messages.length === 0 ? (
+                <div className="text-center py-12"><MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No messages yet</p></div>
+              ) : (
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {messages.map(message => <MessageCard key={message.id} message={message} darkMode={darkMode} />)}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'packages':
+        return <PackageDiscovery darkMode={darkMode} onPackageSelect={handleViewPackage} onBook={handleBookPackage} packages={availablePackages} loading={packagesLoading} error={packagesError} onRetry={refetchPackages} favorites={favorites} onToggleFav={handleToggleFavourite} />;
+
+      case 'settings':
+        return (
+          <div className="space-y-4">
+            <h2 className={`text-xl font-bold text-center sm:text-left ${darkMode ? 'text-white' : 'text-gray-900'}`}>Settings</h2>
+            <div className={`rounded-2xl border p-6 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className="space-y-4">
+                <div><label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Full Name</label><input type="text" defaultValue={`${user?.firstName || user?.name || ''} ${user?.lastName || ''}`} className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-900'}`} /></div>
+                <div><label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Email</label><input type="email" defaultValue={user?.email || ''} className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-900'}`} /></div>
+                <div><label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Dark Mode</label><button onClick={() => setDarkMode(!darkMode)} className={`px-4 py-2 rounded-lg border flex items-center gap-2 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-900'}`}>{darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}{darkMode ? 'Light Mode' : 'Dark Mode'}</button></div>
+                <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Save Changes</button>
+              </div>
+            </div>
+          </div>
+        );
+
+      default: return null;
+    }
+  };
+
+  return (
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      {toasts.map(toast => <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />)}
+
+      {/* Mobile Menu Button */}
+      <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-lg bg-white shadow-lg"><Menu className="h-5 w-5" /></button>
+
+      {/* Mobile Menu Drawer */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="fixed inset-0 bg-black/60" onClick={() => setMobileMenuOpen(false)} />
+          <div className={`fixed left-0 top-0 bottom-0 w-80 max-w-[85vw] overflow-y-auto ${darkMode ? 'bg-gray-900' : 'bg-white'}`}>
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-bold">Menu</h2><button onClick={() => setMobileMenuOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button></div>
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-lg">{user?.firstName?.charAt(0) || user?.name?.charAt(0) || 'U'}</div>
+                <div><h3 className="font-semibold">{user?.firstName || user?.name || 'User'} {user?.lastName || ''}</h3><p className="text-xs text-gray-500">{user?.email || 'user@example.com'}</p></div>
+              </div>
+            </div>
+            <nav className="p-4">
+              {menuItems.map(item => (
+                <button key={item.id} onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl mb-1 transition-all ${activeTab === item.id ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white' : darkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}>
+                  <div className="flex items-center space-x-3"><item.icon className="h-5 w-5" /><span className="font-medium">{item.label}</span></div>
+                  {item.count > 0 && <span className={`px-2 py-1 rounded-full text-xs ${activeTab === item.id ? 'bg-white/20 text-white' : darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>{item.count}</span>}
+                </button>
+              ))}
+              <button onClick={handleLogout} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl mt-2 transition-colors ${darkMode ? 'text-gray-400 hover:bg-gray-800 hover:text-red-400' : 'text-gray-600 hover:bg-red-50 hover:text-red-600'}`}><LogOut className="h-5 w-5" /><span className="font-medium">Logout</span></button>
+            </nav>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Sidebar — icon-only by default, expands on hover */}
+      <div
+        className={`hidden lg:flex fixed inset-y-0 left-0 z-30 flex-col transition-all duration-300 ease-in-out group/sidebar
+          ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-r
+          w-16 hover:w-64`}
+      >
+        {/* User avatar */}
+        <div className={`flex items-center px-3 py-5 border-b overflow-hidden ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <div className="relative flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-sm">
+              {user?.firstName?.charAt(0) || user?.name?.charAt(0) || 'U'}
+            </div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
+          </div>
+          {/* Revealed on hover */}
+          <div className="ml-3 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap overflow-hidden">
+            <p className={`font-semibold text-sm leading-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              {user?.firstName || user?.name || 'User'} {user?.lastName || ''}
+            </p>
+            <p className={`text-xs truncate max-w-[140px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              {user?.email || ''}
+            </p>
+          </div>
+        </div>
+
+        {/* Nav items */}
+        <nav className="flex-1 overflow-y-auto py-3 space-y-1 px-2">
+          {menuItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              title={item.label}
+              className={`w-full flex items-center rounded-xl transition-all duration-200 px-2.5 py-2.5
+                ${activeTab === item.id
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md'
+                  : darkMode
+                    ? 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                }`}
+            >
+              <item.icon className="h-5 w-5 flex-shrink-0" />
+              <span className="ml-3 text-sm font-medium whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 overflow-hidden">
+                {item.label}
+              </span>
+              {item.count > 0 && (
+                <span className={`ml-auto text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200
+                  ${activeTab === item.id ? 'bg-white/20 text-white' : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
+                  {item.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Logout */}
+        <div className={`px-2 py-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <button
+            onClick={handleLogout}
+            title="Logout"
+            className={`w-full flex items-center px-2.5 py-2.5 rounded-xl transition-colors
+              ${darkMode ? 'text-gray-400 hover:bg-gray-700 hover:text-red-400' : 'text-gray-600 hover:bg-red-50 hover:text-red-600'}`}
+          >
+            <LogOut className="h-5 w-5 flex-shrink-0" />
+            <span className="ml-3 text-sm font-medium whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-200 overflow-hidden">
+              Logout
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="lg:ml-72">
-        {/* Top Bar */}
-        <header className={`sticky top-0 z-20 ${
-          darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-        } border-b transition-colors duration-300`}>
+      {/* Main Content — offset by collapsed sidebar width (w-16 = 4rem) */}
+      <div className="lg:ml-16">
+        <header className={`sticky top-0 z-20 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
           <div className="px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                {/* Mobile Menu Button */}
-                <button
-                  onClick={() => setMobileMenuOpen(true)}
-                  className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <Menu className={`h-5 w-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
-                </button>
-                
-                <h1 className={`text-lg sm:text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {activeTab === 'overview' && 'Dashboard Overview'}
-                  {activeTab === 'bookings' && 'My Bookings'}
-                  {activeTab === 'favorites' && 'Favorite Packages'}
-                  {activeTab === 'messages' && 'Messages'}
-                  {activeTab === 'packages' && 'Discover Packages'}
-                  {activeTab === 'settings' && 'Settings'}
-                </h1>
-              </div>
-
+            <div className="relative flex items-center justify-between">
+              {/* On mobile: absolutely centered so buttons don't push it off-center */}
+              <h1 className={`sm:static absolute inset-x-0 px-14 sm:px-0 text-center sm:text-left text-lg sm:text-xl font-semibold pointer-events-none truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{menuItems.find(item => item.id === activeTab)?.label}</h1>
               <div className="flex items-center space-x-3">
-                {/* Dark Mode Toggle */}
-                <button
-                  onClick={() => setDarkMode(!darkMode)}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  {darkMode 
-                    ? <Sun className="h-5 w-5 text-gray-300" />
-                    : <Moon className="h-5 w-5 text-gray-600" />
-                  }
-                </button>
-
-                {/* Notifications */}
-                <div className="relative">
-                  <button
-                    onClick={() => setShowNotifications(!showNotifications)}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors relative"
-                  >
-                    <Bell className={`h-5 w-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                  </button>
-
-                  {/* Notifications Dropdown */}
-                  {showNotifications && (
-                    <div className={`absolute right-0 mt-2 w-80 rounded-xl shadow-xl border overflow-hidden z-50 ${
-                      darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-                    }`}>
-                      <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                        <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                          Notifications
-                        </h3>
-                      </div>
-                      <div className="p-4 text-center text-sm text-gray-500">
-                        No new notifications
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* User Menu - Desktop */}
-                <div className="hidden sm:flex items-center space-x-3">
-                  <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    {user?.firstName || 'User'}
-                  </span>
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold">
-                    {user?.firstName?.charAt(0) || 'U'}
-                  </div>
-                </div>
+                <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">{darkMode ? <Sun className="h-5 w-5 text-gray-300" /> : <Moon className="h-5 w-5 text-gray-600" />}</button>
+                <div className="relative"><button onClick={() => setShowNotifications(!showNotifications)} className="p-2 rounded-lg hover:bg-gray-100 transition-colors relative"><Bell className={`h-5 w-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} /></button></div>
+                <div className="hidden sm:flex items-center space-x-3"><span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{user?.firstName || user?.name || 'User'}</span><div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold">{user?.firstName?.charAt(0) || user?.name?.charAt(0) || 'U'}</div></div>
               </div>
             </div>
           </div>
         </header>
-
-        {/* Main Content Area */}
-        <main className="p-4 sm:p-6 lg:p-8">
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Welcome Banner */}
-              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 text-white">
-                <h2 className="text-xl sm:text-2xl font-bold mb-2">
-                  Welcome back, {user?.firstName || 'Pilgrim'}! 🎉
-                </h2>
-                <p className="text-emerald-100 text-sm sm:text-base mb-4">
-                  May your journey to the Holy Lands be blessed and fulfilling.
-                </p>
-                <button 
-                  onClick={() => setActiveTab('packages')}
-                  className="px-4 py-2 bg-white text-emerald-600 text-sm font-semibold rounded-lg hover:shadow-lg transition-all"
-                >
-                  Explore Packages →
-                </button>
-              </div>
-
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {stats.map((stat, index) => (
-                  <StatCard key={index} {...stat} darkMode={darkMode} />
-                ))}
-              </div>
-
-              {/* Recent Bookings */}
-              <div className={`rounded-2xl border overflow-hidden ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
-                <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
-                  <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    Upcoming Journeys
-                  </h3>
-                  <button 
-                    onClick={() => setActiveTab('bookings')}
-                    className="text-emerald-600 text-sm font-medium"
-                  >
-                    View all
-                  </button>
-                </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {bookings.map((booking) => (
-                      <BookingCard
-                        key={booking.id}
-                        booking={booking}
-                        darkMode={darkMode}
-                        onView={handleViewBooking}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Messages */}
-              <div className={`rounded-2xl border overflow-hidden ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
-                <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
-                  <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    Recent Messages
-                  </h3>
-                  <button 
-                    onClick={() => setActiveTab('messages')}
-                    className="text-emerald-600 text-sm font-medium"
-                  >
-                    View all
-                  </button>
-                </div>
-                <div className="divide-y divide-gray-200">
-                  {messages.slice(0, 2).map((message) => (
-                    <MessageCard key={message.id} message={message} darkMode={darkMode} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'bookings' && (
-            <div className="space-y-4">
-              <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                My Bookings
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {bookings.map((booking) => (
-                  <BookingCard
-                    key={booking.id}
-                    booking={booking}
-                    darkMode={darkMode}
-                    onView={handleViewBooking}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'favorites' && (
-            <div className="space-y-4">
-              <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                Favorite Packages
-              </h2>
-              <div className={`rounded-2xl border p-8 text-center ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
-                <Heart className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  You haven't saved any packages yet
-                </p>
-                <button 
-                  onClick={() => setActiveTab('packages')}
-                  className="mt-4 px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors"
-                >
-                  Explore Packages
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'messages' && (
-            <div className="space-y-4">
-              <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                Messages
-              </h2>
-              <div className={`rounded-2xl border overflow-hidden ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
-                <div className="divide-y divide-gray-200">
-                  {messages.map((message) => (
-                    <MessageCard key={message.id} message={message} darkMode={darkMode} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'packages' && (
-            <PackageDiscovery 
-              darkMode={darkMode} 
-              onPackageSelect={handleViewPackage}
-            />
-          )}
-
-          {activeTab === 'settings' && (
-            <div className="space-y-4">
-              <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                Settings
-              </h2>
-              <div className={`rounded-2xl border p-6 ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
-                <div className="space-y-4">
-                  <div>
-                    <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Full Name
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue={`${user?.firstName || ''} ${user?.lastName || ''}`}
-                      className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                        darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-white' 
-                          : 'bg-white border-gray-200 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      defaultValue={user?.email || ''}
-                      className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                        darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-white' 
-                          : 'bg-white border-gray-200 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                  <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </main>
-
-        {/* Mobile Footer */}
+        <main className="p-4 sm:p-6 lg:p-8">{renderContent()}</main>
         <footer className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-2 px-4">
           <div className="flex items-center justify-around">
-            {menuItems.slice(0, 4).map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center p-2 ${
-                  activeTab === item.id ? 'text-emerald-600' : 'text-gray-500'
-                }`}
-              >
-                <item.icon className="h-5 w-5" />
-                <span className="text-xs mt-1">{item.label}</span>
-                {item.count > 0 && (
-                  <span className="absolute -top-1 right-0 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {item.count}
-                  </span>
-                )}
+            {menuItems.slice(0, 4).map(item => (
+              <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center p-2 relative ${activeTab === item.id ? 'text-emerald-600' : 'text-gray-500'}`}>
+                <item.icon className="h-5 w-5" /><span className="text-xs mt-1">{item.label}</span>
+                {item.count > 0 && <span className="absolute -top-1 right-0 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">{item.count}</span>}
               </button>
             ))}
           </div>
         </footer>
-
-        {/* Bottom Padding for Mobile */}
         <div className="lg:hidden h-16"></div>
       </div>
+
+      {/* ── Booking Modal ── */}
+      {bookingPkg && (
+        <BookingModal
+          pkg={bookingPkg}
+          user={user}
+          onClose={() => setBookingPkg(null)}
+          onSuccess={handleBookingSuccess}
+        />
+      )}
     </div>
   );
 };

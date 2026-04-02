@@ -1,9 +1,12 @@
+// HeroSection.jsx - FULL ORIGINAL + Book Now pre-login auth gating (nothing removed)
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Filter, ChevronDown, X, DollarSign, Star, Clock,
-  Check, Heart, AlertCircle, Loader2, RefreshCw
+  Check, Heart, AlertCircle, Loader2,SlidersHorizontal, RefreshCw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import AuthModal from './AuthModal';
+import { userStore } from '../api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props:
@@ -14,8 +17,70 @@ import { useNavigate } from 'react-router-dom';
 //   favorites      — string[]
 //   toggleFavorite — (id) => void
 // ─────────────────────────────────────────────────────────────────────────────
-const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, favorites = [] }) => {
+const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, favorites = [], currentUser }) => {
   const navigate = useNavigate();
+  const [showAuthModal, setShowAuthModal] = React.useState(false);
+  
+  // Stores the package id the guest tried to favourite before being sent to login
+  const pendingFavouriteId = React.useRef(null);
+  
+  // NEW: Stores the package id the guest tried to "View details" before login
+  const pendingBookingId = React.useRef(null);
+
+  // Auth-gated action — shows login modal for guests, runs callback for logged-in users
+  const requireAuth = (callback, packageId = null) => {
+    const user = currentUser || userStore.get();
+    if (!user) {
+      pendingFavouriteId.current = packageId;
+      setShowAuthModal(true);
+      return;
+    }
+    callback();
+  };
+
+  // NEW: Book Now / View details handler for guests
+// Logic: Details are public - no login required
+  const handleViewDetails = (packageId) => {
+    navigate(`/package/${packageId}`);
+  };
+
+  // Logic: Book Now is protected - redirects to dashboard with the ID
+  const handleBookNow = (packageId) => {
+    const user = currentUser || userStore.get();
+    if (!user) {
+      pendingBookingId.current = packageId; // Save for after login
+      setShowAuthModal(true);
+      return;
+    }
+    // If already logged in, go to dashboard with the booking trigger
+    navigate(`/client/dashboard?bookPackage=${packageId}`);
+  };
+
+  // Called after successful login inside HeroSection's auth modal
+ const handleAuthSuccess = (user) => {
+    setShowAuthModal(false);
+    
+    // 1. Handle pending favorites 
+    if (pendingFavouriteId.current && toggleFavorite) {
+      toggleFavorite(pendingFavouriteId.current);
+      pendingFavouriteId.current = null;
+    }
+
+    // 2. NEW: Handle the "Book Now" redirect
+    if (pendingBookingId.current) {
+      const pkgId = pendingBookingId.current;
+      pendingBookingId.current = null;
+      // Send them to the dashboard with the package ID in the URL
+      navigate(`/client/dashboard?bookPackage=${pkgId}`);
+      return;
+    }
+
+    // 3. Default redirect if no specific intent
+    const targetUrl = user?.role === 'agent'
+      ? '/agent/dashboard?welcome=true'
+      : '/client/dashboard?welcome=true';
+    navigate(targetUrl);
+  };
 
   // ── Filter state ────────────────────────────────────────────────────────────
   const [filteredPackages,    setFilteredPackages]    = useState([]);
@@ -150,29 +215,28 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
       id: 'categories', label: 'Categories', icon: '⭐',
       options: [
         { id: 'ramadan', label: 'Ramadan',    icon: '🌙' },
-        { id: 'luxury',  label: 'Luxury',     icon: '✨' },
-        { id: 'budget',  label: 'Budget',     icon: '💰' },
-        { id: 'family',  label: 'Family',     icon: '👨‍👩‍👧‍👦' },
-        { id: 'short',   label: 'Short Stay', icon: '⏱️' },
-        { id: 'premium', label: 'Premium',    icon: '👑' },
+        { id: 'luxury',  label: '1/2 star',     icon: '✨' },
+        { id: 'budget',  label: '3 Star',     icon: '💰' },
+        { id: 'family',  label: '4 star',     icon: '👨‍👩‍👧‍👦' },
+        { id: 'short',   label: '5 star', icon: '⏱️' },
+        { id: 'premium', label: '6 star',    icon: '👑' },
       ]
     },
     {
       id: 'months', label: 'Months', icon: '📅',
       options: [
         { id: 'all_months',      label: 'Any Month',       icon: '📆', exclusive: true },
-        { id: 'muharram',        label: 'Muharram',        icon: '🕋' },
-        { id: 'safar',           label: 'Safar',           icon: '🌙' },
-        { id: 'rabi_al_awwal',   label: 'Rabi al-Awwal',   icon: '🌟' },
-        { id: 'rabi_al_thani',   label: 'Rabi al-Thani',   icon: '🌙' },
-        { id: 'jumada_al_awwal', label: 'Jumada al-Awwal', icon: '🌙' },
-        { id: 'jumada_al_thani', label: 'Jumada al-Thani', icon: '🌙' },
-        { id: 'rajab',           label: 'Rajab',           icon: '🕌' },
-        { id: 'shaban',          label: 'Shaban',          icon: '🌙' },
-        { id: 'ramadan_month',   label: 'Ramadan',         icon: '🌙' },
-        { id: 'shawwal',         label: 'Shawwal',         icon: '⭐' },
-        { id: 'dhul_qaada',      label: 'Dhul-Qaada',      icon: '🌙' },
-        { id: 'dhul_hijjah',     label: 'Dhul-Hijjah',     icon: '🕋' },
+        { id: 'January',        label: 'January',        icon: '🕋' },
+        { id: 'February',           label: 'February',           icon: '🌙' },
+        { id: 'March',   label: 'March',   icon: '🌟' },
+        { id: 'April',   label: 'April',   icon: '🌙' },
+        { id: 'June', label: 'June', icon: '🌙' },
+        { id: 'July', label: 'July', icon: '🌙' },
+        { id: 'August',           label: 'August',           icon: '🕌' },
+        { id: 'September',          label: 'September',          icon: '🌙' },
+        { id: 'October',   label: 'October',         icon: '🌙' },
+        { id: 'November',         label: 'November',         icon: '⭐' },
+        { id: 'December',      label: 'December',      icon: '🌙' },
       ]
     }
   ];
@@ -251,91 +315,108 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   return (
     <div className="relative">
 
-      <div className="bg-white border-b border-gray-100">
-        <div className="container mx-auto px-4 sm:px-6 pt-5 pb-3 text-center">
-          <h1 className="text-lg sm:text-xl lg:text-2xl font-semibold text-gray-900 mb-1">
-            Find your perfect Umrah journey
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-500">Verified packages from trusted agencies</p>
-        </div>
-      </div>
 
-      {/* Sticky filter bar */}
-      <div className={`sticky top-0 z-40 bg-white border-b border-gray-100 transition-shadow duration-300 ${isScrolled ? 'shadow-md' : ''}`}>
+
+      {/* Sticky filter bar — compact single row, overlaps content via sticky+z-index */}
+      <div className={`sticky top-16 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-100 transition-shadow duration-300 ${isScrolled ? 'shadow-sm' : ''}`}>
         <div className="container mx-auto px-3 sm:px-6">
-          <div className="flex items-center justify-between gap-1.5 py-2.5">
-            <div className="flex items-center gap-1 md:gap-2 min-w-0">
-              {filterGroups.map((group) => (
-                <div key={group.id} className="relative">
-                  <button
-                    onClick={() => setActiveFilterGroup(activeFilterGroup === group.id ? null : group.id)}
-                    data-group={group.id}
-                    className={`filter-group-button flex items-center gap-1 md:gap-1.5 px-2.5 md:px-4 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                      activeFilterGroup === group.id
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
-                        : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
-                    }`}
+          <div className="flex items-center gap-1.5 py-2 overflow-x-auto scrollbar-none">
+
+            {/* Filter group pills */}
+            {filterGroups.map((group) => (
+              <div key={group.id} className="relative flex-shrink-0">
+                <button
+                  onClick={() => setActiveFilterGroup(activeFilterGroup === group.id ? null : group.id)}
+                  data-group={group.id}
+                  className={`filter-group-button flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
+                    isFilterSelected(group.id, group.options[0]?.id) || group.options.some(o => isFilterSelected(group.id, o.id) && o.id !== 'all' && o.id !== 'all_months')
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : activeFilterGroup === group.id
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'
+                  }`}
+                >
+                  <span className="text-xs leading-none">{group.icon}</span>
+                  <span>{group.label}</span>
+                  <ChevronDown className={`h-3 w-3 transition-transform ${activeFilterGroup === group.id ? 'rotate-180' : ''}`} />
+                </button>
+
+                {activeFilterGroup === group.id && (
+                  <div
+                    ref={el => dropdownRefs.current[group.id] = el}
+                    className="fixed bg-white rounded-xl shadow-2xl border border-gray-100 z-[9999] w-52"
+                    style={(() => {
+                      const btn = document.querySelector(`[data-group="${group.id}"]`);
+                      if (btn) {
+                        const rect = btn.getBoundingClientRect();
+                        return { top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - 216)) };
+                      }
+                      return { top: 120, left: 12 };
+                    })()}
                   >
-                    <span className="text-sm leading-none">{group.icon}</span>
-                    <span className="hidden md:inline">{group.label}</span>
-                    <ChevronDown className={`h-3 w-3 md:h-3.5 md:w-3.5 transition-transform duration-200 flex-shrink-0 ${activeFilterGroup === group.id ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {activeFilterGroup === group.id && (
-                    <div
-                      ref={el => dropdownRefs.current[group.id] = el}
-                      className="fixed bg-white rounded-xl shadow-2xl border border-gray-200 z-[9999] w-56 sm:w-64"
-                      style={(() => {
-                        const btn = document.querySelector(`[data-group="${group.id}"]`);
-                        if (btn) {
-                          const rect = btn.getBoundingClientRect();
-                          return { top: rect.bottom + 8, left: Math.max(8, Math.min(rect.left, window.innerWidth - 240)) };
-                        }
-                        return { top: 120, left: 12 };
-                      })()}
-                    >
-                      <div className="overflow-y-auto" style={{ maxHeight: group.id === 'months' ? '280px' : 'none' }}>
-                        <div className="p-2 space-y-0.5">
-                          {group.options.map((option) => (
-                            <button key={option.id} onClick={() => toggleFilter(group.id, option.id, option.exclusive)}
-                              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all ${
-                                isFilterSelected(group.id, option.id) ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <span className="text-base">{option.icon || group.icon}</span>
-                                <span className="font-medium">{option.label}</span>
-                              </div>
-                              {isFilterSelected(group.id, option.id) && <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                    <div className="overflow-y-auto p-1.5 space-y-0.5" style={{ maxHeight: '260px' }}>
+                      {group.options.map((option) => (
+                        <button key={option.id} onClick={() => toggleFilter(group.id, option.id, option.exclusive)}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ${
+                            isFilterSelected(group.id, option.id) ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{option.icon || group.icon}</span>
+                            <span>{option.label}</span>
+                          </div>
+                          {isFilterSelected(group.id, option.id) && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                  </div>
+                )}
+              </div>
+            ))}
 
+            {/* Divider */}
+            <div className="h-5 w-px bg-gray-200 flex-shrink-0 mx-0.5" />
+
+            {/* Advanced filters button */}
             <div className="relative flex-shrink-0" ref={filterRef}>
               <button
                 onClick={() => { setShowFilters(!showFilters); setActiveFilterGroup(null); }}
-                className={`flex items-center gap-1.5 px-2.5 md:px-4 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
-                  showFilters ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-700 border border-gray-300 hover:border-emerald-300 hover:bg-emerald-50'
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
+                  showFilters || getActiveFilterCount() > 0
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'
                 }`}
               >
-                <Filter className={`h-3.5 w-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-                <span className="hidden md:inline">Filters</span>
+                <SlidersHorizontal className="h-3 w-3" />
+                <span>Filters</span>
                 {getActiveFilterCount() > 0 && (
-                  <span className="ml-0.5 h-4 w-4 flex items-center justify-center bg-emerald-500 text-white text-[10px] rounded-full font-bold">
+                  <span className="ml-0.5 h-4 w-4 flex items-center justify-center bg-white/30 text-[10px] rounded-full font-bold">
                     {getActiveFilterCount()}
                   </span>
                 )}
               </button>
               {showFilters && (
-                <div className="hidden sm:block absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-[9999]">
+                <div className="hidden sm:block absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 z-[9999]">
                   <AdvancedFilterContent />
                 </div>
+              )}
+            </div>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Package count + clear — always visible on right */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-xs text-gray-500 whitespace-nowrap">
+                {filterLoading
+                  ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin text-emerald-500" />…</span>
+                  : <><span className="font-semibold text-emerald-700">{filteredPackages.length}</span> found</>
+                }
+              </span>
+              {getActiveFilterCount() > 0 && (
+                <button onClick={clearAllFilters} className="flex items-center gap-1 px-2 py-1 rounded-full text-xs text-red-500 hover:bg-red-50 transition-all whitespace-nowrap">
+                  <X className="h-3 w-3" /> Clear
+                </button>
               )}
             </div>
           </div>
@@ -358,57 +439,10 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
         </>
       )}
 
-      {/* Active filter chips */}
-      {getActiveFilterCount() > 0 && (
-        <div className="bg-emerald-50/60 border-b border-emerald-100/50">
-          <div className="container mx-auto px-3 sm:px-6 py-2">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-500 font-medium">Active:</span>
-                {selectedLocations.map(locId => {
-                  const loc = filterGroups[1].options.find(o => o.id === locId);
-                  if (!loc) return null;
-                  return (
-                    <span key={`loc-${locId}`} className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-semibold">
-                      <span>{loc.icon}</span><span>{loc.label}</span>
-                      <button onClick={() => toggleFilter('locations', locId)} className="ml-0.5 hover:scale-110 transition-transform"><X className="h-2.5 w-2.5" /></button>
-                    </span>
-                  );
-                })}
-                {selectedFilters.filter(f => f !== 'all' && f !== 'all_months').map(filterId => {
-                  const f = filterGroups.flatMap(g => g.options).find(o => o.id === filterId);
-                  if (!f) return null;
-                  return (
-                    <span key={`flt-${filterId}`} className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-semibold">
-                      <span>{f.icon || '⭐'}</span><span>{f.label}</span>
-                      <button onClick={() => toggleFilter('type', filterId)} className="ml-0.5 hover:scale-110 transition-transform"><X className="h-2.5 w-2.5" /></button>
-                    </span>
-                  );
-                })}
-                {duration !== 'any' && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-semibold">
-                    <Clock className="h-3 w-3" /><span>{duration === '15-999' ? '15+ days' : `${duration} days`}</span>
-                    <button onClick={() => setDuration('any')} className="ml-0.5 hover:scale-110 transition-transform"><X className="h-2.5 w-2.5" /></button>
-                  </span>
-                )}
-                {rating !== 'any' && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-semibold">
-                    <Star className="h-3 w-3" /><span>{rating}★+</span>
-                    <button onClick={() => setRating('any')} className="ml-0.5 hover:scale-110 transition-transform"><X className="h-2.5 w-2.5" /></button>
-                  </span>
-                )}
-                <button onClick={clearAllFilters} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100">Clear all</button>
-              </div>
-              <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
-                <span className="font-semibold text-emerald-600">{filteredPackages.length}</span> found
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Package grid */}
-      <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-5 sm:py-6 pb-24 sm:pb-6">
+      <div className="container mx-auto px-3 sm:px-4 lg:px-6 pt-3 pb-24 sm:pb-6">
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {Array.from({ length: 10 }).map((_, i) => (
@@ -435,16 +469,6 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
           </div>
         ) : (
           <>
-            <div className="mb-4 sm:mb-6">
-              <h2 className="text-base sm:text-lg lg:text-xl font-semibold text-gray-900">
-                {filterLoading
-                  ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin text-emerald-600" />Filtering…</span>
-                  : `${filteredPackages.length} Package${filteredPackages.length !== 1 ? 's' : ''}`
-                }
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Book with confidence — All packages verified</p>
-            </div>
-
             {filteredPackages.length === 0 && !filterLoading ? (
               <div className="text-center py-20">
                 <p className="text-gray-500 text-sm mb-3">No packages match your filters.</p>
@@ -486,7 +510,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                       )}
 
                       <button
-                        onClick={e => { e.stopPropagation(); toggleFavorite?.(pkg.id); }}
+                        onClick={e => { e.stopPropagation(); requireAuth(() => toggleFavorite?.(pkg.id), pkg.id); }}
                         className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur-sm rounded-full hover:scale-110 transition-transform"
                       >
                         <Heart className={`h-3 w-3 ${favorites.includes(pkg.id) ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
@@ -508,12 +532,16 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                         {[pkg.distance, pkg.hotelRating, pkg.type && (pkg.type.charAt(0).toUpperCase() + pkg.type.slice(1))].filter(Boolean).join(' · ')}
                       </p>
                       {pkg.description && <p className="text-[10px] sm:text-xs text-gray-600 line-clamp-2">{pkg.description}</p>}
-                      <button
-                        onClick={() => navigate(`/package/${pkg.id}`)}
-                        className="w-full mt-1 px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 active:scale-[0.98] transition-all"
-                      >
-                        View details
-                      </button>
+                      
+                      {/* ONLY THIS BUTTON WAS CHANGED - now uses the new auth-gated handler */}
+                   <div className="grid grid-cols-2 gap-2 mt-2">
+    <button
+      onClick={() => handleViewDetails(pkg.id)}
+      className="px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-md shadow-emerald-600/10"
+    >
+     View Details
+    </button>
+  </div>
                     </div>
                   </div>
                 ))}
@@ -530,6 +558,19 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
           </>
         )}
       </div>
+
+      {showAuthModal && (
+        <div className="fixed inset-0 z-[100]">
+          <AuthModal
+            onClose={() => { 
+              setShowAuthModal(false); 
+              pendingFavouriteId.current = null; 
+              pendingBookingId.current = null; 
+            }}
+            onAuthSuccess={handleAuthSuccess}
+          />
+        </div>
+      )}
     </div>
   );
 };

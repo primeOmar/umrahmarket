@@ -1,27 +1,227 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
-  ChevronLeft, Heart, Share2, Star, Shield, CheckCircle,
+  ChevronLeft, ChevronRight, Heart, Share2, Star, Shield, CheckCircle,
   MapPin, Calendar, Users, Hotel, Clock, DollarSign,
   Wifi, Coffee, Car, Dumbbell, Utensils, Tv, Wind,
   Droplets, Bed, Bath, Users as UsersIcon, Maximize2,
   Minus, Plus, Phone, Mail, CreditCard,
   Lock, User, Globe, Info, X, Loader2, AlertCircle
 } from 'lucide-react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { userStore, tokenStore } from '../api';
+import AuthModal from './AuthModal';
+import BookingModal from './BookingModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Props:
-//   packages       — normalised array from App.jsx (no fetch needed here)
-//   loading        — boolean (still loading from App)
-//   favorites      — string[]
-//   toggleFavorite — (id) => void
+// GalleryCarousel
 // ─────────────────────────────────────────────────────────────────────────────
-const PackageDetailPage = ({ packages = [], loading = false, favorites = [], toggleFavorite }) => {
-  const { id } = useParams();           // UUID string — never parseInt
-  const navigate = useNavigate();
+const GalleryCarousel = ({ images, title }) => {
+  const [current,  setCurrent]  = useState(0);
+  const [lightbox, setLightbox] = useState(false);
+  const autoRef    = useRef(null);
+  const thumbsRef  = useRef(null);
+  const total      = images.length;
+
+  // go() uses functional setCurrent so it never needs `current` in deps
+  // — this prevents the interval from re-creating every slide change
+  const go = useCallback((idx) => {
+    setCurrent(c => {
+      const next = ((typeof idx === 'function' ? idx(c) : idx) + total) % total;
+      return next;
+    });
+  }, [total]);
+
+  const prev = useCallback(() => go(c => c - 1), [go]);
+  const next = useCallback(() => go(c => c + 1), [go]);
+
+  // Auto-advance — stable interval, never recreated
+  const startAuto = useCallback(() => {
+    clearInterval(autoRef.current);
+    autoRef.current = setInterval(() => go(c => c + 1), 4000);
+  }, [go]);
+  const stopAuto = useCallback(() => clearInterval(autoRef.current), []);
+
+  useEffect(() => { startAuto(); return stopAuto; }, [startAuto, stopAuto]);
+
+  // Keyboard navigation in lightbox
+  useEffect(() => {
+    if (!lightbox) return;
+    const handler = (e) => {
+      if (e.key === 'ArrowLeft')  prev();
+      if (e.key === 'ArrowRight') next();
+      if (e.key === 'Escape')     setLightbox(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightbox, prev, next]);
+
+  // Scroll ONLY the thumbnail container — never the page
+  useEffect(() => {
+    const strip = thumbsRef.current;
+    if (!strip) return;
+    const active = strip.querySelector('[data-active="true"]');
+    if (!active) return;
+    const stripLeft   = strip.getBoundingClientRect().left;
+    const activeLeft  = active.getBoundingClientRect().left;
+    const activeRight = active.getBoundingClientRect().right;
+    const stripRight  = strip.getBoundingClientRect().right;
+    if (activeLeft < stripLeft + 8) {
+      strip.scrollBy({ left: activeLeft - stripLeft - 8, behavior: 'smooth' });
+    } else if (activeRight > stripRight - 8) {
+      strip.scrollBy({ left: activeRight - stripRight + 8, behavior: 'smooth' });
+    }
+  }, [current]);
+
+  if (total === 0) return null;
+
+  return (
+    <>
+      <div className="mb-8" onMouseEnter={stopAuto} onMouseLeave={startAuto}>
+
+        {/* ── Main slide — explicit fixed heights, never reflows ── */}
+        <div className="relative w-full rounded-2xl overflow-hidden bg-gray-100 h-52 sm:h-72 md:h-96 lg:h-[420px]">
+
+          {images.map((src, i) => (
+            <img
+              key={i}
+              src={src}
+              alt={`${title} – photo ${i + 1}`}
+              className="absolute inset-0 w-full h-full object-contain transition-opacity duration-500"
+              style={{ opacity: i === current ? 1 : 0, zIndex: i === current ? 1 : 0 }}
+            />
+          ))}
+
+          {/* Subtle bottom gradient */}
+          <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none h-16"
+               style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.3), transparent)' }} />
+
+          {/* Prev / Next */}
+          {total > 1 && (
+            <>
+              <button onClick={prev}
+                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-10 h-10 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all duration-200 hover:scale-110">
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button onClick={next}
+                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-10 h-10 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all duration-200 hover:scale-110">
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
+
+          {/* Counter + expand */}
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            {total > 1 && (
+              <span className="bg-black/50 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1 rounded-full">
+                {current + 1} / {total}
+              </span>
+            )}
+            <button onClick={() => setLightbox(true)}
+              className="bg-black/50 backdrop-blur-sm text-white p-1.5 rounded-lg hover:bg-black/70 transition">
+              <Maximize2 className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Dot indicators (mobile) */}
+          {total > 1 && (
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex gap-1.5 sm:hidden">
+              {images.map((_, i) => (
+                <button key={i} onClick={() => go(i)}
+                  className={`rounded-full transition-all duration-300 ${i === current ? 'bg-white w-5 h-1.5' : 'bg-white/50 w-1.5 h-1.5'}`} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Thumbnail strip ── */}
+        {total > 1 && (
+          <div ref={thumbsRef}
+            className="mt-2 flex gap-2 overflow-x-auto pb-1"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {images.map((src, i) => (
+              <button
+                key={i}
+                data-active={i === current ? 'true' : 'false'}
+                onClick={() => go(i)}
+                className={`flex-shrink-0 rounded-xl overflow-hidden transition-all duration-200 ${
+                  i === current
+                    ? 'ring-2 ring-emerald-500 ring-offset-1 opacity-100 scale-105'
+                    : 'opacity-60 hover:opacity-90'
+                }`}
+                style={{ width: '80px', height: '56px' }}>
+                <img src={src} alt={`Thumb ${i + 1}`} className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Lightbox ── */}
+      {lightbox && (
+        <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center p-4"
+             onClick={() => setLightbox(false)}>
+          <button onClick={() => setLightbox(false)}
+            className="absolute top-4 right-4 text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition">
+            <X className="h-5 w-5" />
+          </button>
+
+          <div className="relative w-full max-w-4xl" onClick={e => e.stopPropagation()}>
+            <img src={images[current]} alt={`${title} – photo ${current + 1}`}
+              className="w-full max-h-[75vh] object-contain rounded-xl" />
+
+            {total > 1 && (
+              <>
+                <button onClick={prev}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center transition">
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button onClick={next}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center transition">
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </>
+            )}
+          </div>
+
+          <p className="text-white/60 text-sm mt-4">{current + 1} / {total} · Press ← → to navigate · Esc to close</p>
+
+          {total > 1 && (
+            <div className="flex gap-2 mt-3 overflow-x-auto max-w-lg" onClick={e => e.stopPropagation()}>
+              {images.map((src, i) => (
+                <button key={i} onClick={() => go(i)}
+                  className={`flex-shrink-0 rounded-lg overflow-hidden transition-all ${i === current ? 'ring-2 ring-emerald-400 opacity-100' : 'opacity-40 hover:opacity-70'}`}
+                  style={{ width: '60px', height: '42px' }}>
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+const PackageDetailPage = ({ packages = [], loading = false, favorites = [], toggleFavorite, currentUser, onBook }) => {
+  const { id }    = useParams();
+  const navigate  = useNavigate();
+  const location  = useLocation();
+
+  const handleBack = () => {
+    const user = currentUser || userStore.get();
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate(user?.role === 'client' ? '/client/dashboard' : user?.role === 'agent' ? '/agent/dashboard' : '/');
+    }
+  };
 
   // Find the package from the already-loaded list
   const packageData = useMemo(() => packages.find(p => p.id === id) ?? null, [packages, id]);
+
+  // Scroll to top whenever the viewed package changes
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [id]);
 
   // Similar packages — same type or location, excluding current
   const similarPkgs = useMemo(
@@ -29,21 +229,66 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
     [packages, id, packageData]
   );
 
+  // ── Normalise images — guard against missing/undefined images array ─────────
+  const safeImages = useMemo(() => {
+    if (!packageData) return [];
+    const imgs = packageData.images;
+    if (Array.isArray(imgs) && imgs.length > 0) return imgs;
+    if (packageData.image) return [packageData.image];
+    return ['https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80'];
+  }, [packageData]);
+
   // ── UI state ────────────────────────────────────────────────────────────────
-  const [activeImage,      setActiveImage]      = useState(0);
   const [showAllAmenities, setShowAllAmenities] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
-  const [bookingStep,      setBookingStep]      = useState(1);
-  const [paymentMethod,    setPaymentMethod]    = useState('card');
+  const [bookingPkg,      setBookingPkg]      = useState(null);
+  const [showAuthModal,    setShowAuthModal]    = useState(false);
+  const [payStep,          setPayStep]          = useState('select');   // 'select' | 'card' | 'mpesa' | 'mpesa-pin' | 'bank' | 'processing' | 'done'
+  const [payMethod,        setPayMethod]        = useState(null);
+  const [cardInfo,         setCardInfo]         = useState({ number: '', expiry: '', cvc: '', name: '' });
+  const [mpesaPhone,       setMpesaPhone]       = useState('');
+  const [mpesaPin,         setMpesaPin]         = useState(['', '', '', '']);
   const [guests,           setGuests]           = useState({ adults: 2, children: 0 });
-  const [userInfo,         setUserInfo]         = useState({
-    name: '', email: '', phone: '', passport: '', nationality: '', specialRequests: ''
-  });
+
+  const pinRefs = [useRef(), useRef(), useRef(), useRef()];
+
+  const closeModal = () => { setShowBookingModal(false); setPayStep('select'); setPayMethod(null); setCardInfo({ number: '', expiry: '', cvc: '', name: '' }); setMpesaPhone(''); setMpesaPin(['', '', '', '']); };
+
+  // When onBook prop is provided (from ClientDashboard), delegate upward.
+  // When used standalone (direct URL), open the local BookingModal.
+  const openBooking = (pkg) => {
+    if (onBook) {
+      onBook(pkg);
+    } else {
+      setBookingPkg(pkg);
+    }
+  };
+  const formatPrice  = (p) => Number(p).toLocaleString('en-US');
+  const calculateTotal = () => !packageData ? 0 : guests.adults * packageData.price + guests.children * packageData.price * 0.5;
+
+  // Format card number with spaces
+  const fmtCard = (v) => v.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim();
+  // Format expiry MM/YY
+  const fmtExpiry = (v) => { const d = v.replace(/\D/g, '').slice(0, 4); return d.length > 2 ? `${d.slice(0,2)}/${d.slice(2)}` : d; };
+
+  // M-Pesa PIN input handler
+  const handlePinInput = (i, val) => {
+    if (!/^\d?$/.test(val)) return;
+    const next = [...mpesaPin]; next[i] = val;
+    setMpesaPin(next);
+    if (val && i < 3) pinRefs[i + 1].current?.focus();
+  };
+  const handlePinKey = (i, e) => {
+    if (e.key === 'Backspace' && !mpesaPin[i] && i > 0) pinRefs[i - 1].current?.focus();
+  };
+
+  const simulatePayment = () => {
+    setPayMethod(payStep === 'mpesa-pin' ? 'mpesa' : payStep);
+    setPayStep('processing');
+    setTimeout(() => setPayStep('done'), 3000);
+  };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
-  const formatPrice = (p) => Number(p).toLocaleString('en-US');
-  const calculateTotal = () => !packageData ? 0 : guests.adults * packageData.price + guests.children * packageData.price * 0.5;
-  const handlePayment = () => setTimeout(() => setBookingStep(3), 1500);
 
   // ── Static display data ──────────────────────────────────────────────────────
   const amenities = [
@@ -96,7 +341,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
         <div className="bg-white border border-red-200 rounded-2xl p-10 max-w-sm w-full text-center">
           <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-3" />
           <p className="text-sm font-medium text-red-700 mb-4">Package not found</p>
-          <button onClick={() => navigate('/')} className="text-sm text-emerald-600 hover:underline">
+          <button onClick={handleBack} className="text-sm text-emerald-600 hover:underline">
             ← Back to packages
           </button>
         </div>
@@ -111,7 +356,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
       {/* Nav */}
       <header className="sticky top-0 z-50 bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <button onClick={() => navigate('/')} className="flex items-center text-gray-600 hover:text-gray-900 transition-colors">
+          <button onClick={handleBack} className="flex items-center text-gray-600 hover:text-gray-900 transition-colors">
             <ChevronLeft className="h-5 w-5 mr-1" />
             <span className="hidden sm:inline">Back to packages</span>
           </button>
@@ -122,7 +367,16 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             <button onClick={() => toggleFavorite?.(packageData.id)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
               <Heart className={`h-5 w-5 ${favorites.includes(packageData.id) ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
             </button>
-            <button onClick={() => setShowBookingModal(true)} className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+            <button
+              onClick={() => {
+                const isLoggedIn = !!(currentUser || userStore.get() || tokenStore.get());
+                if (!isLoggedIn) {
+                  setShowAuthModal(true);
+                } else {
+                  openBooking(packageData);
+                }
+              }}
+              className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors">
               Book Now
             </button>
           </div>
@@ -154,27 +408,8 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
           </div>
         </div>
 
-        {/* Gallery */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-2 mb-8">
-          <div className="lg:col-span-2 lg:row-span-2">
-            <div className="relative h-64 lg:h-full rounded-2xl overflow-hidden">
-              <img src={packageData.images[activeImage] || packageData.image} alt="Main" className="w-full h-full object-cover" />
-              <button className="absolute top-4 right-4 p-2 bg-white/90 backdrop-blur-sm rounded-lg hover:scale-110 transition-transform">
-                <Maximize2 className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-          {packageData.images.slice(1, 5).map((img, i) => (
-            <div key={i} className="relative h-32 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setActiveImage(i + 1)}>
-              <img src={img} alt={`Gallery ${i + 2}`} className="w-full h-full object-cover" />
-              {i === 3 && packageData.images.length > 5 && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <span className="text-white font-medium">+{packageData.images.length - 5} more</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        {/* ── Gallery Carousel ── */}
+        <GalleryCarousel images={safeImages} title={packageData.title} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
@@ -208,9 +443,9 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             {/* Highlights */}
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 mb-8">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Package Highlights</h2>
-              {packageData.highlights.length > 0 ? (
+              {(packageData.highlights ?? []).length > 0 ? (
                 <ul className="space-y-2">
-                  {packageData.highlights.map((h, i) => (
+                  {(packageData.highlights ?? []).map((h, i) => (
                     <li key={i} className="flex items-start gap-3">
                       <CheckCircle className="h-5 w-5 text-emerald-600 mt-0.5 flex-shrink-0" />
                       <span className="text-gray-700">{h}</span>
@@ -235,11 +470,11 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
               <p className="text-gray-700 mb-4">
                 {packageData.description || 'Experience the spiritual journey of a lifetime with this premium Umrah package. Designed for comfort and convenience, everything you need for a blessed pilgrimage.'}
               </p>
-              {packageData.includes.length > 0 && (
+              {(packageData.includes ?? []).length > 0 && (
                 <div className="mb-4">
                   <h3 className="font-semibold text-gray-900 mb-2">What's included</h3>
                   <ul className="space-y-1.5">
-                    {packageData.includes.map((item, i) => (
+                    {(packageData.includes ?? []).map((item, i) => (
                       <li key={i} className="flex items-center gap-2 text-sm text-gray-700">
                         <CheckCircle className="h-4 w-4 text-emerald-600 flex-shrink-0" />{item}
                       </li>
@@ -247,11 +482,11 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                   </ul>
                 </div>
               )}
-              {packageData.excludes.length > 0 && (
+              {(packageData.excludes ?? []).length > 0 && (
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-2">Not included</h3>
                   <ul className="space-y-1.5">
-                    {packageData.excludes.map((item, i) => (
+                    {(packageData.excludes ?? []).map((item, i) => (
                       <li key={i} className="flex items-center gap-2 text-sm text-gray-500">
                         <X className="h-4 w-4 text-red-400 flex-shrink-0" />{item}
                       </li>
@@ -445,7 +680,15 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                   </div>
                 </div>
 
-                <button onClick={() => setShowBookingModal(true)}
+                <button
+                  onClick={() => {
+                    const isLoggedIn = !!(currentUser || userStore.get() || tokenStore.get());
+                    if (!isLoggedIn) {
+                      setShowAuthModal(true);
+                    } else {
+                      openBooking(packageData);
+                    }
+                  }}
                   className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold rounded-xl hover:shadow-xl hover:scale-[1.02] transform transition-all duration-300">
                   Book Now · ${formatPrice(calculateTotal())}
                 </button>
@@ -513,104 +756,388 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
         )}
       </main>
 
-      {/* Booking modal */}
+      {/* ── Payment Modal ── */}
       {showBookingModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-900">
-                  {bookingStep === 1 ? 'Complete your booking' : bookingStep === 2 ? 'Payment details' : 'Booking confirmed!'}
-                </h2>
-                <button onClick={() => { setShowBookingModal(false); setBookingStep(1); }} className="p-2 hover:bg-gray-100 rounded-full"><X className="h-5 w-5" /></button>
-              </div>
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4"
+             style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl"
+               style={{ maxHeight: '95vh', overflowY: 'auto' }}>
 
-              {/* Progress */}
-              <div className="flex items-center justify-between mb-8">
-                {[['1','Details'],['2','Payment'],['3','Confirm']].map(([num, label], i) => (
-                  <React.Fragment key={num}>
-                    <div className="flex items-center">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bookingStep >= Number(num) ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-500'}`}>{num}</div>
-                      <span className="ml-2 text-sm font-medium">{label}</span>
-                    </div>
-                    {i < 2 && <div className="flex-1 h-1 mx-4 bg-gray-200"><div className={`h-full ${bookingStep > Number(num) ? 'bg-emerald-600' : ''}`} /></div>}
-                  </React.Fragment>
-                ))}
-              </div>
-
-              {bookingStep === 1 && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[['name','Full Name *','text','Your full name'],['email','Email *','email','your@email.com'],['phone','Phone *','tel','+1234567890'],['passport','Passport Number *','text','Passport number'],['nationality','Nationality *','text','Your nationality']].map(([field,label,type,placeholder]) => (
-                      <div key={field}>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-                        <input type={type} value={userInfo[field]} placeholder={placeholder}
-                          onChange={e => setUserInfo(prev => ({ ...prev, [field]: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" />
-                      </div>
-                    ))}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Special Requests</label>
-                    <textarea value={userInfo.specialRequests} rows={3} placeholder="Any special requirements…"
-                      onChange={e => setUserInfo(prev => ({ ...prev, specialRequests: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" />
-                  </div>
-                  <button onClick={() => setBookingStep(2)} className="w-full py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
-                    Continue to payment
-                  </button>
-                </div>
-              )}
-
-              {bookingStep === 2 && (
-                <div className="space-y-6">
-                  <div className="space-y-3">
-                    {[['card', <CreditCard className="h-5 w-5" key="c" />, 'Credit/Debit Card', 'Pay securely with your card'],
-                      ['bank', <Globe className="h-5 w-5" key="b" />,    'Bank Transfer',     'Direct bank transfer']].map(([method, icon, label, sub]) => (
-                      <button key={method} onClick={() => setPaymentMethod(method)}
-                        className={`w-full p-4 border rounded-lg flex items-center justify-between ${paymentMethod === method ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300'}`}>
-                        <div className="flex items-center gap-3">{icon}<div><div className="font-medium text-gray-900">{label}</div><div className="text-sm text-gray-500">{sub}</div></div></div>
-                        {paymentMethod === method && <CheckCircle className="h-5 w-5 text-emerald-600" />}
-                      </button>
-                    ))}
-                  </div>
-                  {paymentMethod === 'card' && (
-                    <div className="border border-gray-300 rounded-lg p-4 space-y-4">
-                      <input type="text" placeholder="Card number" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                      <div className="grid grid-cols-2 gap-4">
-                        <input type="text" placeholder="MM/YY" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                        <input type="text" placeholder="CVC" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                      </div>
-                    </div>
+            {/* ── Header ── */}
+            <div className="sticky top-0 bg-white z-10 px-6 pt-5 pb-4 border-b border-gray-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {payStep !== 'select' && payStep !== 'done' && payStep !== 'processing' && (
+                    <button onClick={() => setPayStep('select')}
+                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition">
+                      <ChevronLeft className="h-4 w-4 text-gray-600" />
+                    </button>
                   )}
-                  <div className="bg-gray-50 p-4 rounded-lg flex justify-between font-semibold text-lg">
-                    <span>Total</span><span>${formatPrice(calculateTotal())}</span>
+                  <div>
+                    <h2 className="font-bold text-gray-900 text-lg leading-tight">
+                      {payStep === 'select'      && 'Choose payment'}
+                      {payStep === 'card'        && 'Card details'}
+                      {payStep === 'mpesa'       && 'M-Pesa payment'}
+                      {payStep === 'mpesa-pin'   && 'Enter M-Pesa PIN'}
+                      {payStep === 'bank'        && 'Bank transfer'}
+                      {payStep === 'processing'  && 'Processing…'}
+                      {payStep === 'done'        && 'Payment confirmed!'}
+                    </h2>
+                    {payStep !== 'done' && payStep !== 'processing' && (
+                      <p className="text-xs text-gray-500 mt-0.5">Total: <span className="font-semibold text-emerald-600">${formatPrice(calculateTotal())}</span></p>
+                    )}
                   </div>
-                  <button onClick={handlePayment} className="w-full py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
-                    <Lock className="h-4 w-4" />Pay securely
-                  </button>
                 </div>
-              )}
+                <button onClick={closeModal}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition">
+                  <X className="h-4 w-4 text-gray-600" />
+                </button>
+              </div>
 
-              {bookingStep === 3 && (
-                <div className="text-center py-8">
-                  <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <CheckCircle className="h-10 w-10 text-emerald-600" />
-                  </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Booking confirmed!</h3>
-                  <p className="text-gray-600 mb-6">You'll receive a confirmation email with all details.</p>
-                  <div className="bg-gray-50 p-4 rounded-lg mb-6">
-                    <div className="text-sm text-gray-500 mb-1">Booking reference</div>
-                    <div className="font-mono font-bold text-lg text-gray-900">UMRAH-{id.slice(0, 8).toUpperCase()}</div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button onClick={() => { setShowBookingModal(false); setBookingStep(1); }} className="flex-1 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50">Close</button>
-                    <button onClick={() => navigate('/')} className="flex-1 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700">Explore more packages</button>
-                  </div>
+              {/* Security badge */}
+              {payStep !== 'done' && payStep !== 'processing' && (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-gray-500">
+                  <Lock className="h-3 w-3 text-emerald-600" />
+                  <span>256-bit SSL encrypted · PCI DSS compliant</span>
                 </div>
               )}
             </div>
+
+            <div className="px-6 py-5">
+
+              {/* ── Order summary pill ── */}
+              {payStep !== 'done' && payStep !== 'processing' && (
+                <div className="mb-5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 p-4 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0">
+                    <img src={safeImages[0]} alt={packageData?.title} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 text-sm truncate">{packageData?.title}</div>
+                    <div className="text-xs text-gray-500">{guests.adults} adult{guests.adults !== 1 ? 's' : ''}{guests.children > 0 ? ` · ${guests.children} child${guests.children !== 1 ? 'ren' : ''}` : ''}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="font-bold text-gray-900">${formatPrice(calculateTotal())}</div>
+                    <div className="text-xs text-gray-500">incl. tax</div>
+                  </div>
+                </div>
+              )}
+
+              {/* ══ STEP: SELECT METHOD ══ */}
+              {payStep === 'select' && (
+                <div className="space-y-3">
+                  {/* Card */}
+                  <button onClick={() => setPayStep('card')}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition-all duration-200 group text-left">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-200 group-hover:scale-105 transition-transform">
+                      <CreditCard className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-gray-900">Credit / Debit Card</div>
+                      <div className="text-xs text-gray-500 mt-0.5">Visa, Mastercard, Amex — instant</div>
+                    </div>
+                    <div className="flex gap-1">
+                      {['#1A1F71','#EB001B','#F79E1B'].map((c,i) => (
+                        <div key={i} className="w-7 h-5 rounded" style={{ background: i === 2 ? 'linear-gradient(135deg,#EB001B,#F79E1B)' : c, opacity: 0.85 }} />
+                      ))}
+                    </div>
+                  </button>
+
+                  {/* M-Pesa */}
+                  <button onClick={() => setPayStep('mpesa')}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-green-400 hover:bg-green-50/40 transition-all duration-200 group text-left">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center flex-shrink-0 shadow-lg shadow-green-200 group-hover:scale-105 transition-transform">
+                      <span className="text-white font-black text-xs leading-none text-center">M<br/>PESA</span>
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-gray-900">M-Pesa</div>
+                      <div className="text-xs text-gray-500 mt-0.5">STK push to your phone — instant</div>
+                    </div>
+                    <div className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">Popular</div>
+                  </button>
+
+                  {/* Bank */}
+                  <button onClick={() => setPayStep('bank')}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50/40 transition-all duration-200 group text-left">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-200 group-hover:scale-105 transition-transform">
+                      <Globe className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-gray-900">Bank Transfer</div>
+                      <div className="text-xs text-gray-500 mt-0.5">EFT / wire — 1–2 business days</div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                  </button>
+                </div>
+              )}
+
+              {/* ══ STEP: CARD ══ */}
+              {payStep === 'card' && (
+                <div className="space-y-4">
+                  {/* Card preview */}
+                  <div className="relative h-44 rounded-2xl overflow-hidden select-none"
+                       style={{ background: 'linear-gradient(135deg,#1a1f71 0%,#2563eb 60%,#0ea5e9 100%)' }}>
+                    <div className="absolute inset-0 opacity-10"
+                         style={{ backgroundImage: 'radial-gradient(circle at 20% 80%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
+                    <div className="absolute top-5 left-5 right-5 flex justify-between items-start">
+                      <div className="w-8 h-6 rounded bg-yellow-300/90" style={{ background: 'linear-gradient(135deg,#fbbf24,#f59e0b)' }} />
+                      <div className="text-white font-black text-lg tracking-wider opacity-90">VISA</div>
+                    </div>
+                    <div className="absolute bottom-5 left-5 right-5">
+                      <div className="text-white/60 text-xs mb-1 font-mono tracking-widest">
+                        {cardInfo.number || '•••• •••• •••• ••••'}
+                      </div>
+                      <div className="flex justify-between items-end mt-2">
+                        <div>
+                          <div className="text-white/50 text-[10px] uppercase tracking-wider">Card holder</div>
+                          <div className="text-white font-semibold text-sm">{cardInfo.name || 'YOUR NAME'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-white/50 text-[10px] uppercase tracking-wider">Expires</div>
+                          <div className="text-white font-semibold text-sm">{cardInfo.expiry || 'MM/YY'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fields */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Card number</label>
+                    <input value={cardInfo.number} onChange={e => setCardInfo(p => ({ ...p, number: fmtCard(e.target.value) }))}
+                      placeholder="1234 5678 9012 3456" inputMode="numeric"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Cardholder name</label>
+                    <input value={cardInfo.name} onChange={e => setCardInfo(p => ({ ...p, name: e.target.value.toUpperCase() }))}
+                      placeholder="AS ON CARD"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none uppercase font-semibold text-gray-900 transition-colors" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Expiry</label>
+                      <input value={cardInfo.expiry} onChange={e => setCardInfo(p => ({ ...p, expiry: fmtExpiry(e.target.value) }))}
+                        placeholder="MM/YY" inputMode="numeric"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">CVC</label>
+                      <input value={cardInfo.cvc} onChange={e => setCardInfo(p => ({ ...p, cvc: e.target.value.replace(/\D/g,'').slice(0,4) }))}
+                        placeholder="•••" inputMode="numeric" type="password"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
+                    </div>
+                  </div>
+
+                  <button onClick={simulatePayment} disabled={!cardInfo.number || !cardInfo.name || !cardInfo.expiry || !cardInfo.cvc}
+                    className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
+                    <Lock className="h-4 w-4" />
+                    Pay ${formatPrice(calculateTotal())} securely
+                  </button>
+                </div>
+              )}
+
+              {/* ══ STEP: MPESA PHONE ══ */}
+              {payStep === 'mpesa' && (
+                <div className="space-y-5">
+                  <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex gap-3 items-start">
+                    <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
+                      <span className="text-white font-black text-[10px] leading-none text-center">M<br/>PESA</span>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-green-900 text-sm">STK Push payment</div>
+                      <div className="text-xs text-green-700 mt-0.5">We'll send a secure prompt to your Safaricom number. You only need to enter your M-Pesa PIN to complete payment.</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Safaricom number</label>
+                    <div className="flex gap-2">
+                      <div className="flex items-center px-3 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-700 font-semibold text-sm flex-shrink-0">+254</div>
+                      <input value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value.replace(/\D/g,'').slice(0,9))}
+                        placeholder="7XX XXX XXX" inputMode="numeric"
+                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1.5">e.g. 0712 345 678 → enter 712345678</p>
+                  </div>
+
+                  <button onClick={() => { if (mpesaPhone.length >= 9) setPayStep('mpesa-pin'); }}
+                    disabled={mpesaPhone.length < 9}
+                    className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
+                    Send STK Push
+                  </button>
+                </div>
+              )}
+
+              {/* ══ STEP: MPESA PIN ══ */}
+              {payStep === 'mpesa-pin' && (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+                      <span className="text-green-700 font-black text-xl">M</span>
+                    </div>
+                    <p className="font-semibold text-gray-900">Prompt sent to</p>
+                    <p className="text-green-700 font-mono font-bold text-lg">+254 {mpesaPhone}</p>
+                    <p className="text-xs text-gray-500 mt-1">Check your phone and enter your M-Pesa PIN below</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide text-center">M-Pesa PIN</label>
+                    <div className="flex gap-3 justify-center">
+                      {mpesaPin.map((digit, i) => (
+                        <input key={i} ref={pinRefs[i]}
+                          type="password" inputMode="numeric" maxLength={1}
+                          value={digit}
+                          onChange={e => handlePinInput(i, e.target.value)}
+                          onKeyDown={e => handlePinKey(i, e)}
+                          className="w-14 h-14 text-center text-2xl font-bold border-2 rounded-2xl outline-none transition-all duration-200 focus:border-green-500 focus:bg-green-50"
+                          style={{ borderColor: digit ? '#16a34a' : undefined }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <button onClick={simulatePayment} disabled={mpesaPin.some(d => !d)}
+                    className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
+                    Confirm payment
+                  </button>
+
+                  <p className="text-center text-xs text-gray-400">
+                    Didn't get the prompt?{' '}
+                    <button onClick={() => setPayStep('mpesa')} className="text-green-700 font-semibold underline">Resend</button>
+                  </p>
+                </div>
+              )}
+
+              {/* ══ STEP: BANK ══ */}
+              {payStep === 'bank' && (
+                <div className="space-y-4">
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
+                    Transfer the exact amount below and use your booking reference. Allow <strong>1–2 business days</strong> for processing.
+                  </div>
+
+                  {[
+                    ['Bank name',        'Equity Bank Kenya'],
+                    ['Account name',     'Umrah Market Ltd'],
+                    ['Account number',   '0123456789'],
+                    ['Branch',           'Nairobi, Kenyatta Ave'],
+                    ['Swift / BIC',      'EQBLKENA'],
+                    ['Amount',           `KES ${formatPrice(Math.round(calculateTotal() * 130))}`],
+                    ['Reference',        `UMRAH-${id.slice(0,8).toUpperCase()}`],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
+                      <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{label}</span>
+                      <span className={`font-semibold text-gray-900 text-sm ${label === 'Reference' ? 'font-mono bg-gray-100 px-2 py-0.5 rounded' : ''}`}>{value}</span>
+                    </div>
+                  ))}
+
+                  <button onClick={simulatePayment}
+                    className="w-full py-4 rounded-2xl font-bold text-white text-base mt-2"
+                    style={{ background: 'linear-gradient(135deg,#d97706,#b45309)' }}>
+                    I've made the transfer
+                  </button>
+                </div>
+              )}
+
+              {/* ══ STEP: PROCESSING ══ */}
+              {payStep === 'processing' && (
+                <div className="py-12 flex flex-col items-center gap-4">
+                  <div className="relative w-20 h-20">
+                    <div className="absolute inset-0 rounded-full border-4 border-emerald-100" />
+                    <div className="absolute inset-0 rounded-full border-4 border-emerald-600 border-t-transparent animate-spin" />
+                    <div className="absolute inset-3 rounded-full bg-emerald-50 flex items-center justify-center">
+                      <Lock className="h-5 w-5 text-emerald-600" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-gray-900 text-lg">Processing payment…</p>
+                    <p className="text-sm text-gray-500 mt-1">Please don't close this window</p>
+                  </div>
+                  <div className="flex gap-1.5 mt-2">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce"
+                           style={{ animationDelay: `${i * 0.15}s` }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ══ STEP: DONE ══ */}
+              {payStep === 'done' && (
+                <div className="py-8 flex flex-col items-center gap-4 text-center">
+                  <div className="relative">
+                    <div className="w-24 h-24 rounded-full bg-emerald-100 flex items-center justify-center">
+                      <CheckCircle className="h-12 w-12 text-emerald-600" />
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white border-2 border-emerald-200 flex items-center justify-center">
+                      <span className="text-lg">✨</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900">All done!</h3>
+                    <p className="text-gray-500 mt-1 text-sm">Your Umrah package is booked. A confirmation has been sent to your email.</p>
+                  </div>
+
+                  <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2 text-left">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Booking ref</span>
+                      <span className="font-mono font-bold text-gray-900">UMRAH-{id.slice(0,8).toUpperCase()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Amount paid</span>
+                      <span className="font-bold text-emerald-700">${formatPrice(calculateTotal())}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Method</span>
+                      <span className="font-semibold text-gray-900 capitalize">{payMethod === 'mpesa' ? 'M-Pesa' : payMethod === 'card' ? 'Card' : 'Bank transfer'}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
+                    <button onClick={closeModal}
+                      className="flex-1 py-3 border-2 border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition">
+                      Close
+                    </button>
+                    <button onClick={handleBack}
+                      className="flex-1 py-3 font-bold text-white rounded-xl transition"
+                      style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
+                      Explore more
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Auth gate — shown when guest clicks "Book Now" ── */}
+      {/* ── BookingModal — used when standalone (no onBook prop from parent) ── */}
+      {bookingPkg && (
+        <BookingModal
+          pkg={bookingPkg}
+          user={currentUser || userStore.get()}
+          onClose={() => setBookingPkg(null)}
+          onSuccess={() => { setBookingPkg(null); navigate('/client/dashboard'); }}
+        />
+      )}
+
+      {showAuthModal && (
+        <div className="fixed inset-0 z-[100]">
+          <AuthModal
+            onClose={() => setShowAuthModal(false)}
+            onAuthSuccess={(user) => {
+              setShowAuthModal(false);
+              if (user?.role === 'agent') {
+                navigate('/agent/dashboard?welcome=true');
+              } else {
+                openBooking(packageData);
+              }
+            }}
+          />
         </div>
       )}
     </div>

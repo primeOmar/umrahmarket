@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Header from './components/Header';
 import HeroSection from './components/HeroSection';
 import PackageDetailPage from './components/PackageDetailPage';
@@ -9,32 +9,10 @@ import ClientDashboard from './components/ClientDashboard';
 import GoogleCallback from './pages/GoogleCallback';
 import GoogleDone from './pages/GoogleDone';
 import { userStore, tokenStore } from './api';
-import { getAllActivePackages } from './components/agent/packages/services/packagesApi';
-
+import PaymentCallback from './pages/PaymentCallback';
+import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
 const BASE_URL = import.meta.env.VITE_API_URL;
 
-// ── Normalise raw DB package → UI shape ──────────────────────────────────────
-export const normalise = (pkg) => ({
-  ...pkg,
-  title:         pkg.name,
-  originalPrice: Number(pkg.original_price ?? 0),
-  hotelRating:   pkg.makkah_hotel_rating ? `${pkg.makkah_hotel_rating}★` : '',
-  distance:      pkg.makkah_hotel_distance
-    ? `${Number(pkg.makkah_hotel_distance).toLocaleString()}m from Haram`
-    : '',
-  image: (Array.isArray(pkg.image_urls) && pkg.image_urls[0])
-    || 'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80',
-  images: Array.isArray(pkg.image_urls) && pkg.image_urls.length
-    ? pkg.image_urls
-    : ['https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80'],
-  price:      Number(pkg.price    ?? 0),
-  duration:   Number(pkg.duration ?? 0),
-  discount:   Number(pkg.discount ?? 0),
-  rating:     Number(pkg.makkah_hotel_rating ?? 0),
-  includes:   Array.isArray(pkg.inclusions) ? pkg.inclusions : [],
-  excludes:   Array.isArray(pkg.exclusions) ? pkg.exclusions : [],
-  highlights: Array.isArray(pkg.highlights) ? pkg.highlights : [],
-});
 
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. If the stored token is expired or missing,
@@ -69,22 +47,32 @@ const initAuth = async () => {
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 const ProtectedAgentRoute = ({ children, authReady }) => {
-  if (!authReady) return null; // wait for auth init before redirecting
+  const location = useLocation();
+  if (!authReady) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-8 w-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+    </div>
+  );
   const user = userStore.get();
-  if (!user || user.role !== 'agent') return <Navigate to="/" replace />;
+  if (!user || user.role !== 'agent') return <Navigate to="/" state={{ from: location.pathname }} replace />;
   return children;
 };
 
 const ProtectedClientRoute = ({ children, authReady }) => {
-  if (!authReady) return null;
+  const location = useLocation();
+  if (!authReady) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-8 w-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+    </div>
+  );
   const user = userStore.get();
-  if (!user || user.role !== 'client') return <Navigate to="/" replace />;
+  if (!user || user.role !== 'client') return <Navigate to="/" state={{ from: location.pathname }} replace />;
   return children;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 function App() {
-  const [favorites,   setFavorites]   = useState([]);
+  const [favorites,   setFavorites]   = useState([]); // array of package IDs
   const [currentUser, setCurrentUser] = useState(null);
   const [authReady,   setAuthReady]   = useState(false); // true once initAuth completes
 
@@ -125,10 +113,33 @@ function App() {
     bootstrap();
   }, [fetchPackages]);
 
-  const toggleFavorite = (id) =>
+  const toggleFavorite = async (id) => {
+    const user = currentUser || userStore.get();
+    if (!user) return; // HeroSection/PackageDetailPage show auth modal before calling this
+
+    // Optimistic update — flip immediately in UI
     setFavorites(prev =>
       prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id]
     );
+
+    try {
+      await toggleFavourite(id);
+    } catch {
+      // Revert on failure
+      setFavorites(prev =>
+        prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id]
+      );
+    }
+  };
+
+  // Load favourites from DB whenever a user logs in
+  useEffect(() => {
+    const user = currentUser || userStore.get();
+    if (!user) { setFavorites([]); return; }
+    getFavourites()
+      .then(data => setFavorites((data.packageIds ?? []).map(String)))
+      .catch(() => {}); // silently ignore — not critical
+  }, [currentUser]);
 
   const handleLogout = () => {
     tokenStore.clear();
@@ -137,14 +148,30 @@ function App() {
     window.location.href = '/';
   };
 
-  // Show nothing until auth is initialized — prevents flash of wrong route
-  if (!authReady) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="h-8 w-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // ── Inactivity timeout — log out after 30 min of no interaction ───────────
+  useEffect(() => {
+    const TIMEOUT = 30 * 60 * 1000; // 30 minutes
+    let timer;
+
+    const reset = () => {
+      clearTimeout(timer);
+      // Only start timer if a user is actually logged in
+      if (userStore.get()) {
+        timer = setTimeout(() => {
+          handleLogout();
+        }, TIMEOUT);
+      }
+    };
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }));
+    reset(); // start on mount
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach(e => window.removeEventListener(e, reset));
+    };
+  }, [currentUser]); // restart timer when user changes
 
   return (
     <Router>
@@ -173,6 +200,7 @@ function App() {
               loading={pkgLoading}
               favorites={favorites}
               toggleFavorite={toggleFavorite}
+              currentUser={currentUser}
             />
           } />
 
@@ -184,12 +212,16 @@ function App() {
 
           <Route path="/client/dashboard" element={
             <ProtectedClientRoute authReady={authReady}>
-              <ClientDashboard user={currentUser} onLogout={handleLogout} />
+              <ClientDashboard user={currentUser} onLogout={handleLogout} packages={packages} />
             </ProtectedClientRoute>
           } />
 
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
           <Route path="/auth/google/done"     element={<GoogleDone />} />
+
+          {/* FIX: packageId is in the path so Pesapal can't stomp it on redirect */}
+          <Route path="/payment/callback/:packageId" element={<PaymentCallback />} />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
