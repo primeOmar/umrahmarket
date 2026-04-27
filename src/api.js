@@ -10,6 +10,7 @@
  * e.g.  VITE_API_URL=http://localhost:5000
  */
 import axios from 'axios';
+import { supabase } from './config/supabaseClient';
 const _apiBase = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
 
@@ -116,8 +117,14 @@ export const login = async (formData) => {
     url: '/auth/login',
     data: { email: formData.email, password: formData.password },
   });
-  if (res?.data?.data?.accessToken) tokenStore.set(res.data.data.accessToken);
-  if (res?.data?.data?.user)        userStore.set(res.data.data.user);
+  if (res?.data?.data?.accessToken) {
+    tokenStore.set(res.data.data.accessToken);
+    await supabase.auth.setSession({
+      access_token: res.data.data.accessToken,
+      refresh_token: res.data.data.refreshToken || '',
+    });
+  }
+  if (res?.data?.data?.user) userStore.set(res.data.data.user);
   return res;
 };
 
@@ -127,8 +134,14 @@ export const googleLogin = async (idToken) => {
     url: '/auth/google',
     data: { idToken },   // ← no nonce
   });
-  if (res?.data?.data?.accessToken) tokenStore.set(res.data.data.accessToken);
-  if (res?.data?.data?.user)        userStore.set(res.data.data.user);
+  if (res?.data?.data?.accessToken) {
+    tokenStore.set(res.data.data.accessToken);
+    await supabase.auth.setSession({
+      access_token: res.data.data.accessToken,
+      refresh_token: res.data.data.refreshToken || '',
+    });
+  }
+  if (res?.data?.data?.user) userStore.set(res.data.data.user);
   return res;
 };
 

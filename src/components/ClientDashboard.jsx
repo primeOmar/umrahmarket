@@ -18,6 +18,8 @@ import { useNavigate } from 'react-router-dom';
 import { userStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
 import BookingModal from './BookingModal';
+import MessagesPanel from './MessagesPanel';
+import { supabase } from '../config/supabaseClient';
 
 // ==================== TOAST NOTIFICATION SYSTEM ====================
 const Toast = ({ message, type, onClose }) => {
@@ -369,7 +371,7 @@ const MessageCard = ({ message, darkMode }) => (
 );
 
 // ==================== PACKAGE CARD COMPONENT (HeroSection-style) ====================
-const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav }) => {
+const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav, isBooked = false }) => {
   const imageUrl = pkg.image || (pkg.image_urls?.[0]) ||
     'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
 
@@ -460,16 +462,29 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
           >
             View Details
           </button>
-          <button
-            onClick={e => { e.stopPropagation(); onBook(pkg); }}
-            className={`px-2 py-1.5 text-xs font-medium rounded-lg border active:scale-[0.98] transition-all ${
-              darkMode
-                ? 'border-gray-600 text-gray-300 hover:border-emerald-500 hover:text-emerald-400'
-                : 'border-gray-300 text-gray-700 hover:border-emerald-500 hover:text-emerald-600'
-            }`}
-          >
-            Book Now
-          </button>
+          {isBooked ? (
+            <button
+              disabled
+              className={`px-2 py-1.5 text-xs font-medium rounded-lg border cursor-not-allowed ${
+                darkMode
+                  ? 'border-gray-600 text-gray-500 bg-gray-700'
+                  : 'border-gray-300 text-gray-400 bg-gray-100'
+              }`}
+            >
+              Already Booked
+            </button>
+          ) : (
+            <button
+              onClick={e => { e.stopPropagation(); onBook(pkg); }}
+              className={`px-2 py-1.5 text-xs font-medium rounded-lg border active:scale-[0.98] transition-all ${
+                darkMode
+                  ? 'border-gray-600 text-gray-300 hover:border-emerald-500 hover:text-emerald-400'
+                  : 'border-gray-300 text-gray-700 hover:border-emerald-500 hover:text-emerald-600'
+              }`}
+            >
+              Book Now
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -477,7 +492,7 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
 };
 
 // ==================== PACKAGE DISCOVERY SECTION ====================
-const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], loading = false, error = null, onRetry, favorites = [], onToggleFav }) => {
+const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], loading = false, error = null, onRetry, favorites = [], onToggleFav, bookings = [] }) => {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({
@@ -490,6 +505,17 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
   const [viewMode, setViewMode] = useState('grid');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [priceCeil, setPriceCeil] = useState(10000);
+
+  // Get bookings from context or parent component
+  // const { bookings } = useContext(DashboardContext) || { bookings: [] };
+
+  // Helper function to check if package is already booked
+  const isPackageBooked = (pkgId) => {
+    return bookings.some(b => 
+      String(b.package_id) === String(pkgId) && 
+      ['confirmed', 'pending'].includes(b.status?.toLowerCase())
+    );
+  };
 
   useEffect(() => {
     if (packages.length) {
@@ -740,6 +766,7 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
               onBook={onBook || (p => navigate(`/package/${p.id}`))}
               isFav={favorites.some(f => String(f.id) === String(pkg.id))}
               onToggleFav={onToggleFav}
+              isBooked={isPackageBooked(pkg.id)}
             />
           ))}
         </div>
@@ -809,6 +836,7 @@ const ClientDashboard = ({ user, onLogout }) => {
   
   const [bookings, setBookings] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState({ bookings: true, messages: true, favorites: true, stats: true });
   const [stats, setStats] = useState({ activeBookings: 0, favorites: 0, pastJourneys: 0, rewardPoints: 1250 });
@@ -866,13 +894,13 @@ const ClientDashboard = ({ user, onLogout }) => {
       }
     };
 
-    // ── Fetch messages (real API to be wired when endpoint is ready) ──────────
-    const fetchMessages = async () => {
+    // ── Fetch unread message count ────────────────────────────────────────────
+    const fetchUnreadCount = async () => {
       try {
-        // TODO: replace with real messages API call
-        setMessages([]);
+        const res = await request({ method: 'get', url: '/messages/count/unread' });
+        setUnreadCount(res?.data?.count ?? 0);
       } catch (err) {
-        console.error('[fetchMessages]', err.message);
+        console.error('[fetchUnreadCount]', err.message);
       } finally {
         setLoading(prev => ({ ...prev, messages: false }));
       }
@@ -880,20 +908,47 @@ const ClientDashboard = ({ user, onLogout }) => {
 
     fetchFavourites();
     fetchBookings();
-    fetchMessages();
+    fetchUnreadCount();
+
+    // ── Realtime: increment badge instantly when a new message arrives ────────
+    if (!supabase) return;
+    const channel = supabase
+      .channel(`client-unread-${user.id}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `client_id=eq.${user.id}` },
+        ({ new: msg }) => {
+          if (msg?.sender_id !== user.id) setUnreadCount(prev => prev + 1);
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user?.id, showToast]);
 
   const menuItems = [
     { id: 'overview', icon: LayoutDashboard, label: 'Overview', count: 0 },
     { id: 'bookings', icon: Calendar, label: 'My Bookings', count: bookings.length },
     { id: 'favorites', icon: Heart, label: 'Favorites', count: favorites.length },
-    { id: 'messages', icon: MessageCircle, label: 'Messages', count: messages.filter(m => !m.read).length },
+    { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount },
     { id: 'packages', icon: Home, label: 'Discover Packages', count: 0 },
     { id: 'settings', icon: Settings, label: 'Settings', count: 0 }
   ];
 
   const handleViewPackage = (pkg) => navigate(`/package/${pkg.id}`);
-  const handleBookPackage  = (pkg) => setBookingPkg(pkg);
+  const handleBookPackage  = (pkg) => {
+    // Check if user already has a confirmed or pending booking for this package
+    const existingBooking = bookings.find(b => 
+      String(b.package_id) === String(pkg.id) && 
+      ['confirmed', 'pending'].includes(b.status?.toLowerCase())
+    );
+    
+    if (existingBooking) {
+      showToast('You have already booked this package', 'info');
+      return;
+    }
+    
+    setBookingPkg(pkg);
+  };
   const handleViewBooking = (booking) => navigate(`/package/${booking.package_id ?? booking.package?.id}`);
 
   // isFavourited — checks by id (compare as strings to handle mixed types)
@@ -1077,6 +1132,7 @@ const ClientDashboard = ({ user, onLogout }) => {
                     onBook={handleBookPackage}
                     isFav={true}
                     onToggleFav={handleUnfavourite}
+                    isBooked={bookings.some(b => String(b.package_id) === String(pkg.id) && ['confirmed', 'pending'].includes(b.status?.toLowerCase()))}
                   />
                 ))}
               </div>
@@ -1087,21 +1143,37 @@ const ClientDashboard = ({ user, onLogout }) => {
       case 'messages':
         return (
           <div className="space-y-4">
-            <h2 className={`text-xl font-bold text-center sm:text-left ${darkMode ? 'text-white' : 'text-gray-900'}`}>Messages</h2>
-            <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-              {messages.length === 0 ? (
-                <div className="text-center py-12"><MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No messages yet</p></div>
-              ) : (
-                <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {messages.map(message => <MessageCard key={message.id} message={message} darkMode={darkMode} />)}
-                </div>
-              )}
-            </div>
+            <h2 className={`text-xl font-bold text-center sm:text-left ${darkMode ? 'text-white' : 'text-gray-900'}`}>Messages & Support</h2>
+            
+            {bookings.length === 0 ? (
+              <div className={`rounded-2xl border p-12 text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No active bookings</p>
+                <p className="text-sm text-gray-400 mb-4">Book a package to start messaging with agents</p>
+                <button onClick={() => setActiveTab('packages')} className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Explore Packages</button>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {bookings.map(booking => (
+                  <div key={booking.id} className={`rounded-lg border p-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                    <div className="mb-4">
+                      <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {booking.package?.name || 'Package'}
+                      </h3>
+                      <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Booking ID: {booking.id} • Status: <span className="text-emerald-500 font-medium">{booking.status}</span>
+                      </p>
+                    </div>
+                    <MessagesPanel booking={booking} currentUserId={user?.id} darkMode={darkMode} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
 
       case 'packages':
-        return <PackageDiscovery darkMode={darkMode} onPackageSelect={handleViewPackage} onBook={handleBookPackage} packages={availablePackages} loading={packagesLoading} error={packagesError} onRetry={refetchPackages} favorites={favorites} onToggleFav={handleToggleFavourite} />;
+        return <PackageDiscovery darkMode={darkMode} onPackageSelect={handleViewPackage} onBook={handleBookPackage} packages={availablePackages} loading={packagesLoading} error={packagesError} onRetry={refetchPackages} favorites={favorites} onToggleFav={handleToggleFavourite} bookings={bookings} />;
 
       case 'settings':
         return (
@@ -1143,7 +1215,7 @@ const ClientDashboard = ({ user, onLogout }) => {
             </div>
             <nav className="p-4">
               {menuItems.map(item => (
-                <button key={item.id} onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl mb-1 transition-all ${activeTab === item.id ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white' : darkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}>
+                <button key={item.id} onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); if (item.id === 'messages') setUnreadCount(0); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl mb-1 transition-all ${activeTab === item.id ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white' : darkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}>
                   <div className="flex items-center space-x-3"><item.icon className="h-5 w-5" /><span className="font-medium">{item.label}</span></div>
                   {item.count > 0 && <span className={`px-2 py-1 rounded-full text-xs ${activeTab === item.id ? 'bg-white/20 text-white' : darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>{item.count}</span>}
                 </button>
@@ -1184,7 +1256,7 @@ const ClientDashboard = ({ user, onLogout }) => {
           {menuItems.map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => { setActiveTab(item.id); if (item.id === 'messages') setUnreadCount(0); }}
               title={item.label}
               className={`w-full flex items-center rounded-xl transition-all duration-200 px-2.5 py-2.5
                 ${activeTab === item.id
@@ -1243,7 +1315,7 @@ const ClientDashboard = ({ user, onLogout }) => {
         <footer className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-2 px-4">
           <div className="flex items-center justify-around">
             {menuItems.slice(0, 4).map(item => (
-              <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center p-2 relative ${activeTab === item.id ? 'text-emerald-600' : 'text-gray-500'}`}>
+              <button key={item.id} onClick={() => { setActiveTab(item.id); if (item.id === 'messages') setUnreadCount(0); }} className={`flex flex-col items-center p-2 relative ${activeTab === item.id ? 'text-emerald-600' : 'text-gray-500'}`}>
                 <item.icon className="h-5 w-5" /><span className="text-xs mt-1">{item.label}</span>
                 {item.count > 0 && <span className="absolute -top-1 right-0 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">{item.count}</span>}
               </button>

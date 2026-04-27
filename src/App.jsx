@@ -11,7 +11,7 @@ import GoogleDone from './pages/GoogleDone';
 import { userStore, tokenStore } from './api';
 import PaymentCallback from './pages/PaymentCallback';
 import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
-const BASE_URL = import.meta.env.VITE_API_URL;
+const BASE_URL = (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 
 // ── Silent token refresh ──────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ const BASE_URL = import.meta.env.VITE_API_URL;
 // uses the httpOnly refresh token cookie to get a new access token silently.
 const initAuth = async () => {
   try {
-    const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
+    const res = await fetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
       credentials: 'include', // sends httpOnly refresh cookie automatically
     });
