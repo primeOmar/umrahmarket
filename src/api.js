@@ -11,8 +11,12 @@
  */
 import axios from 'axios';
 import { supabase } from './config/supabaseClient';
+
 const _apiBase = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
+
+console.log('[API] _apiBase:', _apiBase);
+console.log('[API] BASE_API:', BASE_API);
 
 // ─── Token & user stores ───────────────────────────────────────────────────────
 let _accessToken = localStorage.getItem('access_token') || null;
@@ -27,7 +31,7 @@ export const tokenStore = {
   clear: () => {
     _accessToken = null;
     localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token'); // ← also clear refresh
+    localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
   },
 };
@@ -51,34 +55,32 @@ const api = axios.create({
 api.interceptors.request.use((cfg) => {
   const t = tokenStore.get();
   if (t) cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${t}` };
-  if (import.meta.env.DEV) {
-    console.debug('[API request]', cfg.method, cfg.url, cfg.data || cfg.params);
-    console.debug('[API token]', t ? `present (${t.slice(0, 20)}...)` : 'MISSING — request will fail auth');
-  }
+  console.debug('[API request]', cfg.method, cfg.url, cfg.data || cfg.params);
+  console.debug('[API token]', t ? `present (${t.slice(0, 20)}...)` : 'MISSING — request will fail auth');
   return cfg;
 });
 
-// dev logging + propagate errors
+// logging + propagate errors
 api.interceptors.response.use(
   (res) => {
-    if (import.meta.env.DEV) console.debug('[API response]', res.status, res.config.url, res.data);
+    console.debug('[API response]', res.status, res.config.url, res.data);
     return res;
   },
   (err) => {
-    if (import.meta.env.DEV) console.debug('[API error raw]', err?.response?.status, err?.response?.data);
+    console.debug('[API error raw]', err?.response?.status, err?.response?.data);
     return Promise.reject(err);
   }
 );
 
-// centralized request wrapper (accepts axios config object)
+// centralized request wrapper
 export const request = async (config) => {
   try {
     const res = await api.request(config);
-    return res; // keep axios response to preserve existing callers using res.data
+    return res;
   } catch (err) {
     const serverMsg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Request failed';
     const e = new Error(serverMsg);
-    e.response = err.response; // expose full server body for UI
+    e.response = err.response;
     e.original = err;
     throw e;
   }
@@ -104,10 +106,8 @@ export const registerAgent = async (data) => {
     url: '/auth/register/agent',
     data,
   });
-  if (import.meta.env.DEV) {
-    console.debug('[registerAgent] full response:', JSON.stringify(res?.data));
-    console.debug('[registerAgent] accessToken:', res?.data?.accessToken ?? 'NOT FOUND IN RESPONSE');
-  }
+  console.debug('[registerAgent] full response:', JSON.stringify(res?.data));
+  console.debug('[registerAgent] accessToken:', res?.data?.accessToken ?? 'NOT FOUND IN RESPONSE');
   if (res?.data?.accessToken) tokenStore.set(res.data.accessToken);
   if (res?.data?.data?.user)  userStore.set(res.data.data.user);
   return res;
@@ -126,7 +126,6 @@ export const login = async (formData) => {
       refresh_token: res.data.data.refreshToken || '',
     });
   }
-  // ← Store refresh token in localStorage so refreshToken() can send it
   if (res?.data?.data?.refreshToken) {
     localStorage.setItem('refresh_token', res.data.data.refreshToken);
   }
@@ -147,14 +146,12 @@ export const googleLogin = async (idToken) => {
       refresh_token: res.data.data.refreshToken || '',
     });
   }
-  // ← Store refresh token in localStorage so refreshToken() can send it
   if (res?.data?.data?.refreshToken) {
     localStorage.setItem('refresh_token', res.data.data.refreshToken);
   }
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
   return res;
 };
-
 
 export const logout = async () => {
   try { await request({ method: 'post', url: '/auth/logout' }); } finally {
@@ -163,14 +160,13 @@ export const logout = async () => {
 };
 
 export const refreshToken = async () => {
-  // ← Read refresh token from localStorage and send in request body
   const storedRefreshToken = localStorage.getItem('refresh_token');
+  console.debug('[refreshToken] stored token:', storedRefreshToken ? 'present' : 'MISSING');
   const res = await request({
     method: 'post',
     url: '/auth/refresh',
     data: { refreshToken: storedRefreshToken },
   });
-  // Backend returns { success: true, data: { accessToken } }
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
   }
