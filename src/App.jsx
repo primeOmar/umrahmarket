@@ -8,39 +8,22 @@ import AgentDashboard from './components/AgentDashboard';
 import ClientDashboard from './components/ClientDashboard';
 import GoogleCallback from './pages/GoogleCallback';
 import GoogleDone from './pages/GoogleDone';
-import { userStore, tokenStore } from './api';
+import { refreshToken, userStore, tokenStore } from './api';
 import PaymentCallback from './pages/PaymentCallback';
 import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
-const BASE_URL = (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-
 
 // ── Silent token refresh ──────────────────────────────────────────────────────
-// Called once on app load. If the stored token is expired or missing,
-// uses the httpOnly refresh token cookie to get a new access token silently.
+// Called once on app load. Uses the refreshToken function from api.js
+// so the URL is always kept in sync with the rest of the API layer.
 const initAuth = async () => {
   try {
-    const res = await fetch(`${BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include', // sends httpOnly refresh cookie automatically
-    });
-
-    if (!res.ok) {
-      // Refresh failed — clear any stale data so user gets a clean state
-      tokenStore.clear();
-      userStore.clear();
-      return null;
-    }
-
-    const data = await res.json();
-    const newToken = data.data?.accessToken || data.accessToken;
-    const user     = data.data?.user        || data.user;
-
-    if (newToken) tokenStore.set(newToken);
-    if (user)     userStore.set(user);
-
+    const res = await refreshToken();
+    const user = res?.data?.data?.user;
+    if (user) userStore.set(user);
     return user || userStore.get();
   } catch {
-    // Network error or backend down — don't clear, just proceed unauthenticated
+    tokenStore.clear();
+    userStore.clear();
     return null;
   }
 };
