@@ -27,6 +27,7 @@ export const tokenStore = {
   clear: () => {
     _accessToken = null;
     localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token'); // ← also clear refresh
     localStorage.removeItem('user');
   },
 };
@@ -111,6 +112,7 @@ export const registerAgent = async (data) => {
   if (res?.data?.data?.user)  userStore.set(res.data.data.user);
   return res;
 };
+
 export const login = async (formData) => {
   const res = await request({
     method: 'post',
@@ -124,6 +126,10 @@ export const login = async (formData) => {
       refresh_token: res.data.data.refreshToken || '',
     });
   }
+  // ← Store refresh token in localStorage so refreshToken() can send it
+  if (res?.data?.data?.refreshToken) {
+    localStorage.setItem('refresh_token', res.data.data.refreshToken);
+  }
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
   return res;
 };
@@ -132,7 +138,7 @@ export const googleLogin = async (idToken) => {
   const res = await request({
     method: 'post',
     url: '/auth/google',
-    data: { idToken },   // ← no nonce
+    data: { idToken },
   });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
@@ -140,6 +146,10 @@ export const googleLogin = async (idToken) => {
       access_token: res.data.data.accessToken,
       refresh_token: res.data.data.refreshToken || '',
     });
+  }
+  // ← Store refresh token in localStorage so refreshToken() can send it
+  if (res?.data?.data?.refreshToken) {
+    localStorage.setItem('refresh_token', res.data.data.refreshToken);
   }
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
   return res;
@@ -152,8 +162,17 @@ export const logout = async () => {
 };
 
 export const refreshToken = async () => {
-  const res = await request({ method: 'post', url: '/auth/refresh' });
-  if (res?.data?.accessToken) tokenStore.set(res.data.accessToken);
+  // ← Read refresh token from localStorage and send in request body
+  const storedRefreshToken = localStorage.getItem('refresh_token');
+  const res = await request({
+    method: 'post',
+    url: '/auth/refresh',
+    data: { refreshToken: storedRefreshToken },
+  });
+  // Backend returns { success: true, data: { accessToken } }
+  if (res?.data?.data?.accessToken) {
+    tokenStore.set(res.data.data.accessToken);
+  }
   return res;
 };
 
