@@ -169,7 +169,7 @@ const ScrollToBottomButton = ({ onClick, darkMode, unread }) => (
 );
 
 // ── Main MessagesPanel ────────────────────────────────────────────────────────
-const MessagesPanel = ({ booking, currentUserId, darkMode = false, agentNameOverride }) => {
+const MessagesPanel = ({ booking, currentUserId, darkMode = false, agentNameOverride, fullHeight = false }) => {
   const {
     messages,
     loading,
@@ -236,7 +236,7 @@ const MessagesPanel = ({ booking, currentUserId, darkMode = false, agentNameOver
 
   if (loading && messages.length === 0) {
     return (
-      <div className={`flex flex-col rounded-2xl overflow-hidden border h-[520px] items-center justify-center ${
+      <div className={`flex flex-col h-full items-center justify-center ${
         darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       }`}>
         <Loader className="h-8 w-8 animate-spin text-emerald-500 mb-3" />
@@ -246,7 +246,7 @@ const MessagesPanel = ({ booking, currentUserId, darkMode = false, agentNameOver
   }
 
   return (
-    <div className={`flex flex-col rounded-2xl overflow-hidden border h-[520px] ${
+    <div className={`flex flex-col h-full ${
       darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
     }`}>
 

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   LayoutDashboard, Calendar, Heart, Clock, Star, MapPin, 
-  Hotel, Users, ChevronRight, Bell, Search, Menu, X, 
+  Hotel, Users, ChevronRight, ChevronLeft, Bell, Search, Menu, X, 
   LogOut, Settings, MessageCircle, CreditCard, Shield,
   CheckCircle, AlertCircle, Download, Share2, Filter,
   ArrowUpRight, Wallet, Award, Gift, Sparkles, BookOpen,
@@ -815,6 +815,170 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
   );
 };
 
+// ==================== WHATSAPP-STYLE MESSAGES VIEW ====================
+const MessagesView = ({ bookings, user, darkMode, onExplore }) => {
+  const [selectedBooking, setSelectedBooking] = useState(null);
+
+  // On mobile, when a chat is selected it goes full-screen; back button returns to list
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed': return 'bg-emerald-100 text-emerald-700';
+      case 'pending':   return 'bg-amber-100 text-amber-700';
+      case 'completed': return 'bg-blue-100 text-blue-700';
+      case 'cancelled': return 'bg-red-100 text-red-700';
+      default:          return 'bg-gray-100 text-gray-600';
+    }
+  };
+
+  if (bookings.length === 0) {
+    return (
+      <div className={`rounded-2xl border p-12 text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+        <p className={`font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>No active bookings</p>
+        <p className="text-sm text-gray-400 mb-4">Book a package to start messaging with agents</p>
+        <button onClick={onExplore} className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Explore Packages</button>
+      </div>
+    );
+  }
+
+  // ── Conversation list item ────────────────────────────────────────────────
+  const ConversationItem = ({ booking }) => {
+    const pkgName  = booking.package?.name || 'Umrah Package';
+    const agentName = booking.package?.agent_name || booking.agency_name || 'Travel Agent';
+    const isSelected = selectedBooking?.id === booking.id;
+    const initial = agentName.charAt(0).toUpperCase();
+
+    return (
+      <button
+        onClick={() => setSelectedBooking(booking)}
+        className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors border-b last:border-b-0
+          ${isSelected
+            ? darkMode ? 'bg-emerald-900/40 border-l-2 border-l-emerald-500' : 'bg-emerald-50 border-l-2 border-l-emerald-500'
+            : darkMode ? 'hover:bg-gray-700/50 border-gray-700' : 'hover:bg-gray-50 border-gray-100'
+          }`}
+      >
+        {/* Avatar */}
+        <div className={`w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center text-base font-bold
+          ${darkMode ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+          {initial}
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-0.5">
+            <span className={`font-semibold text-sm truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              {agentName}
+            </span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ml-2 ${getStatusColor(booking.status)}`}>
+              {booking.status?.toUpperCase()}
+            </span>
+          </div>
+          <p className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            {pkgName}
+          </p>
+        </div>
+
+        {/* Chevron */}
+        <ChevronRight className={`h-4 w-4 flex-shrink-0 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} />
+      </button>
+    );
+  };
+
+  // ── Chat pane header ──────────────────────────────────────────────────────
+  const ChatHeader = () => {
+    if (!selectedBooking) return null;
+    const agentName = selectedBooking.package?.agent_name || selectedBooking.agency_name || 'Travel Agent';
+    const pkgName   = selectedBooking.package?.name || 'Umrah Package';
+    return (
+      <div className={`flex items-center gap-3 px-4 py-3 border-b flex-shrink-0
+        ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        {/* Back button — visible on mobile only */}
+        <button
+          onClick={() => setSelectedBooking(null)}
+          className={`md:hidden p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+
+        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0
+          ${darkMode ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+          {agentName.charAt(0)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={`font-semibold text-sm leading-tight truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            {agentName}
+          </p>
+          <p className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            {pkgName}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Empty chat placeholder ────────────────────────────────────────────────
+  const EmptyChat = () => (
+    <div className={`flex-1 flex flex-col items-center justify-center gap-3 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      <div className={`w-20 h-20 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-gray-800' : 'bg-emerald-50'}`}>
+        <MessageCircle className={`h-10 w-10 ${darkMode ? 'text-gray-600' : 'text-emerald-300'}`} />
+      </div>
+      <p className={`font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Select a conversation</p>
+      <p className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Choose a booking from the left to open the chat</p>
+    </div>
+  );
+
+  return (
+    <div className={`rounded-2xl border overflow-hidden flex
+      ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}
+      h-[calc(100vh-10rem)] min-h-[500px]`}
+    >
+      {/* ── Left pane: conversation list ── */}
+      <div className={`
+        flex-shrink-0 border-r flex flex-col
+        ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}
+        ${selectedBooking ? 'hidden md:flex md:w-72 lg:w-80' : 'flex w-full md:w-72 lg:w-80'}
+      `}>
+        {/* List header */}
+        <div className={`px-4 py-3.5 border-b flex-shrink-0 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+          <h2 className={`font-bold text-base ${darkMode ? 'text-white' : 'text-gray-900'}`}>Messages</h2>
+          <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{bookings.length} conversation{bookings.length !== 1 ? 's' : ''}</p>
+        </div>
+
+        {/* Scrollable list */}
+        <div className="flex-1 overflow-y-auto">
+          {bookings.map(booking => (
+            <ConversationItem key={booking.id} booking={booking} />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Right pane: chat ── */}
+      <div className={`
+        flex-1 flex flex-col min-w-0
+        ${!selectedBooking ? 'hidden md:flex' : 'flex'}
+      `}>
+        {selectedBooking ? (
+          <>
+            <ChatHeader />
+            <div className="flex-1 min-h-0">
+              <MessagesPanel
+                booking={selectedBooking}
+                currentUserId={user?.id}
+                darkMode={darkMode}
+                fullHeight
+              />
+            </div>
+          </>
+        ) : (
+          <EmptyChat />
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ==================== MAIN CLIENT DASHBOARD ====================
 const ClientDashboard = ({ user, onLogout }) => {
   const navigate = useNavigate();
@@ -1141,36 +1305,7 @@ const ClientDashboard = ({ user, onLogout }) => {
         );
 
       case 'messages':
-        return (
-          <div className="space-y-4">
-            <h2 className={`text-xl font-bold text-center sm:text-left ${darkMode ? 'text-white' : 'text-gray-900'}`}>Messages & Support</h2>
-            
-            {bookings.length === 0 ? (
-              <div className={`rounded-2xl border p-12 text-center ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                <MessageCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No active bookings</p>
-                <p className="text-sm text-gray-400 mb-4">Book a package to start messaging with agents</p>
-                <button onClick={() => setActiveTab('packages')} className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Explore Packages</button>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {bookings.map(booking => (
-                  <div key={booking.id} className={`rounded-lg border p-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                    <div className="mb-4">
-                      <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        {booking.package?.name || 'Package'}
-                      </h3>
-                      <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        Booking ID: {booking.id} • Status: <span className="text-emerald-500 font-medium">{booking.status}</span>
-                      </p>
-                    </div>
-                    <MessagesPanel booking={booking} currentUserId={user?.id} darkMode={darkMode} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
+        return <MessagesView bookings={bookings} user={user} darkMode={darkMode} onExplore={() => setActiveTab('packages')} />;
 
       case 'packages':
         return <PackageDiscovery darkMode={darkMode} onPackageSelect={handleViewPackage} onBook={handleBookPackage} packages={availablePackages} loading={packagesLoading} error={packagesError} onRetry={refetchPackages} favorites={favorites} onToggleFav={handleToggleFavourite} bookings={bookings} />;
