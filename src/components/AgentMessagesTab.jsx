@@ -377,10 +377,10 @@ const AgentMessagesTab = ({ user }) => {
       </div>
 
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden" style={{ height: '620px' }}>
-        <div className="grid h-full" style={{ gridTemplateColumns: '320px 1fr' }}>
+        <div className="flex h-full">
 
           {/* ── Conversation Sidebar ───────────────────────────────────────── */}
-          <div className="border-r border-gray-200 flex flex-col">
+          <div className={`border-r border-gray-200 flex flex-col flex-shrink-0 w-full md:w-80 ${selectedConv ? 'hidden md:flex' : 'flex'}`}>
             {/* Search */}
             <div className="p-3 border-b border-gray-100">
               <div className="relative">
@@ -434,11 +434,23 @@ const AgentMessagesTab = ({ user }) => {
           </div>
 
           {/* ── Chat Area ─────────────────────────────────────────────────── */}
-          <div className="flex flex-col h-full overflow-hidden">
-            {selectedConv
-              ? <ChatPane conv={selectedConv} agentUser={user} />
-              : <EmptyChatPane />
-            }
+          <div className={`flex flex-col flex-1 min-w-0 overflow-hidden ${selectedConv ? 'flex' : 'hidden md:flex'}`}>
+            {selectedConv ? (
+              <div className="flex flex-col h-full">
+                {/* Mobile back button */}
+                <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-white flex-shrink-0">
+                  <button onClick={() => setSelectedConv(null)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                    <X className="h-4 w-4 text-gray-600" />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">Back to conversations</span>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <ChatPane conv={selectedConv} agentUser={user} />
+                </div>
+              </div>
+            ) : (
+              <EmptyChatPane />
+            )}
           </div>
         </div>
       </div>

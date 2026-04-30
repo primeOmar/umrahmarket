@@ -336,10 +336,11 @@ const AgentMessagesTab = ({ user }) => {
       </div>
 
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden" style={{ height: '640px' }}>
-        <div className="grid h-full" style={{ gridTemplateColumns: '300px 1fr' }}>
+        {/* Mobile: show either list or chat. Desktop: show both */}
+        <div className="grid h-full" style={{ gridTemplateColumns: selected ? 'var(--conv-list-width, 300px) 1fr' : '1fr' }}>
 
           {/* ── Left sidebar: conversation list ── */}
-          <div className="border-r border-gray-100 flex flex-col">
+          <div className={`border-r border-gray-100 flex flex-col ${selected ? 'hidden md:flex' : 'flex'}`}>
             <div className="p-3 border-b border-gray-100 bg-gray-50">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -377,19 +378,28 @@ const AgentMessagesTab = ({ user }) => {
           </div>
 
           {/* ── Right: active chat ── */}
-          <div className="flex flex-col h-full overflow-hidden">
-            {selected ? (
-              <AgentChatPane conv={selected} agentUser={user} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center bg-gray-50">
-                <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center mb-4">
-                  <MessageCircle className="h-8 w-8 text-gray-300" />
-                </div>
-                <p className="text-base font-semibold text-gray-500">Select a conversation</p>
-                <p className="text-sm text-gray-400 mt-1">Choose a client from the list to start chatting</p>
+          {selected && (
+            <div className="flex flex-col h-full overflow-hidden col-span-1">
+              {/* Mobile back button */}
+              <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-white">
+                <button onClick={() => setSelected(null)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                  <ArrowLeft className="h-4 w-4 text-gray-600" />
+                </button>
+                <span className="text-sm font-medium text-gray-700">Back to conversations</span>
               </div>
-            )}
-          </div>
+              <AgentChatPane conv={selected} agentUser={user} />
+            </div>
+          )}
+
+          {!selected && (
+            <div className="hidden md:flex flex-col items-center justify-center h-full text-center bg-gray-50">
+              <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center mb-4">
+                <MessageCircle className="h-8 w-8 text-gray-300" />
+              </div>
+              <p className="text-base font-semibold text-gray-500">Select a conversation</p>
+              <p className="text-sm text-gray-400 mt-1">Choose a client from the list to start chatting</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -725,6 +735,14 @@ const AgentDashboard = ({ user, onLogout }) => {
         onSave={handleSavePackage}
       />
 
+      {/* Mobile overlay backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <div className={`fixed inset-y-0 left-0 z-30 w-72 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -804,44 +822,49 @@ const AgentDashboard = ({ user, onLogout }) => {
       </div>
 
       {/* Main Content */}
-      <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-72' : 'ml-0'}`}>
+      <div className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-72' : 'ml-0'}`}>
         {/* Top Bar */}
         <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
-          <div className="px-8 py-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
               >
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
               
-              {/* Search */}
-              <div className="relative w-96">
+              {/* Search - hidden on very small screens */}
+              <div className="relative w-48 sm:w-72 md:w-96 hidden sm:block">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search clients, bookings, packages..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
               </div>
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
+              {/* Search icon on mobile */}
+              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors sm:hidden">
+                <Search className="h-5 w-5 text-gray-600" />
+              </button>
+
               {/* Quick Actions */}
               <button
                 onClick={() => setShowCreatePackage(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all"
+                className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all text-sm font-medium"
               >
                 <Plus className="h-4 w-4" />
-                <span className="text-sm font-medium">New Package</span>
+                <span className="hidden sm:inline">New Package</span>
               </button>
 
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:flex"
                 title="Upload Documents"
               >
                 <Upload className="h-5 w-5 text-gray-600" />
@@ -859,7 +882,7 @@ const AgentDashboard = ({ user, onLogout }) => {
 
                 {/* Notifications Dropdown */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
+                  <div className="absolute right-0 mt-2 w-72 sm:w-96 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
                     <div className="p-4 border-b border-gray-200 flex items-center justify-between">
                       <h3 className="font-semibold text-gray-900">Notifications</h3>
                       <button className="text-xs text-blue-600 hover:text-blue-700">Mark all as read</button>
@@ -869,7 +892,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                         <div key={notif.id} className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${!notif.read ? 'bg-blue-50/30' : ''}`}>
                           <div className="flex items-start justify-between mb-1">
                             <h4 className="text-sm font-medium text-gray-900">{notif.title}</h4>
-                            <span className="text-xs text-gray-500">{notif.time}</span>
+                            <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{notif.time}</span>
                           </div>
                           <p className="text-sm text-gray-600">{notif.message}</p>
                         </div>
@@ -883,12 +906,12 @@ const AgentDashboard = ({ user, onLogout }) => {
               </div>
 
               {/* User Menu */}
-              <div className="flex items-center space-x-3">
-                <div className="text-right">
+              <div className="flex items-center space-x-2 sm:space-x-3">
+                <div className="text-right hidden md:block">
                   <p className="text-sm font-medium text-gray-900">{user?.agencyName || 'Agency Name'}</p>
                   <p className="text-xs text-gray-500">{user?.email || 'agency@email.com'}</p>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
                   {user?.agencyName?.charAt(0) || 'A'}
                 </div>
               </div>
@@ -897,7 +920,7 @@ const AgentDashboard = ({ user, onLogout }) => {
         </header>
 
         {/* Dashboard Content */}
-        <main className="p-8">
+        <main className="p-4 sm:p-6 lg:p-8">
           {activeTab === 'overview' && (
             <div className="space-y-8">
               {/* Stats Grid */}
@@ -1224,7 +1247,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                   <h3 className="text-lg font-semibold text-gray-900">Profile Settings</h3>
                 </div>
                 <div className="p-6 space-y-6">
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Agency Name</label>
                       <input
