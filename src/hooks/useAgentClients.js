@@ -7,7 +7,7 @@ export const useAgentClients = (agentUserId) => {
   const [error, setError] = useState(null);
 
   const fetchClients = useCallback(async () => {
-    if (!agentUserId) return;
+    if (!agentUserId) { setLoading(false); return; }
     setLoading(true);
     setError(null);
 

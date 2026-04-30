@@ -189,7 +189,7 @@ function App() {
 
           <Route path="/agent/dashboard" element={
             <ProtectedAgentRoute authReady={authReady}>
-              <AgentDashboard />
+              <AgentDashboard user={currentUser} onLogout={handleLogout} />
             </ProtectedAgentRoute>
           } />
 
