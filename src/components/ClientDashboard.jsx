@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   LayoutDashboard, Calendar, Heart, Clock, Star, MapPin, 
-  Hotel, Users, ChevronRight, ChevronLeft, Bell, Search, Menu, X, 
+  Hotel, Users, ChevronRight, Bell, Search, Menu, X, 
   LogOut, Settings, MessageCircle, CreditCard, Shield,
   CheckCircle, AlertCircle, Download, Share2, Filter,
   ArrowUpRight, Wallet, Award, Gift, Sparkles, BookOpen,
