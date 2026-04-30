@@ -1,13 +1,8 @@
 /**
  * API Service Layer
- * Connects AuthModal (and the rest of the frontend) to secure-auth-backend
- *
- * Backend runs on: http://localhost:5000   (config.port in security.config.js)
- * All auth routes are mounted at:  /api/auth
- * All upload routes are mounted at: /api/upload
- *
- * Set VITE_API_URL in your frontend .env to override the base URL.
- * e.g.  VITE_API_URL=http://localhost:5000
+ * - Auto-refreshes access token on 401 (token expired)
+ * - Queues concurrent requests during refresh (no duplicate refresh calls)
+ * - Forces logout + redirects to / if refresh token is also expired
  */
 import axios from 'axios';
 import { supabase } from './config/supabaseClient';
@@ -15,7 +10,6 @@ import { supabase } from './config/supabaseClient';
 const _apiBase = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
 
-console.log('[API] _apiBase:', _apiBase);
 console.log('[API] BASE_API:', BASE_API);
 
 // ─── Token & user stores ───────────────────────────────────────────────────────
@@ -44,6 +38,25 @@ export const userStore = {
   clear: () => localStorage.removeItem('user'),
 };
 
+// ─── Session expiry handler ────────────────────────────────────────────────────
+// Called when refresh token is also expired — clears state and redirects to login
+const handleSessionExpired = () => {
+  tokenStore.clear();
+  userStore.clear();
+
+  const banner = document.createElement('div');
+  banner.style.cssText = `
+    position:fixed;top:0;left:0;right:0;z-index:9999;
+    background:#dc2626;color:#fff;text-align:center;
+    padding:14px;font-size:14px;font-weight:600;
+    box-shadow:0 2px 12px rgba(0,0,0,0.2);
+  `;
+  banner.textContent = 'Your session has expired. Redirecting to login\u2026';
+  document.body.appendChild(banner);
+
+  setTimeout(() => { window.location.href = '/'; }, 2000);
+};
+
 // ─── Axios instance ───────────────────────────────────────────────────────────
 const api = axios.create({
   baseURL: BASE_API,
@@ -51,34 +64,87 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// attach bearer from tokenStore
+// ── Request interceptor: attach bearer token ──────────────────────────────────
 api.interceptors.request.use((cfg) => {
   const t = tokenStore.get();
   if (t) cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${t}` };
-  console.debug('[API request]', cfg.method, cfg.url, cfg.data || cfg.params);
-  console.debug('[API token]', t ? `present (${t.slice(0, 20)}...)` : 'MISSING — request will fail auth');
+  if (import.meta.env.DEV) console.debug('[API]', cfg.method?.toUpperCase(), cfg.url);
   return cfg;
 });
 
-// logging + propagate errors
+// ── Response interceptor: auto-refresh on 401 ────────────────────────────────
+let _isRefreshing = false;
+let _refreshQueue = [];
+
+const processQueue = (error, token = null) => {
+  _refreshQueue.forEach(({ resolve, reject }) =>
+    error ? reject(error) : resolve(token)
+  );
+  _refreshQueue = [];
+};
+
 api.interceptors.response.use(
-  (res) => {
-    console.debug('[API response]', res.status, res.config.url, res.data);
-    return res;
-  },
-  (err) => {
-    console.debug('[API error raw]', err?.response?.status, err?.response?.data);
-    return Promise.reject(err);
+  (res) => res,
+  async (err) => {
+    const originalReq = err.config;
+    const is401       = err?.response?.status === 401;
+    const isRetry     = originalReq._retry;
+    const isRefresh   = originalReq.url?.includes('/auth/refresh');
+    const isLogin     = originalReq.url?.includes('/auth/login');
+
+    if (!is401 || isRetry || isRefresh || isLogin) return Promise.reject(err);
+
+    if (_isRefreshing) {
+      return new Promise((resolve, reject) => {
+        _refreshQueue.push({ resolve, reject });
+      }).then((newToken) => {
+        originalReq.headers['Authorization'] = `Bearer ${newToken}`;
+        return api(originalReq);
+      });
+    }
+
+    originalReq._retry = true;
+    _isRefreshing      = true;
+
+    try {
+      const storedRefreshToken = localStorage.getItem('refresh_token');
+      if (!storedRefreshToken) throw new Error('No refresh token available');
+
+      const res = await axios.post(
+        `${BASE_API}/auth/refresh`,
+        { refreshToken: storedRefreshToken },
+        { withCredentials: true }
+      );
+
+      const newAccessToken = res?.data?.data?.accessToken;
+      if (!newAccessToken) throw new Error('Refresh returned no access token');
+
+      tokenStore.set(newAccessToken);
+      processQueue(null, newAccessToken);
+
+      originalReq.headers['Authorization'] = `Bearer ${newAccessToken}`;
+      return api(originalReq);
+
+    } catch (refreshErr) {
+      processQueue(refreshErr, null);
+      handleSessionExpired();
+      return Promise.reject(refreshErr);
+    } finally {
+      _isRefreshing = false;
+    }
   }
 );
 
-// centralized request wrapper
+// ─── Centralised request wrapper ──────────────────────────────────────────────
 export const request = async (config) => {
   try {
-    const res = await api.request(config);
-    return res;
+    return await api.request(config);
   } catch (err) {
-    const serverMsg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Request failed';
+    const serverMsg =
+      err?.response?.data?.message ||
+      err?.response?.data?.error   ||
+      err?.message                 ||
+      'Request failed';
     const e = new Error(serverMsg);
     e.response = err.response;
     e.original = err;
@@ -101,15 +167,10 @@ export const registerClient = (formData) =>
   });
 
 export const registerAgent = async (data) => {
-  const res = await request({
-    method: 'post',
-    url: '/auth/register/agent',
-    data,
-  });
-  console.debug('[registerAgent] full response:', JSON.stringify(res?.data));
-  console.debug('[registerAgent] accessToken:', res?.data?.accessToken ?? 'NOT FOUND IN RESPONSE');
-  if (res?.data?.accessToken) tokenStore.set(res.data.accessToken);
-  if (res?.data?.data?.user)  userStore.set(res.data.data.user);
+  const res = await request({ method: 'post', url: '/auth/register/agent', data });
+  if (import.meta.env.DEV) console.debug('[registerAgent] accessToken:', res?.data?.accessToken ?? 'NOT IN RESPONSE');
+  if (res?.data?.accessToken)  tokenStore.set(res.data.accessToken);
+  if (res?.data?.data?.user)   userStore.set(res.data.data.user);
   return res;
 };
 
@@ -122,54 +183,44 @@ export const login = async (formData) => {
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
     await supabase.auth.setSession({
-      access_token: res.data.data.accessToken,
+      access_token:  res.data.data.accessToken,
       refresh_token: res.data.data.refreshToken || '',
     });
   }
-  if (res?.data?.data?.refreshToken) {
-    localStorage.setItem('refresh_token', res.data.data.refreshToken);
-  }
+  if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
   return res;
 };
 
 export const googleLogin = async (idToken) => {
-  const res = await request({
-    method: 'post',
-    url: '/auth/google',
-    data: { idToken },
-  });
+  const res = await request({ method: 'post', url: '/auth/google', data: { idToken } });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
     await supabase.auth.setSession({
-      access_token: res.data.data.accessToken,
+      access_token:  res.data.data.accessToken,
       refresh_token: res.data.data.refreshToken || '',
     });
   }
-  if (res?.data?.data?.refreshToken) {
-    localStorage.setItem('refresh_token', res.data.data.refreshToken);
-  }
+  if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
   return res;
 };
 
 export const logout = async () => {
   try { await request({ method: 'post', url: '/auth/logout' }); } finally {
-    tokenStore.clear(); userStore.clear();
+    tokenStore.clear();
+    userStore.clear();
   }
 };
 
 export const refreshToken = async () => {
   const storedRefreshToken = localStorage.getItem('refresh_token');
-  console.debug('[refreshToken] stored token:', storedRefreshToken ? 'present' : 'MISSING');
   const res = await request({
     method: 'post',
     url: '/auth/refresh',
     data: { refreshToken: storedRefreshToken },
   });
-  if (res?.data?.data?.accessToken) {
-    tokenStore.set(res.data.data.accessToken);
-  }
+  if (res?.data?.data?.accessToken) tokenStore.set(res.data.data.accessToken);
   return res;
 };
 
@@ -194,15 +245,7 @@ export const uploadAgentDocuments = (files, agentId) => {
 };
 
 export default {
-  registerClient,
-  registerAgent,
-  login,
-  googleLogin,
-  logout,
-  refreshToken,
-  getMe,
-  requestPasswordReset,
-  uploadAgentDocuments,
-  tokenStore,
-  userStore,
+  registerClient, registerAgent, login, googleLogin,
+  logout, refreshToken, getMe, requestPasswordReset,
+  uploadAgentDocuments, tokenStore, userStore,
 };
