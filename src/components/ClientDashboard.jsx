@@ -1198,8 +1198,7 @@ const ClientDashboard = ({ user, onLogout }) => {
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
       {toasts.map(toast => <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />)}
 
-      {/* Mobile Menu Button */}
-      <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-lg bg-white shadow-lg"><Menu className="h-5 w-5" /></button>
+      {/* Mobile Menu Button — now lives inside the header, removed from here */}
 
       {/* Mobile Menu Drawer */}
       {mobileMenuOpen && (
@@ -1300,13 +1299,34 @@ const ClientDashboard = ({ user, onLogout }) => {
       <div className="lg:ml-16">
         <header className={`sticky top-0 z-20 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b`}>
           <div className="px-4 sm:px-6 lg:px-8 py-4">
-            <div className="relative flex items-center justify-between">
-              {/* On mobile: absolutely centered so buttons don't push it off-center */}
-              <h1 className={`sm:static absolute inset-x-0 px-14 sm:px-0 text-center sm:text-left text-lg sm:text-xl font-semibold pointer-events-none truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{menuItems.find(item => item.id === activeTab)?.label}</h1>
-              <div className="flex items-center space-x-3">
-                <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">{darkMode ? <Sun className="h-5 w-5 text-gray-300" /> : <Moon className="h-5 w-5 text-gray-600" />}</button>
-                <div className="relative"><button onClick={() => setShowNotifications(!showNotifications)} className="p-2 rounded-lg hover:bg-gray-100 transition-colors relative"><Bell className={`h-5 w-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} /></button></div>
-                <div className="hidden sm:flex items-center space-x-3"><span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{user?.firstName || user?.name || 'User'}</span><div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold">{user?.firstName?.charAt(0) || user?.name?.charAt(0) || 'U'}</div></div>
+            <div className="flex items-center gap-3">
+              {/* Hamburger — only on mobile, inside header so title can account for it */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className={`lg:hidden flex-shrink-0 p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+              >
+                <Menu className={`h-5 w-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
+              </button>
+
+              {/* Title — centered on mobile, left-aligned on desktop */}
+              <h1 className={`flex-1 text-center lg:text-left text-lg sm:text-xl font-semibold truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                {menuItems.find(item => item.id === activeTab)?.label}
+              </h1>
+
+              {/* Right actions */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+                  {darkMode ? <Sun className="h-5 w-5 text-gray-300" /> : <Moon className="h-5 w-5 text-gray-600" />}
+                </button>
+                <button onClick={() => setShowNotifications(!showNotifications)} className={`p-2 rounded-lg transition-colors relative ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+                  <Bell className={`h-5 w-5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`} />
+                </button>
+                <div className="hidden sm:flex items-center gap-2 ml-1">
+                  <span className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{user?.firstName || user?.name || 'User'}</span>
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-sm">
+                    {user?.firstName?.charAt(0) || user?.name?.charAt(0) || 'U'}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
