@@ -658,7 +658,7 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [clientSearch, setClientSearch] = useState('');
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
-  const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients(user?.id);
+  const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients();
 
   const menuItems = [
     { id: 'overview', icon: Home, label: 'Overview' },
