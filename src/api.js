@@ -10,7 +10,6 @@ import { supabase } from './config/supabaseClient';
 const _apiBase = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
 
-console.log('[API] BASE_API:', BASE_API);
 
 // ─── Token & user stores ───────────────────────────────────────────────────────
 let _accessToken = localStorage.getItem('access_token') || null;
