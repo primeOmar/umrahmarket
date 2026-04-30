@@ -15,6 +15,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import CreatePackageModal from './agent/packages/creation/CreatePackageModal';
 import PackagesTab from './agent/packages/display/PackagesTab';
 import { useMessages, useAgentConversations } from '../hooks/useMessages';
+import { useAgentClients } from '../hooks/useAgentClients';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -419,56 +420,130 @@ const StatCard = ({ icon: Icon, label, value, change, trend, color }) => (
 );
 
 // ==================== CLIENT CARD COMPONENT ====================
-const ClientCard = ({ client, onView, onMessage, onEdit }) => (
-  <div className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100">
-    <div className="flex items-start justify-between mb-4">
-      <div className="flex items-center space-x-3">
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-lg">
-          {client.name.charAt(0)}
-        </div>
-        <div>
-          <h4 className="font-semibold text-gray-900">{client.name}</h4>
-          <p className="text-sm text-gray-500">{client.email}</p>
-        </div>
-      </div>
-      <div className="flex space-x-2">
-        <button onClick={() => onMessage(client)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors">
-          <MessageCircle className="h-4 w-4 text-emerald-600" />
-        </button>
-        <button onClick={() => onEdit(client)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors">
-          <Edit className="h-4 w-4 text-blue-600" />
-        </button>
-      </div>
-    </div>
-    
-    <div className="grid grid-cols-2 gap-4 mb-4">
-      <div>
-        <p className="text-xs text-gray-500 mb-1">Package</p>
-        <p className="text-sm font-medium text-gray-900">{client.package}</p>
-      </div>
-      <div>
-        <p className="text-xs text-gray-500 mb-1">Status</p>
-        <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
-          client.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-          client.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-          'bg-gray-100 text-gray-700'
-        }`}>
-          {client.status}
-        </span>
-      </div>
-    </div>
+const UMRAH_REQS = [
+  { key: 'passport', label: 'Passport (6+ months validity)' },
+  { key: 'visa', label: 'Saudi Umrah Visa' },
+  { key: 'mahram', label: 'Mahram letter (women under 45)' },
+  { key: 'vaccination', label: 'Meningitis vaccination certificate' },
+  { key: 'flights', label: 'Flight tickets' },
+  { key: 'photo', label: 'Passport-size photos (x6)' },
+];
 
-    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-      <div className="flex items-center space-x-2 text-xs text-gray-500">
-        <Calendar className="h-3 w-3" />
-        <span>{client.travelDate}</span>
+const HAJJ_REQS = [
+  ...UMRAH_REQS,
+  { key: 'hajj_permit', label: 'Hajj permit / quota slot' },
+  { key: 'health_cert', label: 'Health fitness certificate' },
+  { key: 'yellow_fever', label: 'Yellow fever vaccine (if applicable)' },
+];
+
+const ClientCard = ({ client, onView, onMessage }) => {
+  const [expanded, setExpanded] = useState(false);
+  const reqs = client.packageType === 'hajj' ? HAJJ_REQS : UMRAH_REQS;
+  const travelDate = client.availableFrom
+    ? new Date(client.availableFrom).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '—';
+
+  return (
+    <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 overflow-hidden">
+      {/* Header */}
+      <div className="p-5">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center space-x-3">
+            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+              {client.name.charAt(0)}
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-900 leading-tight">{client.name}</h4>
+              <p className="text-xs text-gray-500">{client.email}</p>
+              {client.phone !== '—' && <p className="text-xs text-gray-400">{client.phone}</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => onMessage(client)} className="p-1.5 hover:bg-emerald-50 rounded-lg transition-colors" title="Message">
+              <MessageCircle className="h-4 w-4 text-emerald-600" />
+            </button>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+              client.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
+              client.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+              client.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+              'bg-gray-100 text-gray-600'
+            }`}>
+              {client.status}
+            </span>
+          </div>
+        </div>
+
+        {/* Package info */}
+        <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Package</span>
+            <span className="text-xs font-medium text-gray-900 text-right max-w-[60%] truncate">{client.packageName}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Type</span>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+              client.packageType === 'hajj' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+            }`}>
+              {client.packageType === 'hajj' ? 'Hajj' : 'Umrah'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500 flex items-center gap-1"><Calendar className="h-3 w-3" />Departure</span>
+            <span className="text-xs font-medium text-gray-900">{travelDate}</span>
+          </div>
+          {client.duration && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500 flex items-center gap-1"><Clock className="h-3 w-3" />Duration</span>
+              <span className="text-xs font-medium text-gray-900">{client.duration} days</span>
+            </div>
+          )}
+          {client.amountPaid > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500 flex items-center gap-1"><CreditCard className="h-3 w-3" />Paid</span>
+              <span className="text-xs font-semibold text-emerald-700">{client.currency} {Number(client.amountPaid).toLocaleString()}</span>
+            </div>
+          )}
+        </div>
       </div>
-      <button onClick={() => onView(client)} className="text-sm text-emerald-600 font-medium hover:text-emerald-700">
-        View Details →
-      </button>
+
+      {/* Requirements section */}
+      <div className="border-t border-gray-100">
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors text-left"
+        >
+          <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+            <Shield className="h-3.5 w-3.5 text-blue-500" />
+            Preparation Requirements
+          </span>
+          <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+        {expanded && (
+          <div className="px-5 pb-4 space-y-2">
+            {reqs.map(r => (
+              <div key={r.key} className="flex items-center gap-2.5">
+                <div className="w-4 h-4 rounded border-2 border-gray-300 flex-shrink-0" />
+                <span className="text-xs text-gray-600">{r.label}</span>
+              </div>
+            ))}
+            {client.notes && (
+              <div className="mt-3 p-2.5 bg-amber-50 rounded-lg border border-amber-100">
+                <p className="text-xs text-amber-800 font-medium mb-0.5">Client notes</p>
+                <p className="text-xs text-amber-700">{client.notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
+        <button onClick={() => onView(client)} className="text-xs font-medium text-emerald-600 hover:text-emerald-700">
+          View Full Details →
+        </button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ==================== BOOKING CARD COMPONENT ====================
 const BookingCard = ({ booking, onView, onUpdate }) => (
@@ -581,6 +656,9 @@ const AgentDashboard = ({ user, onLogout }) => {
   ];
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientStatusFilter, setClientStatusFilter] = useState('all');
+  const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients(user?.id);
 
   const menuItems = [
     { id: 'overview', icon: Home, label: 'Overview' },
@@ -922,59 +1000,95 @@ const AgentDashboard = ({ user, onLogout }) => {
             </div>
           )}
 
-          {activeTab === 'clients' && (
-            <div className="space-y-6">
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Client Management</h2>
-                <div className="flex space-x-3">
-                  <button className="flex items-center space-x-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                    <Download className="h-4 w-4" />
-                    <span className="text-sm font-medium">Export</span>
-                  </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all">
-                    <Plus className="h-4 w-4" />
-                    <span className="text-sm font-medium">Add Client</span>
+          {activeTab === 'clients' && (() => {
+            const filteredClients = clients.filter(c => {
+              const matchSearch = !clientSearch ||
+                c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                c.email.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                c.packageName.toLowerCase().includes(clientSearch.toLowerCase());
+              const matchStatus = clientStatusFilter === 'all' || c.status === clientStatusFilter;
+              return matchSearch && matchStatus;
+            });
+
+            return (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-2xl font-bold text-gray-900">Client Management</h2>
+                    {!clientsLoading && (
+                      <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">
+                        {clients.length} client{clients.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <button onClick={refetchClients} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600">
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
                   </button>
                 </div>
-              </div>
 
-              {/* Filters */}
-              <div className="flex items-center space-x-4">
-                <div className="relative flex-1 max-w-xs">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search clients..."
-                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+                <div className="flex items-center space-x-3">
+                  <div className="relative flex-1 max-w-xs">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search by name, email, package…"
+                      value={clientSearch}
+                      onChange={e => setClientSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                    />
+                  </div>
+                  <select
+                    value={clientStatusFilter}
+                    onChange={e => setClientStatusFilter(e.target.value)}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
                 </div>
-                <button className="flex items-center space-x-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                  <Filter className="h-4 w-4" />
-                  <span className="text-sm font-medium">Filter</span>
-                </button>
-                <select className="px-4 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option>All Status</option>
-                  <option>Active</option>
-                  <option>Pending</option>
-                  <option>Completed</option>
-                </select>
-              </div>
 
-              {/* Clients Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {recentClients.map((client) => (
-                  <ClientCard
-                    key={client.id}
-                    client={client}
-                    onView={handleViewClient}
-                    onMessage={handleMessageClient}
-                    onEdit={handleEditClient}
-                  />
-                ))}
+                {clientsLoading ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader className="h-8 w-8 animate-spin text-emerald-500" />
+                  </div>
+                ) : clientsError ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <AlertCircle className="h-10 w-10 text-red-400 mb-3" />
+                    <p className="text-sm font-medium text-gray-700">Failed to load clients</p>
+                    <p className="text-xs text-gray-500 mt-1">{clientsError}</p>
+                    <button onClick={refetchClients} className="mt-4 px-4 py-2 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors">
+                      Retry
+                    </button>
+                  </div>
+                ) : filteredClients.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <Users className="h-12 w-12 text-gray-200 mb-3" />
+                    <p className="text-sm font-medium text-gray-600">
+                      {clients.length === 0 ? 'No clients yet' : 'No clients match your search'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {clients.length === 0 ? 'Clients will appear once they book your packages' : 'Try adjusting your search or filters'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredClients.map(client => (
+                      <ClientCard
+                        key={client.bookingId}
+                        client={client}
+                        onView={handleViewClient}
+                        onMessage={handleMessageClient}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {activeTab === 'bookings' && (
             <div className="space-y-6">

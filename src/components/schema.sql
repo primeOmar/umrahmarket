@@ -1,0 +1,215 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public._health_check (
+  id integer NOT NULL DEFAULT nextval('_health_check_id_seq'::regclass),
+  status text NOT NULL DEFAULT 'ok'::text,
+  timestamp timestamp with time zone DEFAULT now(),
+  version text DEFAULT '1.0.0'::text,
+  CONSTRAINT _health_check_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.agent_documents (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE,
+  incorporation_doc text,
+  tourism_doc text,
+  krapin_doc text,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])),
+  review_notes text,
+  submitted_at timestamp with time zone DEFAULT now(),
+  reviewed_at timestamp with time zone,
+  reviewed_by uuid,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT agent_documents_pkey PRIMARY KEY (id),
+  CONSTRAINT agent_documents_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT agent_documents_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.audit_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  action text NOT NULL,
+  resource_type text,
+  resource_id text,
+  changes jsonb,
+  ip_address text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT audit_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT audit_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.bookings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  package_id uuid NOT NULL,
+  payment_id uuid NOT NULL UNIQUE,
+  payment_method text NOT NULL CHECK (payment_method = ANY (ARRAY['MPESA'::text, 'CARD'::text, 'BANK'::text])),
+  amount_paid numeric NOT NULL,
+  currency text NOT NULL DEFAULT 'KES'::text,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'cancelled'::text, 'completed'::text])),
+  confirmed_at timestamp with time zone,
+  cancelled_at timestamp with time zone,
+  notes text CHECK (char_length(notes) <= 500),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT bookings_pkey PRIMARY KEY (id),
+  CONSTRAINT bookings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT bookings_package_id_fkey FOREIGN KEY (package_id) REFERENCES public.packages(id),
+  CONSTRAINT bookings_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES public.payments(id)
+);
+CREATE TABLE public.favourites (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  package_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT favourites_pkey PRIMARY KEY (id),
+  CONSTRAINT favourites_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT favourites_package_id_fkey FOREIGN KEY (package_id) REFERENCES public.packages(id)
+);
+CREATE TABLE public.login_attempts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email text NOT NULL,
+  ip_address text NOT NULL,
+  user_agent text,
+  success boolean NOT NULL,
+  failure_reason text,
+  attempted_at timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT login_attempts_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.messages (
+  id integer NOT NULL DEFAULT nextval('messages_id_seq'::regclass),
+  booking_id uuid NOT NULL,
+  sender_id uuid NOT NULL,
+  sender_type text NOT NULL CHECK (sender_type = ANY (ARRAY['client'::text, 'agent'::text, 'system'::text])),
+  agent_id uuid,
+  client_id uuid,
+  message text NOT NULL,
+  image_urls ARRAY,
+  is_read boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  read_at timestamp with time zone,
+  CONSTRAINT messages_pkey PRIMARY KEY (id),
+  CONSTRAINT messages_booking_id_fkey FOREIGN KEY (booking_id) REFERENCES public.bookings(id)
+);
+CREATE TABLE public.packages (
+  name character varying NOT NULL,
+  type character varying NOT NULL DEFAULT 'umrah'::character varying CHECK (type::text = ANY (ARRAY['umrah'::character varying, 'hajj'::character varying]::text[])),
+  location character varying NOT NULL DEFAULT 'makkah'::character varying CHECK (location::text = ANY (ARRAY['makkah'::character varying, 'madinah'::character varying, 'jeddah'::character varying]::text[])),
+  makkah_hotel_name character varying,
+  makkah_hotel_rating character varying CHECK (makkah_hotel_rating IS NULL OR (makkah_hotel_rating::text = ANY (ARRAY['1'::text, '2'::text, '3'::text, '4'::text, '5'::text, '6'::text]))),
+  makkah_hotel_distance character varying,
+  makkah_hotel_address text,
+  makkah_check_in_date date,
+  makkah_check_out_date date,
+  makkah_nights integer DEFAULT (makkah_check_out_date - makkah_check_in_date),
+  madinah_hotel_name character varying,
+  madinah_hotel_rating character varying CHECK (madinah_hotel_rating IS NULL OR (madinah_hotel_rating::text = ANY (ARRAY['1'::text, '2'::text, '3'::text, '4'::text, '5'::text, '6'::text]))),
+  madinah_hotel_distance character varying,
+  madinah_hotel_address text,
+  madinah_check_in_date date,
+  madinah_check_out_date date,
+  madinah_nights integer DEFAULT (madinah_check_out_date - madinah_check_in_date),
+  price numeric NOT NULL,
+  original_price numeric,
+  discount integer DEFAULT 0,
+  duration integer NOT NULL,
+  description text,
+  highlights jsonb,
+  inclusions jsonb,
+  exclusions jsonb,
+  available_from date,
+  available_to date,
+  max_group_size integer DEFAULT 50,
+  min_group_size integer DEFAULT 1,
+  image_urls ARRAY NOT NULL DEFAULT '{}'::text[],
+  agent_number text NOT NULL,
+  agent_name text NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  status character varying,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_by uuid,
+  CONSTRAINT packages_pkey PRIMARY KEY (id),
+  CONSTRAINT packages_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.payments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  package_id uuid NOT NULL,
+  method text NOT NULL CHECK (method = ANY (ARRAY['MPESA'::text, 'CARD'::text, 'BANK'::text])),
+  status text NOT NULL DEFAULT 'PENDING'::text CHECK (status = ANY (ARRAY['PENDING'::text, 'SUCCESS'::text, 'FAILED'::text, 'CANCELLED'::text])),
+  amount_kes numeric NOT NULL,
+  phone text,
+  merchant_request_id text,
+  checkout_request_id text UNIQUE,
+  mpesa_ref text,
+  result_code text,
+  result_desc text,
+  paid_at timestamp with time zone,
+  flw_tx_ref text UNIQUE,
+  flw_tx_id text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  pesapal_merchant_ref text,
+  pesapal_order_tracking_id text,
+  pesapal_redirect_url text,
+  CONSTRAINT payments_pkey PRIMARY KEY (id),
+  CONSTRAINT payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT payments_package_id_fkey FOREIGN KEY (package_id) REFERENCES public.packages(id)
+);
+CREATE TABLE public.profiles (
+  id uuid NOT NULL,
+  email text NOT NULL UNIQUE,
+  first_name text NOT NULL,
+  last_name text NOT NULL,
+  phone text,
+  role text NOT NULL CHECK (role = ANY (ARRAY['client'::text, 'agent'::text, 'admin'::text])),
+  company_name text,
+  license_number text,
+  approved boolean DEFAULT false,
+  verification_status text DEFAULT 'pending'::text CHECK (verification_status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])),
+  locked boolean DEFAULT false,
+  last_activity timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  agent_number text UNIQUE,
+  CONSTRAINT profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.refresh_tokens (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  token_hash text NOT NULL UNIQUE,
+  ip_address text,
+  user_agent text,
+  expires_at timestamp with time zone NOT NULL,
+  revoked boolean DEFAULT false,
+  revoked_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.security_events (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  event_type text NOT NULL,
+  user_id uuid,
+  ip_address text,
+  user_agent text,
+  details jsonb,
+  severity text CHECK (severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT security_events_pkey PRIMARY KEY (id),
+  CONSTRAINT security_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.uploads (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  file_name text NOT NULL,
+  file_url text NOT NULL,
+  file_size integer,
+  file_type text,
+  cloudflare_id text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT uploads_pkey PRIMARY KEY (id),
+  CONSTRAINT uploads_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+);
