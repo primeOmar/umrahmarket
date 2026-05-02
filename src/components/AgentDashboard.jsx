@@ -616,8 +616,8 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCreatePackage, setShowCreatePackage] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  const [sidebarHovered, setSidebarHovered] = useState(false); // desktop hover expand
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sample data
@@ -732,12 +732,10 @@ const AgentDashboard = ({ user, onLogout }) => {
     console.log('Saving package:', packageData);
   };
 
-  // Close sidebar on mobile after nav click
+  // Close mobile drawer after nav click; desktop uses hover — no click needed
   const handleNavClick = (tabId) => {
     setActiveTab(tabId);
-    if (window.innerWidth < 1024) {
-      setSidebarOpen(false);
-    }
+    setSidebarOpen(false); // always close mobile drawer
   };
 
   return (
@@ -750,7 +748,7 @@ const AgentDashboard = ({ user, onLogout }) => {
         onSave={handleSavePackage}
       />
 
-      {/* Mobile overlay backdrop - only on small screens */}
+      {/* Mobile overlay backdrop */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/40 lg:hidden"
@@ -758,93 +756,137 @@ const AgentDashboard = ({ user, onLogout }) => {
         />
       )}
 
-      {/* Sidebar - persistent on lg+, overlay drawer on mobile */}
-      <div className={`fixed inset-y-0 left-0 z-30 w-64 xl:w-72 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
-        <div className="h-full flex flex-col">
-          {/* Agency Info */}
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg">
-                {user?.agencyName?.charAt(0) || 'A'}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-900">{user?.agencyName || 'Travel Agency'}</h3>
-                <p className="text-xs text-gray-500">License: {user?.licenseNumber || '••••••'}</p>
-              </div>
+      {/*
+        SIDEBAR
+        • Mobile  : hidden off-screen, slides in as full drawer when sidebarOpen=true
+        • Desktop (lg+): always visible as a 16px-wide icon rail; expands to 256px on hover
+          — content is never pushed/shifted, sidebar floats over the page
+      */}
+      <div
+        onMouseEnter={() => setSidebarHovered(true)}
+        onMouseLeave={() => setSidebarHovered(false)}
+        className={`
+          fixed inset-y-0 left-0 z-30 bg-white border-r border-gray-200
+          flex flex-col
+          transition-all duration-300 ease-in-out
+          overflow-hidden
+          ${/* Mobile: off-screen unless drawer open */ ''}
+          ${sidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64'}
+          lg:translate-x-0
+          ${sidebarHovered ? 'lg:w-64 lg:shadow-2xl' : 'lg:w-16'}
+        `}
+      >
+        {/* Agency Info */}
+        <div className="p-3 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
+              {user?.agencyName?.charAt(0) || 'A'}
             </div>
-            <div className="mt-4 flex items-center justify-between text-xs">
-              <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full">Verified Agency</span>
-              <span className="text-gray-500">Member since 2024</span>
+            <div className={`transition-all duration-200 overflow-hidden ${sidebarHovered ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:hidden'} flex-1 min-w-0`}>
+              <h3 className="font-semibold text-gray-900 text-sm truncate">{user?.agencyName || 'Travel Agency'}</h3>
+              <p className="text-xs text-gray-500 truncate">License: {user?.licenseNumber || '••••••'}</p>
+              <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
+            </div>
+            {/* Always show on mobile (drawer open) */}
+            <div className={`lg:hidden flex-1 min-w-0 ${sidebarOpen ? 'block' : 'hidden'}`}>
+              <h3 className="font-semibold text-gray-900 text-sm truncate">{user?.agencyName || 'Travel Agency'}</h3>
+              <p className="text-xs text-gray-500 truncate">License: {user?.licenseNumber || '••••••'}</p>
+              <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
             </div>
           </div>
+        </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto p-4">
-            <ul className="space-y-1">
-              {menuItems.map((item) => (
-                <li key={item.id}>
-                  <button
-                    onClick={() => handleNavClick(item.id)}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
-                      activeTab === item.id
-                        ? 'bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <item.icon className={`h-5 w-5 ${activeTab === item.id ? 'text-blue-600' : 'text-gray-400'}`} />
-                      <span className="font-medium">{item.label}</span>
-                    </div>
-                    {item.count && (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                        item.id === 'messages' && item.count > 0
-                          ? 'bg-blue-600 text-white animate-pulse'
-                          : activeTab === item.id
-                          ? 'bg-blue-100 text-blue-600'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {item.count}
-                      </span>
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2">
+          <ul className="space-y-0.5">
+            {menuItems.map((item) => (
+              <li key={item.id}>
+                <button
+                  onClick={() => handleNavClick(item.id)}
+                  title={!sidebarHovered ? item.label : undefined}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${
+                    activeTab === item.id
+                      ? 'bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {/* Icon — always visible */}
+                  <div className="relative flex-shrink-0">
+                    <item.icon className={`h-5 w-5 ${activeTab === item.id ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+                    {/* Dot badge on icon when collapsed */}
+                    {item.count > 0 && !sidebarHovered && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full lg:block hidden" />
                     )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
+                  </div>
 
-          {/* Upgrade Banner */}
-          <div className="p-4 m-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl text-white">
-            <h4 className="font-semibold mb-2">Upgrade to Premium</h4>
-            <p className="text-xs opacity-90 mb-3">Get more features and higher commission rates</p>
-            <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors">
-              Learn More
-            </button>
-          </div>
+                  {/* Label + count — visible when expanded */}
+                  <span className={`font-medium text-sm flex-1 text-left whitespace-nowrap transition-all duration-200 ${sidebarHovered ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>
+                    {item.label}
+                  </span>
+                  {/* Always show on mobile */}
+                  <span className="font-medium text-sm flex-1 text-left whitespace-nowrap lg:hidden">{item.label}</span>
 
-          {/* Logout */}
-          <div className="p-4 border-t border-gray-200">
-            <button
-              onClick={onLogout}
-              className="w-full flex items-center space-x-3 px-4 py-3 text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
-            >
-              <LogOut className="h-5 w-5" />
-              <span className="font-medium">Logout</span>
-            </button>
-          </div>
+                  {item.count > 0 && (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 transition-all duration-200 ${
+                      item.id === 'messages' ? 'bg-blue-600 text-white animate-pulse' : activeTab === item.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                    } ${sidebarHovered ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>
+                      {item.count}
+                    </span>
+                  )}
+                  {/* Always show count on mobile */}
+                  {item.count > 0 && (
+                    <span className={`lg:hidden px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
+                      item.id === 'messages' ? 'bg-blue-600 text-white animate-pulse' : activeTab === item.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        {/* Upgrade Banner — only when expanded */}
+        <div className={`transition-all duration-200 flex-shrink-0 ${sidebarHovered ? 'opacity-100 max-h-40 p-3' : 'opacity-0 max-h-0 overflow-hidden p-0 lg:block'} lg:mx-2 lg:mb-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl text-white`}>
+          <h4 className="font-semibold text-sm mb-1">Upgrade to Premium</h4>
+          <p className="text-[11px] opacity-90 mb-2">More features & higher commissions</p>
+          <button className="w-full py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-medium transition-colors">
+            Learn More
+          </button>
+        </div>
+        {/* Collapsed upgrade dot */}
+        <div className={`hidden lg:flex items-center justify-center py-2 mb-1 ${sidebarHovered ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'} transition-all duration-200`}>
+          <div className="w-2 h-2 rounded-full bg-gradient-to-br from-purple-500 to-pink-500" title="Upgrade to Premium" />
+        </div>
+
+        {/* Logout */}
+        <div className="p-2 border-t border-gray-200 flex-shrink-0">
+          <button
+            onClick={onLogout}
+            title={!sidebarHovered ? 'Logout' : undefined}
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+          >
+            <LogOut className="h-5 w-5 flex-shrink-0" />
+            <span className={`font-medium text-sm whitespace-nowrap transition-all duration-200 ${sidebarHovered ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>Logout</span>
+            <span className="font-medium text-sm whitespace-nowrap lg:hidden">Logout</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Content - sidebar pushes content on desktop, overlays on mobile */}
-      <div className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'ml-0'}`}>
+      {/* Main Content
+          Desktop: always offset by the collapsed rail width (lg:ml-16), never fully hidden
+          Mobile: no offset (sidebar is overlay drawer)
+      */}
+      <div className="transition-all duration-300 lg:ml-16">
         {/* Top Bar */}
         <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
           <div className="px-4 md:px-8 py-3 md:py-4 flex items-center justify-between gap-3">
             <div className="flex items-center space-x-2 md:space-x-4 flex-1 min-w-0">
+              {/* Hamburger — mobile only (desktop uses hover rail) */}
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
               >
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
