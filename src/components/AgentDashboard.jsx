@@ -3,7 +3,7 @@ import {
   LayoutGrid, Users, Calendar, Package, DollarSign, Settings,
   LogOut, Bell, Search, Menu, X, ChevronDown, Download, Upload,
   TrendingUp, Star, MessageCircle, FileText, Shield, CreditCard,
-  MapPin, Globe, Clock, CheckCircle, AlertCircle, Plus, Filter,
+  Globe, Clock, CheckCircle, AlertCircle, Plus, Filter,
   MoreVertical, Edit, Trash2, Eye, Mail, Phone, User,
   Home, BarChart3, PieChart, Target, Award, Briefcase,
   BookOpen, Headphones, Image, Video, Camera, Lock,
@@ -561,55 +561,6 @@ const ClientCard = ({ client, onView, onMessage }) => {
   );
 };
 
-// ==================== BOOKING CARD COMPONENT ====================
-const BookingCard = ({ booking, onView, onUpdate }) => (
-  <div className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100">
-    <div className="flex items-start justify-between mb-4">
-      <div>
-        <h4 className="font-semibold text-gray-900">{booking.clientName}</h4>
-        <p className="text-sm text-gray-500">Booking #{booking.id}</p>
-      </div>
-      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-        booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
-        booking.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-        booking.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-        'bg-blue-100 text-blue-700'
-      }`}>
-        {booking.status}
-      </span>
-    </div>
-
-    <div className="space-y-3 mb-4">
-      <div className="flex items-center text-sm text-gray-600">
-        <Calendar className="h-4 w-4 mr-2 text-gray-400" />
-        <span>{booking.date} · {booking.duration}</span>
-      </div>
-      <div className="flex items-center text-sm text-gray-600">
-        <MapPin className="h-4 w-4 mr-2 text-gray-400" />
-        <span>{booking.destination}</span>
-      </div>
-      <div className="flex items-center text-sm text-gray-600">
-        <Users className="h-4 w-4 mr-2 text-gray-400" />
-        <span>{booking.travelers} travelers</span>
-      </div>
-    </div>
-
-    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-      <div className="text-sm font-semibold text-gray-900">
-        ${booking.amount.toLocaleString()}
-      </div>
-      <div className="flex space-x-2">
-        <button onClick={() => onView(booking)} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
-          Details
-        </button>
-        <button onClick={() => onUpdate(booking)} className="px-3 py-1.5 text-sm bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors">
-          Update
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
 // ==================== MAIN DASHBOARD COMPONENT ====================
 const AgentDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -666,12 +617,6 @@ const AgentDashboard = ({ user, onLogout }) => {
     { id: 4, name: 'Aisha Rahman', email: 'aisha@email.com', package: 'VIP Hajj', status: 'completed', travelDate: 'Jan 10, 2024' }
   ];
 
-  const recentBookings = [
-    { id: 'B001', clientName: 'Ahmed Mohammed', date: 'Mar 15, 2024', duration: '10 Days', destination: 'Makkah & Madinah', travelers: 2, amount: 4500, status: 'confirmed' },
-    { id: 'B002', clientName: 'Fatima Hassan', date: 'Jun 20, 2024', duration: '14 Days', destination: 'Hajj 2024', travelers: 1, amount: 8200, status: 'pending' },
-    { id: 'B003', clientName: 'Omar Abdullah', date: 'Apr 5, 2024', duration: '7 Days', destination: 'Umrah Express', travelers: 4, amount: 6800, status: 'confirmed' }
-  ];
-
   const packages = [
     {
       id: 1,
@@ -711,7 +656,6 @@ const AgentDashboard = ({ user, onLogout }) => {
   const menuItems = [
     { id: 'overview', icon: Home, label: 'Overview' },
     { id: 'clients', icon: Users, label: 'Clients', count: 156 },
-    { id: 'bookings', icon: Calendar, label: 'Bookings', count: 43 },
     { id: 'packages', icon: Package, label: 'Packages', count: 12 },
     { id: 'analytics', icon: BarChart3, label: 'Analytics' },
     { id: 'documents', icon: FileText, label: 'Documents' },
@@ -729,14 +673,6 @@ const AgentDashboard = ({ user, onLogout }) => {
 
   const handleEditClient = (client) => {
     console.log('Edit client:', client);
-  };
-
-  const handleViewBooking = (booking) => {
-    console.log('View booking:', booking);
-  };
-
-  const handleUpdateBooking = (booking) => {
-    console.log('Update booking:', booking);
   };
 
   const handleEditPackage = (pkg) => {
@@ -1097,32 +1033,6 @@ const AgentDashboard = ({ user, onLogout }) => {
                   </div>
                 </div>
 
-                {/* Recent Bookings */}
-                <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="font-semibold text-gray-900">Recent Bookings</h3>
-                    <button onClick={() => setActiveTab('bookings')} className="text-sm text-emerald-600 hover:text-emerald-700">
-                      View All →
-                    </button>
-                  </div>
-                  <div className="space-y-4">
-                    {recentBookings.map((booking) => (
-                      <div key={booking.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-900">{booking.clientName}</h4>
-                          <p className="text-xs text-gray-500">{booking.date} · ${booking.amount}</p>
-                        </div>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
-                          booking.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {booking.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -1217,33 +1127,7 @@ const AgentDashboard = ({ user, onLogout }) => {
             );
           })()}
 
-          {activeTab === 'bookings' && (
-            <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Booking Management</h2>
-                <div className="flex space-x-3">
-                  <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                    <Calendar className="h-4 w-4" />
-                  </button>
-                  <button className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all text-sm">
-                    New Booking
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {recentBookings.map((booking) => (
-                  <BookingCard
-                    key={booking.id}
-                    booking={booking}
-                    onView={handleViewBooking}
-                    onUpdate={handleUpdateBooking}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-{activeTab === 'packages' && (
+          {activeTab === 'packages' && (
   <PackagesTab
     packages={packages}
     onCreatePackage={() => setShowCreatePackage(true)}
@@ -1438,7 +1322,6 @@ const AgentDashboard = ({ user, onLogout }) => {
         {[
           { id: 'overview', icon: Home, label: 'Home' },
           { id: 'clients', icon: Users, label: 'Clients' },
-          { id: 'bookings', icon: Calendar, label: 'Bookings' },
           { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount },
           { id: 'settings', icon: Settings, label: 'More' },
         ].map((item) => (
