@@ -307,8 +307,9 @@ const AgentMessagesTab = ({ user }) => {
   const { conversations, loading: convsLoading, refetch } = useAgentConversations();
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState('');
+  const [mobileView, setMobileView] = useState('list'); // 'list' | 'chat'
 
-  // Auto-select first on load
+  // Auto-select first on load (desktop only)
   useEffect(() => {
     if (!selected && conversations.length > 0) setSelected(conversations[0]);
   }, [conversations]); // eslint-disable-line
@@ -321,26 +322,40 @@ const AgentMessagesTab = ({ user }) => {
 
   const totalUnread = conversations.reduce((s, c) => s + (c.unreadCount || 0), 0);
 
+  const handleSelectConv = (conv) => {
+    setSelected(conv);
+    setMobileView('chat');
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-gray-900">Messages</h2>
+          {/* Back button on mobile when in chat view */}
+          {mobileView === 'chat' && (
+            <button
+              onClick={() => setMobileView('list')}
+              className="sm:hidden p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5 text-gray-600" />
+            </button>
+          )}
+          <h2 className="text-xl md:text-2xl font-bold text-gray-900">Messages</h2>
           {totalUnread > 0 && (
             <span className="px-2.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-full animate-pulse">{totalUnread}</span>
           )}
         </div>
         <button onClick={refetch} className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden" style={{ height: '640px' }}>
-        {/* Mobile: show either list or chat. Desktop: show both */}
-        <div className="grid h-full" style={{ gridTemplateColumns: selected ? 'var(--conv-list-width, 300px) 1fr' : '1fr' }}>
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden" style={{ height: 'min(640px, calc(100vh - 220px))' }}>
+        {/* Desktop: side-by-side. Mobile: single panel at a time */}
+        <div className="h-full flex">
 
           {/* ── Left sidebar: conversation list ── */}
-          <div className={`border-r border-gray-100 flex flex-col ${selected ? 'hidden md:flex' : 'flex'}`}>
+          <div className={`${mobileView === 'chat' ? 'hidden' : 'flex'} sm:flex flex-col border-r border-gray-100 w-full sm:w-[280px] md:w-[300px] flex-shrink-0`}>
             <div className="p-3 border-b border-gray-100 bg-gray-50">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -367,7 +382,7 @@ const AgentMessagesTab = ({ user }) => {
                 </div>
               ) : (
                 filtered.map(conv => (
-                  <ConvItem key={conv.bookingId} conv={conv} isActive={selected?.bookingId === conv.bookingId} onClick={() => setSelected(conv)} />
+                  <ConvItem key={conv.bookingId} conv={conv} isActive={selected?.bookingId === conv.bookingId} onClick={() => handleSelectConv(conv)} />
                 ))
               )}
             </div>
@@ -378,28 +393,19 @@ const AgentMessagesTab = ({ user }) => {
           </div>
 
           {/* ── Right: active chat ── */}
-          {selected && (
-            <div className="flex flex-col h-full overflow-hidden col-span-1">
-              {/* Mobile back button */}
-              <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-white">
-                <button onClick={() => setSelected(null)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                  <ArrowLeft className="h-4 w-4 text-gray-600" />
-                </button>
-                <span className="text-sm font-medium text-gray-700">Back to conversations</span>
-              </div>
+          <div className={`${mobileView === 'list' ? 'hidden' : 'flex'} sm:flex flex-col flex-1 overflow-hidden`}>
+            {selected ? (
               <AgentChatPane conv={selected} agentUser={user} />
-            </div>
-          )}
-
-          {!selected && (
-            <div className="hidden md:flex flex-col items-center justify-center h-full text-center bg-gray-50">
-              <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center mb-4">
-                <MessageCircle className="h-8 w-8 text-gray-300" />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center bg-gray-50">
+                <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 shadow-sm flex items-center justify-center mb-4">
+                  <MessageCircle className="h-8 w-8 text-gray-300" />
+                </div>
+                <p className="text-base font-semibold text-gray-500">Select a conversation</p>
+                <p className="text-sm text-gray-400 mt-1">Choose a client from the list to start chatting</p>
               </div>
-              <p className="text-base font-semibold text-gray-500">Select a conversation</p>
-              <p className="text-sm text-gray-400 mt-1">Choose a client from the list to start chatting</p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -611,6 +617,7 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCreatePackage, setShowCreatePackage] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sample data
@@ -725,6 +732,14 @@ const AgentDashboard = ({ user, onLogout }) => {
     console.log('Saving package:', packageData);
   };
 
+  // Close sidebar on mobile after nav click
+  const handleNavClick = (tabId) => {
+    setActiveTab(tabId);
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
 
@@ -735,7 +750,7 @@ const AgentDashboard = ({ user, onLogout }) => {
         onSave={handleSavePackage}
       />
 
-      {/* Mobile overlay backdrop */}
+      {/* Mobile overlay backdrop - only on small screens */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/40 lg:hidden"
@@ -743,8 +758,8 @@ const AgentDashboard = ({ user, onLogout }) => {
         />
       )}
 
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-30 w-72 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out ${
+      {/* Sidebar - persistent on lg+, overlay drawer on mobile */}
+      <div className={`fixed inset-y-0 left-0 z-30 w-64 xl:w-72 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="h-full flex flex-col">
@@ -771,7 +786,7 @@ const AgentDashboard = ({ user, onLogout }) => {
               {menuItems.map((item) => (
                 <li key={item.id}>
                   <button
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => handleNavClick(item.id)}
                     className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
                       activeTab === item.id
                         ? 'bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600'
@@ -821,12 +836,12 @@ const AgentDashboard = ({ user, onLogout }) => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-72' : 'ml-0'}`}>
+      {/* Main Content - sidebar pushes content on desktop, overlays on mobile */}
+      <div className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'ml-0'}`}>
         {/* Top Bar */}
         <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
-          <div className="px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-3">
-            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
+          <div className="px-4 md:px-8 py-3 md:py-4 flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-2 md:space-x-4 flex-1 min-w-0">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
@@ -834,8 +849,8 @@ const AgentDashboard = ({ user, onLogout }) => {
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
               
-              {/* Search - hidden on very small screens */}
-              <div className="relative w-48 sm:w-72 md:w-96 hidden sm:block">
+              {/* Search */}
+              <div className="relative w-full max-w-xs md:max-w-sm lg:max-w-md hidden sm:block">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
@@ -847,24 +862,27 @@ const AgentDashboard = ({ user, onLogout }) => {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
-              {/* Search icon on mobile */}
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors sm:hidden">
-                <Search className="h-5 w-5 text-gray-600" />
-              </button>
-
+            <div className="flex items-center space-x-2 md:space-x-4 flex-shrink-0">
               {/* Quick Actions */}
               <button
                 onClick={() => setShowCreatePackage(true)}
-                className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all text-sm font-medium"
+                className="hidden sm:flex items-center space-x-2 px-3 md:px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all"
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New Package</span>
+                <span className="text-sm font-medium hidden md:inline">New Package</span>
+              </button>
+
+              {/* Mobile: New Package icon-only */}
+              <button
+                onClick={() => setShowCreatePackage(true)}
+                className="sm:hidden p-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg"
+              >
+                <Plus className="h-4 w-4" />
               </button>
 
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:flex"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block"
                 title="Upload Documents"
               >
                 <Upload className="h-5 w-5 text-gray-600" />
@@ -882,7 +900,7 @@ const AgentDashboard = ({ user, onLogout }) => {
 
                 {/* Notifications Dropdown */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-72 sm:w-96 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
+                  <div className="absolute right-0 mt-2 w-80 md:w-96 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
                     <div className="p-4 border-b border-gray-200 flex items-center justify-between">
                       <h3 className="font-semibold text-gray-900">Notifications</h3>
                       <button className="text-xs text-blue-600 hover:text-blue-700">Mark all as read</button>
@@ -892,7 +910,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                         <div key={notif.id} className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${!notif.read ? 'bg-blue-50/30' : ''}`}>
                           <div className="flex items-start justify-between mb-1">
                             <h4 className="text-sm font-medium text-gray-900">{notif.title}</h4>
-                            <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{notif.time}</span>
+                            <span className="text-xs text-gray-500">{notif.time}</span>
                           </div>
                           <p className="text-sm text-gray-600">{notif.message}</p>
                         </div>
@@ -906,12 +924,12 @@ const AgentDashboard = ({ user, onLogout }) => {
               </div>
 
               {/* User Menu */}
-              <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className="flex items-center space-x-3">
                 <div className="text-right hidden md:block">
                   <p className="text-sm font-medium text-gray-900">{user?.agencyName || 'Agency Name'}</p>
                   <p className="text-xs text-gray-500">{user?.email || 'agency@email.com'}</p>
                 </div>
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
                   {user?.agencyName?.charAt(0) || 'A'}
                 </div>
               </div>
@@ -920,9 +938,9 @@ const AgentDashboard = ({ user, onLogout }) => {
         </header>
 
         {/* Dashboard Content */}
-        <main className="p-4 sm:p-6 lg:p-8">
+        <main className="p-4 md:p-8 pb-24 lg:pb-8">
           {activeTab === 'overview' && (
-            <div className="space-y-8">
+            <div className="space-y-6 md:space-y-8">
               {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {stats.map((stat, index) => (
@@ -1035,9 +1053,9 @@ const AgentDashboard = ({ user, onLogout }) => {
 
             return (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <h2 className="text-2xl font-bold text-gray-900">Client Management</h2>
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-900">Client Management</h2>
                     {!clientsLoading && (
                       <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">
                         {clients.length} client{clients.length !== 1 ? 's' : ''}
@@ -1050,8 +1068,8 @@ const AgentDashboard = ({ user, onLogout }) => {
                   </button>
                 </div>
 
-                <div className="flex items-center space-x-3">
-                  <div className="relative flex-1 max-w-xs">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative flex-1 min-w-[180px] max-w-xs">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <input
                       type="text"
@@ -1064,7 +1082,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                   <select
                     value={clientStatusFilter}
                     onChange={e => setClientStatusFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-200 rounded-lg text-sm"
+                    className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
                   >
                     <option value="all">All Status</option>
                     <option value="pending">Pending</option>
@@ -1115,13 +1133,13 @@ const AgentDashboard = ({ user, onLogout }) => {
 
           {activeTab === 'bookings' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Booking Management</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Booking Management</h2>
                 <div className="flex space-x-3">
                   <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                     <Calendar className="h-4 w-4" />
                   </button>
-                  <button className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all">
+                  <button className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all text-sm">
                     New Booking
                   </button>
                 </div>
@@ -1151,7 +1169,7 @@ const AgentDashboard = ({ user, onLogout }) => {
 
           {activeTab === 'analytics' && (
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-900">Analytics & Reports</h2>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Analytics & Reports</h2>
               
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
@@ -1185,8 +1203,8 @@ const AgentDashboard = ({ user, onLogout }) => {
 
           {activeTab === 'documents' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Document Management</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Document Management</h2>
                 <button
                   onClick={() => setShowUploadModal(true)}
                   className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all"
@@ -1240,14 +1258,14 @@ const AgentDashboard = ({ user, onLogout }) => {
 
           {activeTab === 'settings' && (
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Settings</h2>
               
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Profile Settings</h3>
                 </div>
                 <div className="p-6 space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Agency Name</label>
                       <input
@@ -1328,6 +1346,38 @@ const AgentDashboard = ({ user, onLogout }) => {
           )}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 flex items-center justify-around px-2 py-2 safe-area-inset-bottom">
+        {[
+          { id: 'overview', icon: Home, label: 'Home' },
+          { id: 'clients', icon: Users, label: 'Clients' },
+          { id: 'bookings', icon: Calendar, label: 'Bookings' },
+          { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount },
+          { id: 'settings', icon: Settings, label: 'More' },
+        ].map((item) => (
+          <button
+            key={item.id}
+            onClick={() => handleNavClick(item.id)}
+            className={`relative flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${
+              activeTab === item.id ? 'text-blue-600' : 'text-gray-400'
+            }`}
+          >
+            <div className="relative">
+              <item.icon className="h-5 w-5" />
+              {item.count > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold px-0.5">
+                  {item.count > 9 ? '9+' : item.count}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-medium leading-none">{item.label}</span>
+            {activeTab === item.id && (
+              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full" />
+            )}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 };
