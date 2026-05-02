@@ -2,8 +2,11 @@
 // Production: Supabase Realtime subscriptions — zero polling, no rate limit hits
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { request } from '../api';
-import { supabase } from '../config/supabaseClient'; // your frontend supabase client
+import { supabase } from '../config/supabaseClient';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// useMessages — per-booking chat with Realtime sync
+// ─────────────────────────────────────────────────────────────────────────────
 export const useMessages = (bookingId) => {
   const [messages, setMessages]         = useState([]);
   const [loading, setLoading]           = useState(false);
@@ -19,10 +22,31 @@ export const useMessages = (bookingId) => {
   const pendingUnreadRef = useRef([]);
   const slowPollRef      = useRef(null);
 
-  // ── Initial fetch ─────────────────────────────────────────────────────────
+  // ── Debounced batch mark-read ─────────────────────────────────────────────
+  const scheduleBatchMarkRead = useCallback((ids) => {
+    pendingUnreadRef.current = [...new Set([...pendingUnreadRef.current, ...ids])];
+    if (markReadTimerRef.current) clearTimeout(markReadTimerRef.current);
+    markReadTimerRef.current = setTimeout(async () => {
+      const toMark = [...pendingUnreadRef.current];
+      pendingUnreadRef.current = [];
+      if (!toMark.length) return;
+      try {
+        await request({
+          method: 'post',
+          url: '/messages/mark-read',
+          data: { messageIds: toMark, bookingId },
+        });
+      } catch (err) {
+        console.error('[markAsRead]', err.message);
+      }
+    }, 2000);
+  }, [bookingId]);
+
+  // ── Initial / manual fetch ────────────────────────────────────────────────
   const fetchMessages = useCallback(async (silent = false) => {
     if (!bookingId) return;
     if (!silent) setLoading(true);
+    setError(null);
     try {
       const res = await request({ method: 'get', url: `/messages/${bookingId}` });
       const data = res.data;
@@ -32,105 +56,156 @@ export const useMessages = (bookingId) => {
       if (data?.agentName)   setAgentName(data.agentName);
       if (data?.packageName) setPackageName(data.packageName);
 
-      // Batch mark-as-read with debounce
       const unreadIds = msgs
         .filter(m => !m.is_read && m.sender_id !== data?.currentUserId)
         .map(m => m.id);
       if (unreadIds.length) scheduleBatchMarkRead(unreadIds);
-
-      setError(null);
     } catch (err) {
       console.error('[fetchMessages]', err.message);
       if (!silent) setError(err.message);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [bookingId]); // eslint-disable-line
+  }, [bookingId, scheduleBatchMarkRead]);
 
-  // ── Debounced batch mark-read (1 request per 2s max) ─────────────────────
-  const scheduleBatchMarkRead = (ids) => {
-    pendingUnreadRef.current = [...new Set([...pendingUnreadRef.current, ...ids])];
-    if (markReadTimerRef.current) clearTimeout(markReadTimerRef.current);
-    markReadTimerRef.current = setTimeout(async () => {
-      const toMark = [...pendingUnreadRef.current];
-      pendingUnreadRef.current = [];
-      if (!toMark.length) return;
-      try {
-        await request({ method: 'post', url: '/messages/mark-read', data: { messageIds: toMark, bookingId } });
-      } catch (err) {
-        console.error('[markAsRead]', err.message);
-      }
-    }, 2000);
-  };
-
-  // ── 30s fallback polling (only if Realtime fails) ────────────────────────
+  // ── 30s fallback polling (only when Realtime is unavailable) ─────────────
   const startSlowPolling = useCallback(() => {
     if (slowPollRef.current) return;
     console.warn('[Messages] Realtime unavailable — using 30s polling fallback');
     slowPollRef.current = setInterval(() => fetchMessages(true), 30_000);
   }, [fetchMessages]);
 
-  // ── Supabase Realtime subscription ───────────────────────────────────────
-  const subscribeRealtime = useCallback(() => {
-    if (!bookingId || !supabase) { startSlowPolling(); return; }
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
+  const stopSlowPolling = useCallback(() => {
+    if (slowPollRef.current) {
+      clearInterval(slowPollRef.current);
+      slowPollRef.current = null;
+    }
+  }, []);
 
-    channelRef.current = supabase
-      .channel(`messages:${bookingId}`)
-      // New message → append (deduplicated, replaces optimistic)
-      .on('postgres_changes',
+  // ── Supabase Realtime subscription ───────────────────────────────────────
+  // CRITICAL: build the full channel with .on() BEFORE calling .subscribe()
+  // Using a unique channel name per bookingId+mount avoids the
+  // "cannot add callbacks after subscribe()" error on remount.
+  const subscribeRealtime = useCallback(() => {
+    if (!bookingId || !supabase) {
+      startSlowPolling();
+      return;
+    }
+
+    // Tear down any existing channel first
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // Unique name prevents collision on remount (StrictMode, hot reload, etc.)
+    const channelName = `messages:${bookingId}:${Date.now()}`;
+
+    const channel = supabase
+      .channel(channelName)
+      // New message → append (deduped, replaces optimistic)
+      .on(
+        'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
         ({ new: msg }) => {
           setMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
-            const clean = prev.filter(m => !(m.is_optimistic && m.message === msg.message));
+            const clean = prev.filter(
+              m => !(m.is_optimistic && m.message === msg.message)
+            );
             return [...clean, msg];
           });
-          if (msg.sender_id !== currentUserRef.current) scheduleBatchMarkRead([msg.id]);
+          if (msg.sender_id !== currentUserRef.current) {
+            scheduleBatchMarkRead([msg.id]);
+          }
         }
       )
-      // Message updated (e.g. read_at set) → patch in place
-      .on('postgres_changes',
+      // Message updated (read_at, etc.) → patch in place
+      .on(
+        'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
-        ({ new: msg }) => setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, ...msg } : m))
+        ({ new: msg }) =>
+          setMessages(prev => prev.map(m => (m.id === msg.id ? { ...m, ...msg } : m)))
       )
-      // Typing broadcasts (no DB hits)
+      // Typing indicators via broadcast (no DB writes)
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload.userId === currentUserRef.current) return;
         setTypingUsers(prev =>
-          payload.isTyping ? [...new Set([...prev, payload.userId])] : prev.filter(id => id !== payload.userId)
+          payload.isTyping
+            ? [...new Set([...prev, payload.userId])]
+            : prev.filter(id => id !== payload.userId)
         );
-        setTimeout(() => setTypingUsers(prev => prev.filter(id => id !== payload.userId)), 3000);
-      })
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') startSlowPolling();
+        setTimeout(
+          () => setTypingUsers(prev => prev.filter(id => id !== payload.userId)),
+          3000
+        );
       });
-  }, [bookingId, startSlowPolling]); // eslint-disable-line
 
-  // ── Send typing indicator via Realtime broadcast (free, no API call) ─────
+    // subscribe() MUST come AFTER all .on() registrations
+    channel.subscribe(status => {
+      if (status === 'SUBSCRIBED') {
+        stopSlowPolling();
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        startSlowPolling();
+      }
+    });
+
+    channelRef.current = channel;
+  }, [bookingId, scheduleBatchMarkRead, startSlowPolling, stopSlowPolling]);
+
+  // ── Cleanup helper ────────────────────────────────────────────────────────
+  const cleanup = useCallback(() => {
+    if (channelRef.current && supabase) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    stopSlowPolling();
+    if (markReadTimerRef.current) {
+      clearTimeout(markReadTimerRef.current);
+      markReadTimerRef.current = null;
+    }
+  }, [stopSlowPolling]);
+
+  // ── Send typing indicator ─────────────────────────────────────────────────
   const sendTyping = useCallback((isTyping) => {
     channelRef.current?.send({
-      type: 'broadcast', event: 'typing',
+      type: 'broadcast',
+      event: 'typing',
       payload: { isTyping, userId: currentUserRef.current },
     });
   }, []);
 
   // ── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(async (message, imageUrls = []) => {
-    if (!bookingId || !message.trim()) return false;
+    if (!bookingId || !message?.trim()) return false;
 
     const tempId = `temp_${Date.now()}`;
-    setMessages(prev => [...prev, {
-      id: tempId, booking_id: bookingId, message: message.trim(),
-      image_urls: imageUrls, created_at: new Date().toISOString(),
-      is_optimistic: true, sender_id: currentUserRef.current,
-    }]);
+    setMessages(prev => [
+      ...prev,
+      {
+        id: tempId,
+        booking_id: bookingId,
+        message: message.trim(),
+        image_urls: imageUrls,
+        created_at: new Date().toISOString(),
+        is_optimistic: true,
+        sender_id: currentUserRef.current,
+      },
+    ]);
 
     try {
-      const res = await request({ method: 'post', url: '/messages', data: { bookingId, message, imageUrls } });
+      const res = await request({
+        method: 'post',
+        url: '/messages',
+        data: { bookingId, message, imageUrls },
+      });
       if (res.data?.success) {
-        // Realtime INSERT will handle dedup; also patch optimistic as fallback
-        setMessages(prev => prev.map(m => m.id === tempId ? { ...res.data.message, is_optimistic: false } : m));
+        // Realtime INSERT handles dedup; patch optimistic as belt-and-suspenders
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === tempId ? { ...res.data.message, is_optimistic: false } : m
+          )
+        );
         return true;
       }
       setMessages(prev => prev.filter(m => m.id !== tempId));
@@ -148,22 +223,29 @@ export const useMessages = (bookingId) => {
     if (!bookingId) return;
     fetchMessages();
     subscribeRealtime();
-    return () => {
-      if (channelRef.current) supabase?.removeChannel(channelRef.current);
-      if (slowPollRef.current) clearInterval(slowPollRef.current);
-      if (markReadTimerRef.current) clearTimeout(markReadTimerRef.current);
-    };
-  }, [bookingId, fetchMessages, subscribeRealtime]);
+    return cleanup;
+  }, [bookingId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Intentionally only re-run when bookingId changes.
+  // subscribeRealtime/fetchMessages/cleanup are stable refs.
 
   return {
-    messages, loading, error, agentName, packageName,
-    sendMessage, sendTyping, typingUsers, onlineStatus,
+    messages,
+    loading,
+    error,
+    agentName,
+    packageName,
+    sendMessage,
+    sendTyping,
+    typingUsers,
+    onlineStatus,
     currentUserId: currentUserRef.current,
     refetch: () => fetchMessages(false),
   };
 };
 
-// ── Agent conversations list — Realtime, no polling ──────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// useAgentConversations — sidebar conversation list with Realtime refresh
+// ─────────────────────────────────────────────────────────────────────────────
 export const useAgentConversations = () => {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading]             = useState(false);
@@ -183,17 +265,45 @@ export const useAgentConversations = () => {
 
   useEffect(() => {
     fetchConversations();
+
     if (!supabase) return;
 
-    // Any new message → refresh conversation list (last message / unread count)
-    channelRef.current = supabase
-      .channel('agent-conversations-watcher')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+    // Tear down any stale channel before creating a new one.
+    // This prevents the "cannot add callbacks after subscribe()" crash
+    // that occurs when StrictMode / hot-reload remounts the component.
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // Unique name per mount — avoids collisions with previous subscriptions
+    // that may still be tearing down in Supabase's internal registry.
+    const channelName = `agent-conversations:${Date.now()}`;
+
+    // Register ALL .on() handlers BEFORE calling .subscribe()
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
         () => fetchConversations(true)
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        () => fetchConversations(true)
+      );
 
-    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+    // subscribe() comes LAST
+    channel.subscribe();
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current && supabase) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
   }, [fetchConversations]);
 
   return { conversations, loading, refetch: fetchConversations };
