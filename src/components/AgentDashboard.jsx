@@ -620,6 +620,37 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [sidebarHovered, setSidebarHovered] = useState(false); // desktop hover expand
   const [searchQuery, setSearchQuery] = useState('');
 
+  // ── Live agent profile fetched from DB ──────────────────────────
+  const [agentProfile, setAgentProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL || ''}/api/auth/me`,
+          { credentials: 'include' }
+        );
+        if (!res.ok) throw new Error('Failed to fetch profile');
+        const json = await res.json();
+        if (json.success && json.data?.user) setAgentProfile(json.data.user);
+      } catch (err) {
+        console.error('[AgentDashboard] profile fetch failed:', err.message);
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  // Merge: DB profile takes precedence over login-time prop
+  const profile      = agentProfile || user;
+  const displayName  = profile?.agentName  || profile?.agencyName  || profile?.firstName || 'Agency';
+  const displayEmail = profile?.email || user?.email || '';
+  const displayAgent = profile?.agentNumber || user?.agentNumber || '';
+  const avatarLetter = displayName.charAt(0).toUpperCase();
+  // ────────────────────────────────────────────────────────────────
+
   // Sample data
   const stats = [
     { icon: Users, label: 'Total Clients', value: '156', change: '+12', trend: 8, color: 'from-blue-500 to-indigo-600 text-blue-600' },
@@ -780,17 +811,18 @@ const AgentDashboard = ({ user, onLogout }) => {
         <div className="p-3 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
-              {user?.agencyName?.charAt(0) || 'A'}
+              {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
             </div>
+            {/* Desktop: show when sidebar hovered */}
             <div className={`transition-all duration-200 overflow-hidden ${sidebarHovered ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:hidden'} flex-1 min-w-0`}>
-              <h3 className="font-semibold text-gray-900 text-sm truncate">{user?.agencyName || 'Travel Agency'}</h3>
-              <p className="text-xs text-gray-500 truncate">License: {user?.licenseNumber || '••••••'}</p>
+              <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
+              {displayAgent && <p className="text-xs text-gray-500 truncate font-mono">{displayAgent}</p>}
               <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
             </div>
-            {/* Always show on mobile (drawer open) */}
+            {/* Mobile: always show when drawer open */}
             <div className={`lg:hidden flex-1 min-w-0 ${sidebarOpen ? 'block' : 'hidden'}`}>
-              <h3 className="font-semibold text-gray-900 text-sm truncate">{user?.agencyName || 'Travel Agency'}</h3>
-              <p className="text-xs text-gray-500 truncate">License: {user?.licenseNumber || '••••••'}</p>
+              <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
+              {displayAgent && <p className="text-xs text-gray-500 truncate font-mono">{displayAgent}</p>}
               <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
             </div>
           </div>
@@ -968,11 +1000,23 @@ const AgentDashboard = ({ user, onLogout }) => {
               {/* User Menu */}
               <div className="flex items-center space-x-3">
                 <div className="text-right hidden md:block">
-                  <p className="text-sm font-medium text-gray-900">{user?.agencyName || 'Agency Name'}</p>
-                  <p className="text-xs text-gray-500">{user?.email || 'agency@email.com'}</p>
+                  {profileLoading ? (
+                    <div className="space-y-1.5">
+                      <div className="h-3 w-28 bg-gray-200 rounded animate-pulse" />
+                      <div className="h-2.5 w-36 bg-gray-100 rounded animate-pulse" />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium text-gray-900">{displayName}</p>
+                      <p className="text-xs text-gray-500">{displayEmail}</p>
+                      {displayAgent && (
+                        <p className="text-[10px] text-gray-400 font-mono">{displayAgent}</p>
+                      )}
+                    </>
+                  )}
                 </div>
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
-                  {user?.agencyName?.charAt(0) || 'A'}
+                  {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
                 </div>
               </div>
             </div>
