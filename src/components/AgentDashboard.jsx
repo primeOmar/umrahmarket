@@ -747,14 +747,8 @@ const AgentDashboard = ({ user, onLogout }) => {
             <div className="w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
               {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
             </div>
-            {/* Desktop: show when sidebar hovered */}
-            <div className={`transition-all duration-200 overflow-hidden ${sidebarHovered ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:hidden'} flex-1 min-w-0`}>
-              <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
-              {displayAgent && <p className="text-xs text-gray-500 truncate font-mono">{displayAgent}</p>}
-              <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
-            </div>
-            {/* Mobile: always show when drawer open */}
-            <div className={`lg:hidden flex-1 min-w-0 ${sidebarOpen ? 'block' : 'hidden'}`}>
+            {/* Show when sidebar expanded (hover on desktop, always on mobile) */}
+            <div className={`transition-all duration-200 overflow-hidden flex-1 min-w-0 ${sidebarHovered ? 'lg:opacity-100 lg:w-auto' : 'lg:opacity-0 lg:w-0'}`}>
               <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
               {displayAgent && <p className="text-xs text-gray-500 truncate font-mono">{displayAgent}</p>}
               <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
@@ -785,25 +779,16 @@ const AgentDashboard = ({ user, onLogout }) => {
                     )}
                   </div>
 
-                  {/* Label + count — visible when expanded */}
-                  <span className={`font-medium text-sm flex-1 text-left whitespace-nowrap transition-all duration-200 ${sidebarHovered ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>
+                  {/* Label — on mobile always visible; on desktop only when hovered */}
+                  <span className={`font-medium text-sm flex-1 text-left whitespace-nowrap transition-all duration-200 lg:${sidebarHovered ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>
                     {item.label}
                   </span>
-                  {/* Always show on mobile */}
-                  <span className="font-medium text-sm flex-1 text-left whitespace-nowrap lg:hidden">{item.label}</span>
 
+                  {/* Count badge — on mobile always visible; on desktop only when hovered */}
                   {item.count > 0 && (
                     <span className={`px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 transition-all duration-200 ${
                       item.id === 'messages' ? 'bg-blue-600 text-white animate-pulse' : activeTab === item.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
-                    } ${sidebarHovered ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>
-                      {item.count}
-                    </span>
-                  )}
-                  {/* Always show count on mobile */}
-                  {item.count > 0 && (
-                    <span className={`lg:hidden px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
-                      item.id === 'messages' ? 'bg-blue-600 text-white animate-pulse' : activeTab === item.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
-                    }`}>
+                    } ${!sidebarHovered ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden lg:px-0' : ''}`}>
                       {item.count}
                     </span>
                   )}
@@ -834,8 +819,7 @@ const AgentDashboard = ({ user, onLogout }) => {
             className="w-full flex items-center gap-3 px-3 py-2.5 text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
           >
             <LogOut className="h-5 w-5 flex-shrink-0" />
-            <span className={`font-medium text-sm whitespace-nowrap transition-all duration-200 ${sidebarHovered ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>Logout</span>
-            <span className="font-medium text-sm whitespace-nowrap lg:hidden">Logout</span>
+            <span className={`font-medium text-sm whitespace-nowrap transition-all duration-200 ${sidebarHovered ? 'lg:opacity-100' : 'lg:opacity-0 lg:w-0 lg:overflow-hidden'}`}>Logout</span>
           </button>
         </div>
       </div>
