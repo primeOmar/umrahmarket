@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  LayoutGrid, Users, Calendar, Package, DollarSign, Settings,
+  LayoutGrid, Users, Calendar, Package, Settings,
   LogOut, Bell, Search, Menu, X, ChevronDown, Download, Upload,
-  TrendingUp, Star, MessageCircle, FileText, Shield, CreditCard,
+  TrendingUp, MessageCircle, FileText, Shield, CreditCard,
   Globe, Clock, CheckCircle, AlertCircle, Plus, Filter,
   MoreVertical, Edit, Trash2, Eye, Mail, Phone, User,
   Home, BarChart3, PieChart, Target, Award, Briefcase,
@@ -16,6 +16,7 @@ import CreatePackageModal from './agent/packages/creation/CreatePackageModal';
 import PackagesTab from './agent/packages/display/PackagesTab';
 import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
+import { getAgentPackages } from './agent/packages/services/packagesApi';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -427,7 +428,10 @@ const StatCard = ({ icon: Icon, label, value, change, trend, color }) => (
         </span>
       )}
     </div>
-    <h3 className="text-2xl font-bold text-gray-900 mb-1">{value}</h3>
+    {value === null
+      ? <div className="h-8 w-16 bg-gray-200 rounded-lg animate-pulse mb-1" />
+      : <h3 className="text-2xl font-bold text-gray-900 mb-1">{value}</h3>
+    }
     <p className="text-sm text-gray-600">{label}</p>
     {change && (
       <p className="text-xs text-gray-500 mt-2">↑ {change} from last month</p>
@@ -602,45 +606,44 @@ const AgentDashboard = ({ user, onLogout }) => {
   const avatarLetter = displayName.charAt(0).toUpperCase();
   // ────────────────────────────────────────────────────────────────
 
-  // Sample data
+  // ── Clients ─────────────────────────────────────────────────────────────────
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientStatusFilter, setClientStatusFilter] = useState('all');
+  const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients();
+
+  // ── Conversations / unread count ─────────────────────────────────────────────
+  const { conversations } = useAgentConversations();
+  const unreadCount = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+
+  // ── Package count (PackagesTab is self-fetching; we just need the count here) ─
+  const [packageCount, setPackageCount] = useState(null);
+  useEffect(() => {
+    getAgentPackages()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data.packages ?? data.data ?? []);
+        setPackageCount(list.length);
+      })
+      .catch(() => setPackageCount(null));
+  }, []);
+
+  // ── Derived stats ─────────────────────────────────────────────────────────────
+  const activeClientsCount = clients.filter(c => c.status === 'confirmed').length;
+
   const stats = [
-    { icon: Users, label: 'Total Clients', value: '156', change: '+12', trend: 8, color: 'from-blue-500 to-indigo-600 text-blue-600' },
-    { icon: Calendar, label: 'Active Bookings', value: '43', change: '+5', trend: 12, color: 'from-emerald-500 to-teal-600 text-emerald-600' },
-    { icon: DollarSign, label: 'Revenue (MTD)', value: '$127.5K', change: '+$23K', trend: 18, color: 'from-purple-500 to-pink-600 text-purple-600' },
-    { icon: Star, label: 'Package Views', value: '8.2K', change: '+1.2K', trend: 15, color: 'from-amber-500 to-orange-600 text-amber-600' }
+    { icon: Users,         label: 'Total Clients',   value: clientsLoading ? null : String(clients.length),         color: 'from-blue-500 to-indigo-600 text-blue-600' },
+    { icon: CheckCircle,   label: 'Active Clients',  value: clientsLoading ? null : String(activeClientsCount),     color: 'from-emerald-500 to-teal-600 text-emerald-600' },
+    { icon: Package,       label: 'My Packages',     value: packageCount === null ? null : String(packageCount),    color: 'from-purple-500 to-pink-600 text-purple-600' },
+    { icon: MessageCircle, label: 'Unread Messages', value: String(unreadCount),                                    color: 'from-amber-500 to-orange-600 text-amber-600' },
   ];
 
-  const recentClients = [
-    { id: 1, name: 'Ahmed Mohammed', email: 'ahmed@email.com', package: 'Premium Umrah', status: 'active', travelDate: 'Mar 15, 2024' },
-    { id: 2, name: 'Fatima Hassan', email: 'fatima@email.com', package: 'Deluxe Hajj', status: 'pending', travelDate: 'Jun 20, 2024' },
-    { id: 3, name: 'Omar Abdullah', email: 'omar@email.com', package: 'Economy Umrah', status: 'active', travelDate: 'Apr 5, 2024' },
-    { id: 4, name: 'Aisha Rahman', email: 'aisha@email.com', package: 'VIP Hajj', status: 'completed', travelDate: 'Jan 10, 2024' }
-  ];
-
-  const packages = [
-    {
-      id: 1,
-      name: 'Premium Umrah Package',
-      duration: '10 Days / 9 Nights',
-      price: 2499,
-      description: 'Luxury Umrah experience with 5-star hotels in Makkah & Madinah, private transport, and VIP guidance.',
-      rating: 4.9,
-      bookings: 234,
-      status: 'active',
-      image: 'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80'
-    },
-    {
-      id: 2,
-      name: 'Deluxe Hajj Package',
-      duration: '21 Days / 20 Nights',
-      price: 8999,
-      description: 'Complete Hajj package with premium tents in Mina, Arafat, and Muzdalifah. Includes all transportation and meals.',
-      rating: 5.0,
-      bookings: 89,
-      status: 'active',
-      image: 'https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80'
-    }
-  ];
+  // Recent clients — live slice from fetched data
+  const recentClients = clients.slice(0, 4).map(c => ({
+    id: c.bookingId ?? c.id,
+    name: c.name,
+    email: c.email,
+    package: c.packageName,
+    status: c.status,
+  }));
 
   const notifications = [
     { id: 1, title: 'New Booking Request', message: 'Fatima Hassan requested Hajj package', time: '5 min ago', read: false },
@@ -648,19 +651,14 @@ const AgentDashboard = ({ user, onLogout }) => {
     { id: 3, title: 'Payment Received', message: '$4,500 from Ahmed Mohammed', time: '1 day ago', read: true }
   ];
 
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [clientSearch, setClientSearch] = useState('');
-  const [clientStatusFilter, setClientStatusFilter] = useState('all');
-  const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients();
-
   const menuItems = [
-    { id: 'overview', icon: Home, label: 'Overview' },
-    { id: 'clients', icon: Users, label: 'Clients', count: 156 },
-    { id: 'packages', icon: Package, label: 'Packages', count: 12 },
-    { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-    { id: 'documents', icon: FileText, label: 'Documents' },
-    { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount || null },
-    { id: 'settings', icon: Settings, label: 'Settings' }
+    { id: 'overview',  icon: Home,         label: 'Overview' },
+    { id: 'clients',   icon: Users,         label: 'Clients',  count: clientsLoading ? null : (clients.length || null) },
+    { id: 'packages',  icon: Package,       label: 'Packages', count: packageCount },
+    { id: 'analytics', icon: BarChart3,     label: 'Analytics' },
+    { id: 'documents', icon: FileText,      label: 'Documents' },
+    { id: 'messages',  icon: MessageCircle, label: 'Messages', count: unreadCount || null },
+    { id: 'settings',  icon: Settings,      label: 'Settings' },
   ];
 
   const handleViewClient = (client) => {
@@ -1010,26 +1008,45 @@ const AgentDashboard = ({ user, onLogout }) => {
                     </button>
                   </div>
                   <div className="space-y-4">
-                    {recentClients.map((client) => (
-                      <div key={client.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold">
-                            {client.name.charAt(0)}
+                    {clientsLoading ? (
+                      Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="flex items-center space-x-3 p-3 animate-pulse">
+                          <div className="w-10 h-10 rounded-full bg-gray-200 flex-shrink-0" />
+                          <div className="flex-1 space-y-1.5">
+                            <div className="h-3 bg-gray-200 rounded w-2/5" />
+                            <div className="h-2.5 bg-gray-100 rounded w-1/3" />
                           </div>
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-900">{client.name}</h4>
-                            <p className="text-xs text-gray-500">{client.package}</p>
-                          </div>
+                          <div className="h-5 w-16 bg-gray-100 rounded-full" />
                         </div>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          client.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                          client.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {client.status}
-                        </span>
+                      ))
+                    ) : recentClients.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <Users className="h-8 w-8 text-gray-200 mb-2" />
+                        <p className="text-sm text-gray-400">No clients yet</p>
                       </div>
-                    ))}
+                    ) : (
+                      recentClients.map((client) => (
+                        <div key={client.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold">
+                              {client.name.charAt(0)}
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-900">{client.name}</h4>
+                              <p className="text-xs text-gray-500">{client.package}</p>
+                            </div>
+                          </div>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            client.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
+                            client.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                            client.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {client.status}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -1128,14 +1145,13 @@ const AgentDashboard = ({ user, onLogout }) => {
           })()}
 
           {activeTab === 'packages' && (
-  <PackagesTab
-    packages={packages}
-    onCreatePackage={() => setShowCreatePackage(true)}
-    onEditPackage={handleEditPackage}
-    onDuplicatePackage={handleDuplicatePackage}
-    onDeletePackage={handleDeletePackage}
-  />
-)}
+            <PackagesTab
+              onCreatePackage={() => setShowCreatePackage(true)}
+              onEditPackage={handleEditPackage}
+              onDuplicatePackage={handleDuplicatePackage}
+              onDeletePackage={handleDeletePackage}
+            />
+          )}
 
           {activeTab === 'analytics' && (
             <div className="space-y-6">
