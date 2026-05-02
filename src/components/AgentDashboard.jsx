@@ -620,37 +620,6 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [sidebarHovered, setSidebarHovered] = useState(false); // desktop hover expand
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ── Live agent profile fetched from DB ──────────────────────────
-  const [agentProfile, setAgentProfile] = useState(null);
-  const [profileLoading, setProfileLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL || ''}/api/auth/me`,
-          { credentials: 'include' }
-        );
-        if (!res.ok) throw new Error('Failed to fetch profile');
-        const json = await res.json();
-        if (json.success && json.data?.user) setAgentProfile(json.data.user);
-      } catch (err) {
-        console.error('[AgentDashboard] profile fetch failed:', err.message);
-      } finally {
-        setProfileLoading(false);
-      }
-    };
-    fetchProfile();
-  }, []);
-
-  // Merge: DB profile takes precedence over login-time prop
-  const profile      = agentProfile || user;
-  const displayName  = profile?.agentName  || profile?.agencyName  || profile?.firstName || 'Agency';
-  const displayEmail = profile?.email || user?.email || '';
-  const displayAgent = profile?.agentNumber || user?.agentNumber || '';
-  const avatarLetter = displayName.charAt(0).toUpperCase();
-  // ────────────────────────────────────────────────────────────────
-
   // Sample data
   const stats = [
     { icon: Users, label: 'Total Clients', value: '156', change: '+12', trend: 8, color: 'from-blue-500 to-indigo-600 text-blue-600' },
@@ -703,20 +672,61 @@ const AgentDashboard = ({ user, onLogout }) => {
     { id: 3, title: 'Payment Received', message: '$4,500 from Ahmed Mohammed', time: '1 day ago', read: true }
   ];
 
-  const [unreadCount, setUnreadCount] = useState(0);
   const [clientSearch, setClientSearch] = useState('');
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
   const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients();
 
+  // ── Dynamic sidebar counts ────────────────────────────────────────
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [packageCount, setPackageCount] = useState(null);
+
+  // Fetch unread message count on mount and every 60s
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL || ''}/api/messages/count/unread`,
+          { credentials: 'include' }
+        );
+        if (!res.ok) return;
+        const json = await res.json();
+        if (json.success) setUnreadCount(json.count || 0);
+      } catch { /* silent */ }
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch agent's package count on mount
+  useEffect(() => {
+    const fetchPackageCount = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL || ''}/api/packages?mine=true`,
+          { credentials: 'include' }
+        );
+        if (!res.ok) return;
+        const json = await res.json();
+        // Support both { packages: [] } and { data: [] } shapes
+        const list = json.packages ?? json.data ?? [];
+        setPackageCount(Array.isArray(list) ? list.length : null);
+      } catch { /* silent */ }
+    };
+    fetchPackageCount();
+  }, []);
+
+  // clients count comes directly from the useAgentClients hook
+  const clientCount = clientsLoading ? null : clients.length;
+
   const menuItems = [
-    { id: 'overview', icon: Home, label: 'Overview' },
-    { id: 'clients', icon: Users, label: 'Clients', count: 156 },
-    { id: 'bookings', icon: Calendar, label: 'Bookings', count: 43 },
-    { id: 'packages', icon: Package, label: 'Packages', count: 12 },
-    { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-    { id: 'documents', icon: FileText, label: 'Documents' },
-    { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount || null },
-    { id: 'settings', icon: Settings, label: 'Settings' }
+    { id: 'overview',  icon: Home,          label: 'Overview' },
+    { id: 'clients',   icon: Users,          label: 'Clients',  count: clientCount  || null },
+    { id: 'packages',  icon: Package,        label: 'Packages', count: packageCount || null },
+    { id: 'analytics', icon: BarChart3,      label: 'Analytics' },
+    { id: 'documents', icon: FileText,       label: 'Documents' },
+    { id: 'messages',  icon: MessageCircle,  label: 'Messages', count: unreadCount  || null },
+    { id: 'settings',  icon: Settings,       label: 'Settings'  },
   ];
 
   const handleViewClient = (client) => {
@@ -811,18 +821,17 @@ const AgentDashboard = ({ user, onLogout }) => {
         <div className="p-3 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
-              {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
+              {user?.agencyName?.charAt(0) || 'A'}
             </div>
-            {/* Desktop: show when sidebar hovered */}
             <div className={`transition-all duration-200 overflow-hidden ${sidebarHovered ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:hidden'} flex-1 min-w-0`}>
-              <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
-              {displayAgent && <p className="text-xs text-gray-500 truncate font-mono">{displayAgent}</p>}
+              <h3 className="font-semibold text-gray-900 text-sm truncate">{user?.agencyName || 'Travel Agency'}</h3>
+              <p className="text-xs text-gray-500 truncate">License: {user?.licenseNumber || '••••••'}</p>
               <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
             </div>
-            {/* Mobile: always show when drawer open */}
+            {/* Always show on mobile (drawer open) */}
             <div className={`lg:hidden flex-1 min-w-0 ${sidebarOpen ? 'block' : 'hidden'}`}>
-              <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
-              {displayAgent && <p className="text-xs text-gray-500 truncate font-mono">{displayAgent}</p>}
+              <h3 className="font-semibold text-gray-900 text-sm truncate">{user?.agencyName || 'Travel Agency'}</h3>
+              <p className="text-xs text-gray-500 truncate">License: {user?.licenseNumber || '••••••'}</p>
               <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
             </div>
           </div>
@@ -1000,23 +1009,11 @@ const AgentDashboard = ({ user, onLogout }) => {
               {/* User Menu */}
               <div className="flex items-center space-x-3">
                 <div className="text-right hidden md:block">
-                  {profileLoading ? (
-                    <div className="space-y-1.5">
-                      <div className="h-3 w-28 bg-gray-200 rounded animate-pulse" />
-                      <div className="h-2.5 w-36 bg-gray-100 rounded animate-pulse" />
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm font-medium text-gray-900">{displayName}</p>
-                      <p className="text-xs text-gray-500">{displayEmail}</p>
-                      {displayAgent && (
-                        <p className="text-[10px] text-gray-400 font-mono">{displayAgent}</p>
-                      )}
-                    </>
-                  )}
+                  <p className="text-sm font-medium text-gray-900">{user?.agencyName || 'Agency Name'}</p>
+                  <p className="text-xs text-gray-500">{user?.email || 'agency@email.com'}</p>
                 </div>
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
-                  {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
+                  {user?.agencyName?.charAt(0) || 'A'}
                 </div>
               </div>
             </div>
@@ -1097,30 +1094,42 @@ const AgentDashboard = ({ user, onLogout }) => {
                   </div>
                 </div>
 
-                {/* Recent Bookings */}
+                {/* Recent Clients */}
                 <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="font-semibold text-gray-900">Recent Bookings</h3>
-                    <button onClick={() => setActiveTab('bookings')} className="text-sm text-emerald-600 hover:text-emerald-700">
+                    <h3 className="font-semibold text-gray-900">Recent Clients</h3>
+                    <button onClick={() => setActiveTab('clients')} className="text-sm text-emerald-600 hover:text-emerald-700">
                       View All →
                     </button>
                   </div>
                   <div className="space-y-4">
-                    {recentBookings.map((booking) => (
-                      <div key={booking.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-900">{booking.clientName}</h4>
-                          <p className="text-xs text-gray-500">{booking.date} · ${booking.amount}</p>
+                    {clientsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader className="h-5 w-5 animate-spin text-emerald-500" />
+                      </div>
+                    ) : clients.slice(0, 4).map((client) => (
+                      <div key={client.bookingId} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                            {client.name?.charAt(0) || 'C'}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">{client.name}</h4>
+                            <p className="text-xs text-gray-500 truncate">{client.packageName}</p>
+                          </div>
                         </div>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
-                          booking.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ml-2 ${
+                          client.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
+                          client.status === 'pending'   ? 'bg-amber-100 text-amber-700'   :
                           'bg-gray-100 text-gray-700'
                         }`}>
-                          {booking.status}
+                          {client.status}
                         </span>
                       </div>
                     ))}
+                    {!clientsLoading && clients.length === 0 && (
+                      <p className="text-sm text-gray-400 text-center py-6">No clients yet</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1217,32 +1226,7 @@ const AgentDashboard = ({ user, onLogout }) => {
             );
           })()}
 
-          {activeTab === 'bookings' && (
-            <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Booking Management</h2>
-                <div className="flex space-x-3">
-                  <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                    <Calendar className="h-4 w-4" />
-                  </button>
-                  <button className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all text-sm">
-                    New Booking
-                  </button>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {recentBookings.map((booking) => (
-                  <BookingCard
-                    key={booking.id}
-                    booking={booking}
-                    onView={handleViewBooking}
-                    onUpdate={handleUpdateBooking}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
 {activeTab === 'packages' && (
   <PackagesTab
     packages={packages}
@@ -1436,11 +1420,11 @@ const AgentDashboard = ({ user, onLogout }) => {
       {/* Mobile Bottom Navigation Bar */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 flex items-center justify-around px-2 py-2 safe-area-inset-bottom">
         {[
-          { id: 'overview', icon: Home, label: 'Home' },
-          { id: 'clients', icon: Users, label: 'Clients' },
-          { id: 'bookings', icon: Calendar, label: 'Bookings' },
-          { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount },
-          { id: 'settings', icon: Settings, label: 'More' },
+          { id: 'overview',  icon: Home,          label: 'Home' },
+          { id: 'clients',   icon: Users,          label: 'Clients' },
+          { id: 'packages',  icon: Package,        label: 'Packages' },
+          { id: 'messages',  icon: MessageCircle,  label: 'Messages', count: unreadCount },
+          { id: 'settings',  icon: Settings,       label: 'More' },
         ].map((item) => (
           <button
             key={item.id}
