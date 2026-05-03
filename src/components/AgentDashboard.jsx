@@ -17,6 +17,7 @@ import PackagesTab from './agent/packages/display/PackagesTab';
 import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
 import { getAgentPackages } from './agent/packages/services/packagesApi';
+import DocumentsTab from './agent/documents/DocumentsTab';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -1172,54 +1173,7 @@ const AgentDashboard = ({ user, onLogout }) => {
           )}
 
           {activeTab === 'documents' && (
-            <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Document Management</h2>
-                <button
-                  onClick={() => setShowUploadModal(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all"
-                >
-                  <Upload className="h-4 w-4" />
-                  <span className="text-sm font-medium">Upload Documents</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[
-                  { name: 'Certificate of Incorporation', status: 'verified', date: 'Jan 15, 2024' },
-                  { name: 'Travel Agency License', status: 'pending', date: 'Feb 1, 2024' },
-                  { name: 'Tax Registration', status: 'verified', date: 'Jan 20, 2024' },
-                  { name: 'Director ID', status: 'verified', date: 'Jan 15, 2024' },
-                  { name: 'Insurance Certificate', status: 'expired', date: 'Dec 1, 2023' },
-                  { name: 'Bank Statements', status: 'pending', date: 'Feb 5, 2024' }
-                ].map((doc, index) => (
-                  <div key={index} className="bg-white rounded-xl p-6 shadow-md border border-gray-100">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="p-3 bg-blue-100 rounded-lg">
-                        <FileText className="h-6 w-6 text-blue-600" />
-                      </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        doc.status === 'verified' ? 'bg-green-100 text-green-700' :
-                        doc.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                        'bg-red-100 text-red-700'
-                      }`}>
-                        {doc.status}
-                      </span>
-                    </div>
-                    <h4 className="font-medium text-gray-900 mb-1">{doc.name}</h4>
-                    <p className="text-xs text-gray-500 mb-4">Uploaded: {doc.date}</p>
-                    <div className="flex space-x-2">
-                      <button className="flex-1 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
-                        View
-                      </button>
-                      <button className="flex-1 px-3 py-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
-                        Update
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <DocumentsTab agentId={profile?.id} />
           )}
 
           {activeTab === 'messages' && (
