@@ -635,5 +635,4 @@ const DocumentsTab = ({ agentId }) => {
     </div>
   );
 };
-
 export default DocumentsTab;
