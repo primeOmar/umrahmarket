@@ -18,7 +18,7 @@ import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
 import { getAgentPackages } from './agent/packages/services/packagesApi';
 import DocumentsTab from './agent/documents/DocumentsTab';
-import { getMe } from '../services/api';
+import { getMe } from '../api'
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
