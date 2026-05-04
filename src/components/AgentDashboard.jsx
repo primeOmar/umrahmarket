@@ -18,6 +18,7 @@ import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
 import { getAgentPackages } from './agent/packages/services/packagesApi';
 import DocumentsTab from './agent/documents/DocumentsTab';
+import { getMe } from '../services/api';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -583,13 +584,9 @@ const AgentDashboard = ({ user, onLogout }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL || ''}/api/auth/me`,
-          { credentials: 'include' }
-        );
-        if (!res.ok) throw new Error('Failed to fetch profile');
-        const json = await res.json();
-        if (json.success && json.data?.user) setAgentProfile(json.data.user);
+        const res = await getMe();
+        const json = res?.data;
+        if (json?.success && json?.data?.user) setAgentProfile(json.data.user);
       } catch (err) {
         console.error('[AgentDashboard] profile fetch failed:', err.message);
       } finally {
