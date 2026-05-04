@@ -18,7 +18,6 @@ import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
 import { getAgentPackages } from './agent/packages/services/packagesApi';
 import DocumentsTab from './agent/documents/DocumentsTab';
-import { getMe } from '../api'
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -584,9 +583,13 @@ const AgentDashboard = ({ user, onLogout }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await getMe();
-        const json = res?.data;
-        if (json?.success && json?.data?.user) setAgentProfile(json.data.user);
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL || ''}/api/auth/me`,
+          { credentials: 'include' }
+        );
+        if (!res.ok) throw new Error('Failed to fetch profile');
+        const json = await res.json();
+        if (json.success && json.data?.user) setAgentProfile(json.data.user);
       } catch (err) {
         console.error('[AgentDashboard] profile fetch failed:', err.message);
       } finally {
@@ -934,6 +937,15 @@ const AgentDashboard = ({ user, onLogout }) => {
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
                   {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
                 </div>
+
+                {/* Logout — visible on mobile where sidebar is hidden */}
+                <button
+                  onClick={onLogout}
+                  title="Logout"
+                  className="lg:hidden p-2 hover:bg-red-50 hover:text-red-600 text-gray-500 rounded-xl transition-colors flex-shrink-0"
+                >
+                  <LogOut className="h-5 w-5" />
+                </button>
               </div>
             </div>
           </div>
