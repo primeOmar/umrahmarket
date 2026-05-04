@@ -1,13 +1,79 @@
-import React, { useState, useRef } from "react";
-import { X, Upload, Trash2, Loader2, CheckCircle2, MapPin, Building2 } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { X, Upload, Trash2, Loader2, CheckCircle2, MapPin, Building2, Check, TrendingUp } from "lucide-react";
 import { createPackage } from "../services/packagesApi";
 import {
   Field, sanitizeText, sanitizeNumber, sanitizeDate,
-  InputEl, TextareaEl, Sel, Stars, TagInput, HotelBlock,
+  InputEl, TextareaEl, Sel, Stars, HotelBlock,
 } from "./Packageformcomponents";
-import toast from "./Toast";           // ← no provider needed
+import toast from "./Toast";
 
-const STEPS = ["Basic Info", "Hotels", "Pricing & Dates", "Details & Images"];
+const STEPS = ["Basic Info", "Hotels", "Pricing", "Details & Images"];
+
+const HIGHLIGHT_OPTIONS = [
+  "Guided Ziyarat (historical site visits)",
+  "Daily meals included",
+  "24/7 support",
+  "Haramain high-speed train",
+  "Private transfers",
+  "Shared transfers",
+  "Return flights",
+  "Visa processing",
+  "Expert Umrah guide",
+  "5L Zamzam water",
+  "Umrah kit included",
+  "Medical insurance",
+  "Daily breakfast",
+  "Buffet meals",
+  "Premium hotel (near Haram)",
+  "Luxury accommodation",
+  "Spiritual guidance sessions",
+  "Tawaf & Sa'i assistance",
+];
+
+const INCLUSION_OPTIONS = [
+  "Return flights",
+  "Saudi visa processing",
+  "Makkah hotel",
+  "Madinah hotel",
+  "Airport transfers",
+  "Private transfers",
+  "Shared transfers",
+  "Daily breakfast",
+  "Full board (all meals)",
+  "Half board",
+  "Zamzam water (5L)",
+  "Umrah kit",
+  "Medical insurance",
+  "Travel insurance",
+  "Guided Ziyarat tours",
+  "Haramain train tickets",
+  "Local transport",
+  "Group guide",
+  "24/7 customer support",
+  "Laundry service",
+  "English-speaking guide",
+  "Hajj permit assistance",
+  "Meningitis vaccination guidance",
+  "Meet & greet service",
+];
+
+const EXCLUSION_OPTIONS = [
+  "International flights",
+  "Saudi visa fees",
+  "Personal expenses",
+  "Optional tours",
+  "Tips & gratuities",
+  "Excess baggage fees",
+  "Travel insurance",
+  "Meals not mentioned",
+  "Entrance fees",
+  "Personal shopping",
+  "International calls",
+  "Laundry",
+  "Quarantine costs",
+  "Currency exchange",
+  "Personal medications",
+];
 
 const EMPTY = {
   name: "", type: "umrah", location: "makkah", description: "",
@@ -55,9 +121,21 @@ function sanitizeFormPayload(form) {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StepBar
-// ─────────────────────────────────────────────────────────────────────────────
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function calcDurationNights(form) {
+  const dates = [
+    form.makkah_check_in_date,
+    form.makkah_check_out_date,
+    form.madinah_check_in_date,
+    form.madinah_check_out_date,
+  ].filter(Boolean).map((d) => new Date(d).getTime()).filter((n) => !isNaN(n));
+  if (dates.length < 2) return "";
+  const nights = Math.round((Math.max(...dates) - Math.min(...dates)) / 86400000);
+  return nights > 0 ? String(nights) : "";
+}
+
+// ── sub-components ───────────────────────────────────────────────────────────
 
 const StepBar = ({ current, total }) => (
   <div className="flex gap-1.5 px-6 pb-5">
@@ -78,9 +156,85 @@ const StepBar = ({ current, total }) => (
   </div>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CreatePackageModal
-// ─────────────────────────────────────────────────────────────────────────────
+const CheckboxPill = ({ label, selected, onToggle, color = "green" }) => {
+  const styles = {
+    gold: {
+      on:  { background: "linear-gradient(135deg,#C9A84C,#a8882f)", color: "#fff", borderColor: "transparent" },
+      off: { background: "#F5FAF5", color: "#6b5a1a", borderColor: "#e0cc8a" },
+    },
+    green: {
+      on:  { background: "linear-gradient(135deg,#0D3D2B,#1a6b4a)", color: "#fff", borderColor: "transparent" },
+      off: { background: "#F5FAF5", color: "#4a7c5f", borderColor: "#C8DFC8" },
+    },
+    red: {
+      on:  { background: "linear-gradient(135deg,#dc2626,#b91c1c)", color: "#fff", borderColor: "transparent" },
+      off: { background: "#fff5f5", color: "#b91c1c", borderColor: "#fca5a5" },
+    },
+  };
+  const s = styles[color] || styles.green;
+  const st = selected ? s.on : s.off;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
+      style={{ ...st, borderWidth: "1px", borderStyle: "solid" }}
+    >
+      {selected && <Check className="h-3 w-3 flex-shrink-0" />}
+      {label}
+    </button>
+  );
+};
+
+const OptionGrid = ({ options, selected, onChange, color }) => {
+  const toggle = (opt) =>
+    onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => (
+        <CheckboxPill key={opt} label={opt} selected={selected.includes(opt)} onToggle={() => toggle(opt)} color={color} />
+      ))}
+    </div>
+  );
+};
+
+const PriceBreakdown = ({ price }) => {
+  const amt = parseFloat(price) || 0;
+  if (!amt) return null;
+  const fee = amt * 0.05;
+  const receives = amt * 0.95;
+  const fmt = (n) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <div
+      className="rounded-2xl p-4 space-y-2 mt-1"
+      style={{ background: "#F0F8F0", border: "1px solid #C8DFC8" }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <TrendingUp className="h-4 w-4" style={{ color: "#C9A84C" }} />
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#4a7c5f" }}>
+          Earnings breakdown (per booking)
+        </span>
+      </div>
+      <div className="flex justify-between text-sm">
+        <span style={{ color: "#4a7c5f" }}>Client pays</span>
+        <span className="font-semibold" style={{ color: "#0D3D2B" }}>${fmt(amt)}</span>
+      </div>
+      <div className="flex justify-between text-sm">
+        <span style={{ color: "#7aaa8a" }}>Platform fee (5%)</span>
+        <span className="font-semibold" style={{ color: "#dc2626" }}>−${fmt(fee)}</span>
+      </div>
+      <div
+        className="flex justify-between text-sm pt-2 mt-1"
+        style={{ borderTop: "1px solid #C8DFC8" }}
+      >
+        <span className="font-bold" style={{ color: "#0D3D2B" }}>You receive</span>
+        <span className="font-bold text-base" style={{ color: "#0D3D2B" }}>${fmt(receives)}</span>
+      </div>
+    </div>
+  );
+};
+
+// ── main modal ───────────────────────────────────────────────────────────────
 
 const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
   const [form, setForm]     = useState(EMPTY);
@@ -91,6 +245,17 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
   const [status, setStatus] = useState("idle");
   const fileRef             = useRef(null);
 
+  // Auto-calculate duration from hotel dates
+  useEffect(() => {
+    const nights = calcDurationNights(form);
+    if (nights !== form.duration) {
+      setForm((p) => ({ ...p, duration: nights }));
+    }
+  }, [
+    form.makkah_check_in_date, form.makkah_check_out_date,
+    form.madinah_check_in_date, form.madinah_check_out_date,
+  ]); // eslint-disable-line
+
   if (!isOpen) return null;
 
   const set    = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -98,7 +263,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
   const busy   = status === "loading";
   const ok     = status === "success";
 
-  // ── image helpers ──────────────────────────────────────────────────────────
+  // ── image helpers ─────────────────────────────────────────────────────────
 
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -110,12 +275,11 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
     setImages(next);
     Promise.all(
       next.map(
-        (f) =>
-          new Promise((res) => {
-            const r = new FileReader();
-            r.onload = (e) => res(e.target.result);
-            r.readAsDataURL(f);
-          })
+        (f) => new Promise((res) => {
+          const r = new FileReader();
+          r.onload = (e) => res(e.target.result);
+          r.readAsDataURL(f);
+        })
       )
     ).then(setPrev);
   };
@@ -125,17 +289,16 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
     setImages(next);
     Promise.all(
       next.map(
-        (f) =>
-          new Promise((res) => {
-            const r = new FileReader();
-            r.onload = (e) => res(e.target.result);
-            r.readAsDataURL(f);
-          })
+        (f) => new Promise((res) => {
+          const r = new FileReader();
+          r.onload = (e) => res(e.target.result);
+          r.readAsDataURL(f);
+        })
       )
     ).then(setPrev);
   };
 
-  // ── submit ─────────────────────────────────────────────────────────────────
+  // ── submit ────────────────────────────────────────────────────────────────
 
   const submit = async () => {
     setStatus("loading");
@@ -174,17 +337,13 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
         className="w-full max-w-2xl bg-white rounded-3xl flex flex-col max-h-[92vh]"
         style={{
           border: "1px solid #C8DFC8",
-          boxShadow:
-            "0 24px 80px rgba(13,61,43,0.18), 0 0 0 1px rgba(201,168,76,0.08)",
+          boxShadow: "0 24px 80px rgba(13,61,43,0.18), 0 0 0 1px rgba(201,168,76,0.08)",
         }}
       >
-        {/* ── header ────────────────────────────────────────────────────────── */}
+        {/* header */}
         <div className="flex items-start justify-between px-6 pt-5 pb-2 flex-shrink-0">
           <div>
-            <p
-              className="text-xs font-bold tracking-widest uppercase mb-1"
-              style={{ color: "#C9A84C" }}
-            >
+            <p className="text-xs font-bold tracking-widest uppercase mb-1" style={{ color: "#C9A84C" }}>
               Step {step + 1}/{STEPS.length} — {STEPS[step]}
             </p>
             <h2 className="text-xl font-bold" style={{ color: "#0D3D2B" }}>
@@ -205,7 +364,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
 
         <StepBar current={step} total={STEPS.length} />
 
-        {/* ── scrollable content ─────────────────────────────────────────────── */}
+        {/* scrollable content */}
         <div className="overflow-y-auto flex-1 px-6 pb-3 space-y-4">
 
           {/* STEP 0 — Basic Info */}
@@ -247,7 +406,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
             </>
           )}
 
-          {/* STEP 1 — Hotels */}
+          {/* STEP 1 — Hotels (duration auto-calculated from dates here) */}
           {step === 1 && (
             <>
               <HotelBlock
@@ -262,21 +421,32 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                 formData={form}
                 set={set}
               />
+              {form.duration && (
+                <div
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3"
+                  style={{ background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.3)" }}
+                >
+                  <span className="text-lg">🌙</span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: "#0D3D2B" }}>
+                      Total trip: {form.duration} nights
+                    </p>
+                    <p className="text-xs" style={{ color: "#7aaa8a" }}>
+                      Auto-calculated from your check-in / check-out dates
+                    </p>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
-          {/* STEP 2 — Pricing & Dates */}
+          {/* STEP 2 — Pricing */}
           {step === 2 && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                <Field label="Price (USD)" required>
+                <Field label="Your Price (USD)" required>
                   <div className="relative">
-                    <span
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none"
-                      style={{ color: "#7aaa8a" }}
-                    >
-                      $
-                    </span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
                     <InputEl
                       type="number" min="0" step="0.01"
                       value={form.price}
@@ -287,12 +457,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                 </Field>
                 <Field label="Original Price">
                   <div className="relative">
-                    <span
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none"
-                      style={{ color: "#7aaa8a" }}
-                    >
-                      $
-                    </span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
                     <InputEl
                       type="number" min="0" step="0.01"
                       value={form.original_price}
@@ -311,13 +476,25 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                 </Field>
               </div>
 
-              <Field label="Duration (days)" required>
-                <InputEl
-                  type="number" min="1"
-                  value={form.duration}
-                  onChange={(e) => set("duration", e.target.value)}
-                  placeholder="e.g. 14" sanitize="number"
-                />
+              <PriceBreakdown price={form.price} />
+
+              {/* Duration (read-only if auto-calculated, editable fallback) */}
+              <Field label="Trip Duration (nights)" hint={form.duration ? "auto-calculated from hotel dates" : "enter manually if no hotel dates set"}>
+                <div className="relative">
+                  <InputEl
+                    type="number" min="1"
+                    value={form.duration}
+                    onChange={(e) => set("duration", e.target.value)}
+                    placeholder="e.g. 14"
+                    sanitize="number"
+                    style={form.duration ? { background: "rgba(201,168,76,0.07)", border: "1px solid rgba(201,168,76,0.4)" } : undefined}
+                  />
+                  {form.duration && (
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold" style={{ color: "#C9A84C" }}>
+                      🌙 {form.duration}n
+                    </span>
+                  )}
+                </div>
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
@@ -347,25 +524,37 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
           {/* STEP 3 — Details & Images */}
           {step === 3 && (
             <>
-              <Field label="Highlights" hint="press Enter or + to add">
-                <TagInput
-                  placeholder="e.g. Guided Ziyarah tour"
-                  items={form.highlights}
+              {/* Highlights */}
+              <Field label="Highlights" hint="tap to select">
+                <OptionGrid
+                  options={HIGHLIGHT_OPTIONS}
+                  selected={form.highlights}
                   onChange={(v) => set("highlights", v)}
                   color="gold"
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Inclusions">
-                  <TagInput placeholder="e.g. Hotel, Visa" items={form.inclusions}
-                    onChange={(v) => set("inclusions", v)} color="green" />
-                </Field>
-                <Field label="Exclusions">
-                  <TagInput placeholder="e.g. Flights" items={form.exclusions}
-                    onChange={(v) => set("exclusions", v)} color="red" />
-                </Field>
-              </div>
 
+              {/* Inclusions */}
+              <Field label="Inclusions" hint="what's included in this package">
+                <OptionGrid
+                  options={INCLUSION_OPTIONS}
+                  selected={form.inclusions}
+                  onChange={(v) => set("inclusions", v)}
+                  color="green"
+                />
+              </Field>
+
+              {/* Exclusions */}
+              <Field label="Exclusions" hint="what's not included">
+                <OptionGrid
+                  options={EXCLUSION_OPTIONS}
+                  selected={form.exclusions}
+                  onChange={(v) => set("exclusions", v)}
+                  color="red"
+                />
+              </Field>
+
+              {/* Images */}
               <Field label="Package Images" hint="up to 10 · max 10 MB each">
                 {previews.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -386,7 +575,6 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                     ))}
                   </div>
                 )}
-
                 <label
                   onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
                   onDragLeave={() => setDrag(false)}
@@ -422,7 +610,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
           )}
         </div>
 
-        {/* ── footer ─────────────────────────────────────────────────────────── */}
+        {/* footer */}
         <div
           className="flex items-center justify-between px-6 py-4 flex-shrink-0"
           style={{ borderTop: "1px solid #E0EFE0" }}
