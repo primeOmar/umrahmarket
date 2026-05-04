@@ -11,7 +11,6 @@ const ItineraryModal = ({ pkg, onClose }) => {
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [collapsed, setCollapsed] = useState({});
-
   // Load existing itinerary
   useEffect(() => {
     let cancelled = false;
