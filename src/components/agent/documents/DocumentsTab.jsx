@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   FileText, Upload, CheckCircle, AlertCircle, Clock,
-  RefreshCw, Eye, X, Loader, CloudUpload, File
+  RefreshCw, Eye, X, Loader, CloudUpload, File, Camera, MapPin, Info, Link, ExternalLink, Save
 } from 'lucide-react';
 
 /**
@@ -50,6 +50,18 @@ const DOC_TYPES = [
     label:       'KRA PIN Certificate',
     description: 'Kenya Revenue Authority PIN registration',
     icon:        '📋',
+  },
+  {
+    key:         'director_id',
+    label:       'Director / Manager ID',
+    description: 'National ID or passport of the company director or manager',
+    icon:        '🪪',
+  },
+  {
+    key:         'office_photo',
+    label:       'Office Photo',
+    description: 'Clear photo of your physical office entrance or interior confirming presence & location. Include your street-visible signage if possible.',
+    icon:        '🏬',
   },
 ];
 
@@ -234,10 +246,34 @@ const DropZone = ({ docKey, onFile, disabled }) => {
 
 // ─── DocumentCard ─────────────────────────────────────────────────────────────
 
-const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading }) => {
+const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading, onMapsUrlSave }) => {
   const hasUploaded = !!doc.path;
   const hasPending  = !!staged;
   const [showPreview, setShowPreview] = useState(false);
+  const [mapsUrl,    setMapsUrl]    = useState(doc.mapsUrl || '');
+  const [savingMaps, setSavingMaps] = useState(false);
+  const [mapsSaved,  setMapsSaved]  = useState(false);
+  const [mapsError,  setMapsError]  = useState('');
+
+  const onSaveMapsUrl = async () => {
+    if (!mapsUrl) return;
+    // Basic Google Maps URL validation
+    if (!mapsUrl.includes('google.com/maps') && !mapsUrl.includes('maps.app.goo.gl') && !mapsUrl.includes('goo.gl/maps')) {
+      setMapsError('Please paste a valid Google Maps link.');
+      return;
+    }
+    setSavingMaps(true);
+    setMapsError('');
+    try {
+      await onMapsUrlSave(mapsUrl);
+      setMapsSaved(true);
+      setTimeout(() => setMapsSaved(false), 4000);
+    } catch (err) {
+      setMapsError(err.message || 'Failed to save location.');
+    } finally {
+      setSavingMaps(false);
+    }
+  };
 
   return (
     <>
@@ -272,6 +308,73 @@ const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading 
           {doc.status === 'none'     && 'No document uploaded yet.'}
         </span>
       </div>
+
+      {/* Office photo guidance tip */}
+      {doc.key === 'office_photo' && doc.status === 'none' && (
+        <div className="mx-5 mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Info className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+            <span className="text-xs font-semibold text-amber-700">What to photograph</span>
+          </div>
+          <ul className="space-y-1.5">
+            <li className="flex items-start gap-2">
+              <Camera className="h-3.5 w-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <span className="text-[11px] text-amber-700"><span className="font-medium">Street-facing signage</span> — your agency name clearly visible on the building or door entrance.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Camera className="h-3.5 w-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <span className="text-[11px] text-amber-700"><span className="font-medium">Interior shot</span> — desks, computers, or staff visible to confirm the office is operational.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <MapPin className="h-3.5 w-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <span className="text-[11px] text-amber-700"><span className="font-medium">Google Maps pin</span> <span className="text-amber-500">(optional)</span> — paste your office Google Maps link below to pin your exact location.</span>
+            </li>
+          </ul>
+          <p className="text-[10px] text-amber-500 mt-2">Tip: combine all photos into a single PDF or upload the clearest single image.</p>
+        </div>
+      )}
+
+      {/* Google Maps pin input — office_photo card only */}
+      {doc.key === 'office_photo' && (
+        <div className="mx-5 mb-3">
+          <p className="text-[11px] font-medium text-gray-600 mb-1.5 flex items-center gap-1">
+            <MapPin className="h-3 w-3 text-blue-500" /> Office Google Maps Link <span className="text-gray-400 font-normal">(optional)</span>
+          </p>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                type="url"
+                value={mapsUrl}
+                onChange={e => { setMapsUrl(e.target.value); setMapsError(''); setMapsSaved(false); }}
+                placeholder="https://maps.google.com/maps?q=..."
+                className="w-full pl-7 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+              />
+            </div>
+            {mapsUrl && (
+              <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-gray-500" title="Preview">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
+            <button
+              onClick={onSaveMapsUrl}
+              disabled={!mapsUrl || savingMaps}
+              className="flex items-center gap-1 px-3 py-2 text-xs font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {savingMaps ? <Loader className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              {mapsSaved ? 'Saved!' : 'Save'}
+            </button>
+          </div>
+          {mapsError && <p className="mt-1 text-[11px] text-red-500">{mapsError}</p>}
+          {mapsSaved && <p className="mt-1 text-[11px] text-green-600 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Location saved successfully.</p>}
+          {doc.mapsUrl && !mapsUrl && (
+            <p className="mt-1 text-[11px] text-gray-400 flex items-center gap-1">
+              <MapPin className="h-3 w-3" /> Saved: <a href={doc.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline truncate">{doc.mapsUrl}</a>
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Staged file preview */}
       {hasPending && (
@@ -434,6 +537,23 @@ const DocumentsTab = ({ agentId }) => {
     }
   };
 
+  // ── Save Google Maps URL ────────────────────────────────────────────────────
+  const handleSaveMapsUrl = async (url) => {
+    const res = await fetch(`${API_BASE}/api/documents/office-location`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mapsUrl: url }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.success) throw new Error(json.error || 'Save failed');
+    // Reflect saved URL in local docs state
+    setDocs(prev => ({
+      ...prev,
+      office_photo: { ...(prev.office_photo || {}), mapsUrl: url },
+    }));
+  };
+
   // ─── render ─────────────────────────────────────────────────────────────────
 
   const enrichedDocs = DOC_TYPES.map(dt => ({
@@ -498,6 +618,7 @@ const DocumentsTab = ({ agentId }) => {
               onClearStaged={handleClearStaged}
               onUpload={handleUpload}
               uploading={!!uploading[doc.key]}
+              onMapsUrlSave={doc.key === 'office_photo' ? handleSaveMapsUrl : undefined}
             />
           ))}
         </div>
