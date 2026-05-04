@@ -3,9 +3,10 @@ import {
   Plus, Edit, Copy, Trash2, Star, Users, MapPin, Clock,
   Search, Grid, List, Tag, Globe, ChevronRight,
   MoreVertical, AlertCircle, Loader2, RefreshCw,
-  Package, TrendingUp, Calendar, DollarSign
+  Package, TrendingUp, Calendar, DollarSign, BookOpen
 } from 'lucide-react';
 import { getAgentPackages, deletePackage } from '../services/packagesApi';
+import ItineraryModal from '../creation/ItineraryModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -22,7 +23,7 @@ const statusColor = (status = '') => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PackageCard
 // ─────────────────────────────────────────────────────────────────────────────
-export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete }) => {
+export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onItinerary }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -83,6 +84,12 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete }) => {
                   className="w-full flex items-center space-x-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 transition-colors"
                 >
                   <Copy className="h-4 w-4" /><span>Duplicate</span>
+                </button>
+                <button
+                  onClick={() => { onItinerary(pkg); setShowMenu(false); }}
+                  className="w-full flex items-center space-x-2 px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors"
+                >
+                  <BookOpen className="h-4 w-4" /><span>Itinerary</span>
                 </button>
                 <button
                   onClick={() => { onDelete(pkg); setShowMenu(false); }}
@@ -164,7 +171,7 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete }) => {
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-          <div className="flex space-x-1.5">
+          <div className="flex flex-wrap gap-1.5">
             <button
               onClick={() => onEdit(pkg)}
               className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
@@ -176,6 +183,12 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete }) => {
               className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
             >
               <Copy className="h-3.5 w-3.5" /><span>Duplicate</span>
+            </button>
+            <button
+              onClick={() => onItinerary(pkg)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+            >
+              <BookOpen className="h-3.5 w-3.5" /><span>Itinerary</span>
             </button>
           </div>
           <button className="flex items-center space-x-1 text-sm text-emerald-600 font-medium hover:text-emerald-700 group/link">
@@ -236,8 +249,9 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter]   = useState('all');
   const [viewMode, setViewMode]       = useState('grid');
-  const [deleteTarget, setDeleteTarget] = useState(null); // pkg to delete
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [itineraryTarget, setItineraryTarget] = useState(null);
 
   // ── Fetch agent's packages ──────────────────────────────────────────────────
   const fetchPackages = useCallback(async () => {
@@ -445,6 +459,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
               onEdit={onEditPackage}
               onDuplicate={onDuplicatePackage}
               onDelete={(p) => setDeleteTarget(p)}
+              onItinerary={(p) => setItineraryTarget(p)}
             />
           ))}
         </div>
@@ -457,6 +472,14 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
           loading={deleteLoading}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {/* Itinerary modal */}
+      {itineraryTarget && (
+        <ItineraryModal
+          pkg={itineraryTarget}
+          onClose={() => setItineraryTarget(null)}
         />
       )}
     </div>

@@ -176,6 +176,20 @@ export const getFavourites = async () => {
   return handleResponse(res);
 };
 
+export const getItinerary = async (packageId) => {
+  const res = await apiFetch(`/api/packages/${packageId}/itinerary`);
+  return handleResponse(res);
+};
+
+export const saveItinerary = async (packageId, days) => {
+  const res = await apiFetch(`/api/packages/${packageId}/itinerary`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ days }),
+  });
+  return handleResponse(res);
+};
+
 export const normalise = (pkg) => {
   const imageUrls = Array.isArray(pkg.image_urls) && pkg.image_urls.length
     ? pkg.image_urls
