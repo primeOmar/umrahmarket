@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   FileText, Upload, CheckCircle, AlertCircle, Clock,
-  RefreshCw, Eye, X, Loader, CloudUpload, File, Camera, MapPin, Info, Link, ExternalLink, Save
+  RefreshCw, Eye, X, Loader, CloudUpload, File, Camera, MapPin, Info, Link, ExternalLink, Save, Images, ChevronLeft, ChevronRight, Plus
 } from 'lucide-react';
 
 /**
@@ -31,6 +31,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 const ACCEPTED = 'image/jpeg,image/png,image/webp,application/pdf';
 const MAX_MB   = 5;
 const MAX_BYTES = MAX_MB * 1024 * 1024;
+const MAX_OFFICE_PHOTOS = 5;
 
 const DOC_TYPES = [
   {
@@ -181,6 +182,169 @@ const DocumentPreviewModal = ({ doc, onClose }) => {
   );
 };
 
+// ─── MultiImageDropZone (office_photo only) ───────────────────────────────────
+
+const MultiImageDropZone = ({ files, onAdd, onRemove, disabled }) => {
+  const [drag, setDrag]   = useState(false);
+  const [error, setError] = useState('');
+  const inputRef          = useRef(null);
+
+  const PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+
+  const validate = (file) => {
+    if (!PHOTO_MIMES.includes(file.type)) return 'Only JPEG, PNG, or WebP images are allowed for office photos.';
+    if (file.size > MAX_BYTES) return `File too large. Max ${MAX_MB} MB.`;
+    return null;
+  };
+
+  const addFiles = (incoming) => {
+    setError('');
+    const remaining = MAX_OFFICE_PHOTOS - files.length;
+    if (remaining <= 0) { setError(`Maximum ${MAX_OFFICE_PHOTOS} photos allowed.`); return; }
+    const toAdd = Array.from(incoming).slice(0, remaining);
+    const errs = toAdd.map(validate).filter(Boolean);
+    if (errs.length) { setError(errs[0]); return; }
+    onAdd(toAdd);
+  };
+
+  const onDrop = useCallback((e) => {
+    e.preventDefault();
+    setDrag(false);
+    if (disabled) return;
+    addFiles(e.dataTransfer.files);
+  }, [disabled, files.length]); // eslint-disable-line
+
+  return (
+    <div>
+      {/* Thumbnail strip */}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {files.map((file, i) => {
+            const url = URL.createObjectURL(file);
+            return (
+              <div key={i} className="relative group w-16 h-16 rounded-xl overflow-hidden border border-blue-100 shadow-sm">
+                <img src={url} alt={file.name} className="w-full h-full object-cover" onLoad={() => URL.revokeObjectURL(url)} />
+                <button
+                  onClick={() => onRemove(i)}
+                  className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  title="Remove"
+                >
+                  <X className="h-4 w-4 text-white" />
+                </button>
+              </div>
+            );
+          })}
+          {files.length < MAX_OFFICE_PHOTOS && (
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="w-16 h-16 rounded-xl border-2 border-dashed border-blue-200 flex items-center justify-center hover:border-blue-400 hover:bg-blue-50 transition-colors"
+              title="Add more photos"
+            >
+              <Plus className="h-5 w-5 text-blue-400" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Drop zone — hide when at max */}
+      {files.length < MAX_OFFICE_PHOTOS && (
+        <div
+          onDragOver={(e) => { e.preventDefault(); if (!disabled) setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          onClick={() => !disabled && inputRef.current?.click()}
+          className={`
+            mt-1 border-2 border-dashed rounded-xl px-4 py-5 flex flex-col items-center gap-2
+            transition-colors cursor-pointer select-none
+            ${disabled  ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-50'
+            : drag      ? 'border-blue-400 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/40'}
+          `}
+        >
+          <CloudUpload className={`h-7 w-7 ${drag ? 'text-blue-500' : 'text-gray-300'}`} />
+          <p className="text-xs text-gray-500 text-center">
+            <span className="font-medium text-blue-600">Click to upload</span> or drag & drop<br />
+            JPEG · PNG · WebP — max {MAX_MB} MB each
+          </p>
+          <p className="text-[10px] text-gray-400">{files.length}/{MAX_OFFICE_PHOTOS} photos selected</p>
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        className="hidden"
+        onChange={(e) => addFiles(e.target.files)}
+        disabled={disabled}
+      />
+      {error && <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" />{error}</p>}
+    </div>
+  );
+};
+
+// ─── OfficePhotoGallery — shows existing uploaded photos ─────────────────────
+
+const OfficePhotoGallery = ({ photos }) => {
+  const [active, setActive] = useState(0);
+  if (!photos || photos.length === 0) return null;
+
+  const prev = () => setActive(i => (i - 1 + photos.length) % photos.length);
+  const next = () => setActive(i => (i + 1) % photos.length);
+
+  return (
+    <div className="mx-5 mb-3">
+      <p className="text-[11px] font-medium text-gray-500 mb-1.5 flex items-center gap-1">
+        <Images className="h-3 w-3" /> {photos.length} uploaded photo{photos.length !== 1 ? 's' : ''}
+      </p>
+      <div className="relative rounded-xl overflow-hidden bg-gray-100 aspect-video">
+        <img
+          src={photos[active].publicUrl}
+          alt={`Office photo ${active + 1}`}
+          className="w-full h-full object-cover"
+        />
+        {photos.length > 1 && (
+          <>
+            <button onClick={prev} className="absolute left-2 top-1/2 -translate-y-1/2 p-1 bg-black/40 hover:bg-black/60 rounded-full text-white transition-colors">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button onClick={next} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-black/40 hover:bg-black/60 rounded-full text-white transition-colors">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+              {photos.map((_, i) => (
+                <button key={i} onClick={() => setActive(i)}
+                  className={`w-1.5 h-1.5 rounded-full transition-colors ${i === active ? 'bg-white' : 'bg-white/40'}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
+        <a
+          href={photos[active].publicUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute top-2 right-2 p-1.5 bg-black/40 hover:bg-black/60 rounded-lg text-white transition-colors"
+          title="Open full size"
+        >
+          <Eye className="h-3.5 w-3.5" />
+        </a>
+      </div>
+      {/* Thumbnail strip */}
+      {photos.length > 1 && (
+        <div className="flex gap-1.5 mt-1.5 overflow-x-auto pb-1">
+          {photos.map((p, i) => (
+            <button key={i} onClick={() => setActive(i)}
+              className={`flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border-2 transition-colors ${i === active ? 'border-blue-500' : 'border-transparent'}`}>
+              <img src={p.publicUrl} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── DropZone ─────────────────────────────────────────────────────────────────
 
 const DropZone = ({ docKey, onFile, disabled }) => {
@@ -248,7 +412,9 @@ const DropZone = ({ docKey, onFile, disabled }) => {
 
 const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading, onMapsUrlSave }) => {
   const hasUploaded = !!doc.path;
-  const hasPending  = !!staged;
+  // office_photo staged is File[] ; others are File | null
+  const isOfficePhoto = doc.key === 'office_photo';
+  const hasPending  = isOfficePhoto ? (Array.isArray(staged) && staged.length > 0) : !!staged;
   const [showPreview, setShowPreview] = useState(false);
   const [mapsUrl,    setMapsUrl]    = useState(doc.mapsUrl || '');
   const [savingMaps, setSavingMaps] = useState(false);
@@ -376,8 +542,13 @@ const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading,
         </div>
       )}
 
-      {/* Staged file preview */}
-      {hasPending && (
+      {/* Office photo gallery — existing uploads */}
+      {isOfficePhoto && doc.photos && doc.photos.length > 0 && (
+        <OfficePhotoGallery photos={doc.photos} />
+      )}
+
+      {/* Staged file preview — single-doc types only */}
+      {!isOfficePhoto && hasPending && (
         <div className="mx-5 mb-3 px-3 py-2.5 bg-blue-50 border border-blue-100 rounded-xl flex items-center gap-3">
           <File className="h-4 w-4 text-blue-500 flex-shrink-0" />
           <div className="flex-1 min-w-0">
@@ -394,16 +565,25 @@ const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading,
         </div>
       )}
 
-      {/* Drop zone — hidden while uploading */}
+      {/* Drop zone */}
       {!uploading && (
         <div className="px-5 pb-4">
-          <DropZone docKey={doc.key} onFile={onFile} disabled={uploading} />
+          {isOfficePhoto ? (
+            <MultiImageDropZone
+              files={Array.isArray(staged) ? staged : []}
+              onAdd={(newFiles) => onFile(doc.key, newFiles, true)}
+              onRemove={(idx) => onFile(doc.key, idx, false)}
+              disabled={uploading}
+            />
+          ) : (
+            <DropZone docKey={doc.key} onFile={onFile} disabled={uploading} />
+          )}
         </div>
       )}
 
       {/* Actions */}
       <div className="px-5 pb-5 flex items-center gap-2">
-        {hasUploaded && doc.publicUrl && (
+        {hasUploaded && !isOfficePhoto && doc.publicUrl && (
           <button
             onClick={() => setShowPreview(true)}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors font-medium text-gray-700"
@@ -424,8 +604,8 @@ const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading,
           {uploading
             ? <><Loader className="h-4 w-4 animate-spin" /> Uploading…</>
             : hasUploaded
-            ? <><RefreshCw className="h-4 w-4" /> Update</>
-            : <><Upload className="h-4 w-4" /> Upload</>
+            ? <><RefreshCw className="h-4 w-4" /> {isOfficePhoto ? `Add ${Array.isArray(staged) ? staged.length : 0} Photo${Array.isArray(staged) && staged.length !== 1 ? 's' : ''}` : 'Update'}</>
+            : <><Upload className="h-4 w-4" /> {isOfficePhoto ? `Upload ${Array.isArray(staged) ? staged.length : 0} Photo${Array.isArray(staged) && staged.length !== 1 ? 's' : ''}` : 'Upload'}</>
           }
         </button>
       </div>
@@ -475,20 +655,47 @@ const DocumentsTab = ({ agentId }) => {
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
   // ── Stage a file for a given doc key ────────────────────────────────────────
-  const handleFile = (key, file) => {
-    setStaged(prev => ({ ...prev, [key]: file }));
+  // For office_photo: onFile(key, File[], true) = add files; onFile(key, index, false) = remove by index
+  // For all others:   onFile(key, File)
+  const handleFile = (key, fileOrFiles, isAdd) => {
+    if (key === 'office_photo') {
+      setStaged(prev => {
+        const current = Array.isArray(prev[key]) ? prev[key] : [];
+        if (isAdd) {
+          // fileOrFiles is File[]
+          const combined = [...current, ...fileOrFiles].slice(0, MAX_OFFICE_PHOTOS);
+          return { ...prev, [key]: combined };
+        } else {
+          // fileOrFiles is the index to remove
+          const next = current.filter((_, i) => i !== fileOrFiles);
+          return { ...prev, [key]: next };
+        }
+      });
+    } else {
+      setStaged(prev => ({ ...prev, [key]: fileOrFiles }));
+    }
     setGlobalError('');
     setSuccessMsg('');
   };
 
   const handleClearStaged = (key) => {
-    setStaged(prev => { const next = { ...prev }; delete next[key]; return next; });
+    setStaged(prev => {
+      const next = { ...prev };
+      if (key === 'office_photo') {
+        next[key] = [];
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
   };
 
-  // ── Upload a single document ─────────────────────────────────────────────────
+  // ── Upload a single document (or multiple for office_photo) ─────────────────
   const handleUpload = async (key) => {
     const file = staged[key];
-    if (!file) return;
+    const isOfficePhoto = key === 'office_photo';
+    const files = isOfficePhoto ? (Array.isArray(file) ? file : []) : (file ? [file] : []);
+    if (files.length === 0) return;
 
     setUploading(prev => ({ ...prev, [key]: true }));
     setGlobalError('');
@@ -497,13 +704,16 @@ const DocumentsTab = ({ agentId }) => {
     try {
       const formData = new FormData();
       if (agentId) formData.append('agentId', agentId);
-      formData.append(key, file);
+      if (isOfficePhoto) {
+        files.forEach(f => formData.append(key, f));
+      } else {
+        formData.append(key, files[0]);
+      }
 
       const res = await fetch(`${API_BASE}/api/documents`, {
         method:      'POST',
         credentials: 'include',
         body:        formData,
-        // Do NOT set Content-Type — browser sets multipart boundary automatically
       });
 
       const json = await res.json().catch(() => ({}));
@@ -517,17 +727,16 @@ const DocumentsTab = ({ agentId }) => {
         ...prev,
         [key]: {
           ...(prev[key] || {}),
-          path:       json.data?.[key] || prev[key]?.path,
+          path:       (isOfficePhoto ? json.data?.[key]?.[0] : json.data?.[key]) || prev[key]?.path,
           status:     'uploaded',
           uploadedAt: new Date().toISOString(),
         },
       }));
 
-      // Clear staged file
+      // Clear staged file(s)
       handleClearStaged(key);
       setSuccessMsg(`${DOC_TYPES.find(d => d.key === key)?.label} uploaded successfully.`);
       setTimeout(() => setSuccessMsg(''), 5000);
-      // Refresh to get the presigned URL so View button works immediately
       fetchDocs();
 
     } catch (err) {
