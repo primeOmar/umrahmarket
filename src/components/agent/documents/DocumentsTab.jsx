@@ -83,6 +83,92 @@ function humanSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ─── DocumentPreviewModal ─────────────────────────────────────────────────────
+
+const DocumentPreviewModal = ({ doc, onClose }) => {
+  const isPdf = doc.publicUrl?.toLowerCase().includes('.pdf') ||
+                doc.path?.toLowerCase().endsWith('.pdf');
+
+  // Prevent background scroll
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Modal header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{doc.icon}</span>
+            <div>
+              <h3 className="font-semibold text-gray-900 text-sm">{doc.label}</h3>
+              {doc.uploadedAt && (
+                <p className="text-[11px] text-gray-400">
+                  Uploaded {new Date(doc.uploadedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {statusBadge(doc.status)}
+            <a
+              href={doc.publicUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl hover:bg-gray-100 transition-colors text-gray-500"
+              title="Open in new tab"
+            >
+              <Eye className="h-4 w-4" />
+            </a>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl hover:bg-gray-100 transition-colors text-gray-500"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Preview area */}
+        <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center min-h-[300px]">
+          {isPdf ? (
+            <iframe
+              src={doc.publicUrl}
+              className="w-full h-full min-h-[500px]"
+              title={doc.label}
+            />
+          ) : (
+            <img
+              src={doc.publicUrl}
+              alt={doc.label}
+              className="max-w-full max-h-[60vh] object-contain rounded-xl m-4 shadow"
+            />
+          )}
+        </div>
+
+        {/* Status footer */}
+        <div className="px-5 py-3 border-t border-gray-100 bg-white flex items-center gap-2">
+          {statusIcon(doc.status)}
+          <span className="text-xs text-gray-500">
+            {doc.status === 'verified' && 'Document verified by admin.'}
+            {doc.status === 'rejected' && (doc.rejectionReason || 'Document was rejected. Please re-upload.')}
+            {doc.status === 'uploaded' && 'Awaiting admin review.'}
+            {doc.status === 'none'     && 'No document uploaded yet.'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── DropZone ─────────────────────────────────────────────────────────────────
 
 const DropZone = ({ docKey, onFile, disabled }) => {
@@ -151,8 +237,13 @@ const DropZone = ({ docKey, onFile, disabled }) => {
 const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading }) => {
   const hasUploaded = !!doc.path;
   const hasPending  = !!staged;
+  const [showPreview, setShowPreview] = useState(false);
 
   return (
+    <>
+    {showPreview && doc.publicUrl && (
+      <DocumentPreviewModal doc={doc} onClose={() => setShowPreview(false)} />
+    )}
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       {/* Header */}
       <div className="p-5 flex items-start justify-between gap-3">
@@ -210,14 +301,12 @@ const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading 
       {/* Actions */}
       <div className="px-5 pb-5 flex items-center gap-2">
         {hasUploaded && doc.publicUrl && (
-          <a
-            href={doc.publicUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => setShowPreview(true)}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors font-medium text-gray-700"
           >
             <Eye className="h-4 w-4" /> View
-          </a>
+          </button>
         )}
 
         <button
@@ -238,6 +327,7 @@ const DocumentCard = ({ doc, staged, onFile, onClearStaged, onUpload, uploading 
         </button>
       </div>
     </div>
+    </>
   );
 };
 
@@ -334,6 +424,8 @@ const DocumentsTab = ({ agentId }) => {
       handleClearStaged(key);
       setSuccessMsg(`${DOC_TYPES.find(d => d.key === key)?.label} uploaded successfully.`);
       setTimeout(() => setSuccessMsg(''), 5000);
+      // Refresh to get the presigned URL so View button works immediately
+      fetchDocs();
 
     } catch (err) {
       setGlobalError(`Upload error: ${err.message}`);
