@@ -1256,15 +1256,15 @@ const handleGoogleLogin = useCallback(() => {
         }`} />
 
         <button onClick={onClose}
-          className="absolute top-6 right-6 z-10 p-2.5 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white transition-all duration-500 hover:scale-110 hover:shadow-xl shadow-lg border border-gray-200/50 flex-shrink-0"
+          className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white transition-all duration-500 hover:scale-110 hover:shadow-xl shadow-lg border border-gray-200/50 flex-shrink-0"
           aria-label="Close modal">
           <X className="h-4 w-4 text-gray-600" />
         </button>
 
         <div className="overflow-y-auto flex-1">
           {!showDocumentUpload && (
-            <div className="p-4 sm:p-6 pb-0 flex-shrink-0">
-              <div className="flex bg-gray-100/80 rounded-2xl p-1 mb-4">
+            <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-0 flex-shrink-0">
+              <div className="flex bg-gray-100/80 rounded-2xl p-1 mb-3">
                 {['client', 'agent'].map((mode) => (
                   <button key={mode}
                     onClick={() => handleModeSwitch(mode)}
@@ -1280,15 +1280,13 @@ const handleGoogleLogin = useCallback(() => {
                 ))}
               </div>
 
-              <div className="mb-4">
-                <h2 className={`text-xl font-bold ${
-                  authMode === 'client' ? 'text-gray-900' : 'text-gray-900'
-                }`}>
+              <div className="mb-2">
+                <h2 className="text-lg font-bold text-gray-900">
                   {authType === 'login'
                     ? `Welcome back${authMode === 'client' ? ', Pilgrim' : ''}`
                     : authMode === 'client' ? 'Begin Your Journey' : 'Register Your Agency'}
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-xs text-gray-500">
                   {authType === 'login'
                     ? 'Sign in to continue your spiritual journey'
                     : authMode === 'client'
@@ -1299,7 +1297,7 @@ const handleGoogleLogin = useCallback(() => {
             </div>
           )}
 
-          <div className="p-4 sm:p-6 pt-3">
+          <div className="px-4 sm:px-6 pb-4 sm:pb-5 pt-2">
             {showDocumentUpload ? (
               <div>
                 <div className="mb-6">
@@ -1372,13 +1370,13 @@ const handleGoogleLogin = useCallback(() => {
               <>
                 {/* Google Sign-In Button - CLIENT MODE ONLY */}
                 {authMode === 'client' && (
-                  <div className="space-y-3 mb-6">
+                  <div className="space-y-2 mb-3">
                    {/* Google Sign-In Button */}
 <button
   onClick={handleGoogleLogin}
   disabled={isLoading}
   id="google-signin-btn"
-  className="w-full group relative flex items-center justify-center gap-3 px-6 py-3.5 bg-white border-2 border-[#4285F4] rounded-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/20 hover:bg-blue-50/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
+  className="w-full group relative flex items-center justify-center gap-3 px-6 py-3 bg-white border-2 border-[#4285F4] rounded-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/20 hover:bg-blue-50/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
   <div className="w-5 h-5 flex-shrink-0">
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -1395,12 +1393,12 @@ const handleGoogleLogin = useCallback(() => {
 {/* Hidden target for Google to render its button into - we trigger the click programmatically */}
 <div id="google-btn-target" className="hidden" />
 
-                    <div className="relative">
+                    <div className="relative my-1">
                       <div className="absolute inset-0 flex items-center">
                         <div className="w-full border-t border-gray-200" />
                       </div>
-                      <div className="relative flex justify-center text-sm">
-                        <span className="px-4 bg-white text-gray-500">or continue with email</span>
+                      <div className="relative flex justify-center text-xs">
+                        <span className="px-3 bg-white text-gray-400">or continue with email</span>
                       </div>
                     </div>
                   </div>
@@ -1415,21 +1413,18 @@ const handleGoogleLogin = useCallback(() => {
         </div>
 
         {!showDocumentUpload && (
-          <div className="p-4 border-t border-gray-200/50 bg-gradient-to-b from-white to-gray-50/50 flex-shrink-0">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex items-center space-x-3">
-                <div className="p-1.5 rounded-full bg-emerald-50 border border-emerald-100 flex-shrink-0">
-                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
+          <div className="px-4 sm:px-6 py-2.5 border-t border-gray-200/50 bg-gradient-to-b from-white to-gray-50/50 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1 rounded-full bg-emerald-50 border border-emerald-100 flex-shrink-0">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
                 </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-900">Bank-level Security</div>
-                  <div className="text-xs text-gray-600">256-bit SSL encryption</div>
-                </div>
+                <div className="text-xs text-gray-500"><span className="font-semibold text-gray-700">Bank-level Security</span> · 256-bit SSL</div>
               </div>
-              <div className="text-xs text-gray-500 text-center">
+              <div className="text-xs text-gray-500">
                 Need help?{' '}
                 <button className="text-emerald-600 hover:text-emerald-700 font-semibold transition-colors duration-300">
-                  Contact Support
+                  Support
                 </button>
               </div>
             </div>
