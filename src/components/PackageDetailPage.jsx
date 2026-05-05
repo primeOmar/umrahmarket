@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { userStore, tokenStore } from '../api';
+import { getItinerary } from './agent/packages/services/packagesApi';
 import AuthModal from './AuthModal';
 import BookingModal from './BookingModal';
 
@@ -223,6 +224,17 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   // Scroll to top whenever the viewed package changes
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [id]);
 
+  // Fetch itinerary from backend
+  const [itineraryDays, setItineraryDays] = useState(null);
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    getItinerary(id)
+      .then((data) => { if (!cancelled && Array.isArray(data?.days) && data.days.length) setItineraryDays(data.days); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [id]);
+
   // Similar packages — same type or location, excluding current
   const similarPkgs = useMemo(
     () => packages.filter(p => p.id !== id && (p.type === packageData?.type || p.location === packageData?.location)).slice(0, 3),
@@ -306,14 +318,14 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
     { icon: <UsersIcon className="h-5 w-5" />,  label: 'Family Rooms Available' },
   ];
 
-  const itinerary = [
-    { day: 1, title: 'Arrival in Jeddah',    description: 'VIP airport reception, immigration assistance, luxury transfer to Makkah hotel',   activities: ['Airport Pickup', 'Hotel Check-in', 'Welcome Dinner'] },
-    { day: 2, title: 'Umrah Performance',    description: 'Guided Umrah performance with experienced scholar, Ihram guidance',                  activities: ['Tawaf', "Sa'i", 'Hair Cutting'] },
-    { day: 3, title: 'Ziyarat in Makkah',   description: 'Visit historical Islamic sites in and around Makkah',                               activities: ['Jabal al-Nour', 'Hira Cave', 'Masjid al-Jinn'] },
-    { day: 4, title: 'Transfer to Madinah', description: "Comfortable travel to Madinah, visit Prophet's Mosque",                            activities: ['Travel to Madinah', 'Hotel Check-in', 'Rawdah Visit'] },
-    { day: 5, title: 'Ziyarat in Madinah',  description: 'Explore significant historical sites in Madinah',                                   activities: ['Quba Mosque', 'Uhud Mountain', 'Qiblatain Mosque'] },
-    { day: 6, title: 'Spiritual Day',        description: 'Personal time for prayers, reflection, and optional activities',                    activities: ['Optional Tours', 'Shopping', 'Personal Time'] },
-    { day: 7, title: 'Departure',            description: 'Final prayers, farewell breakfast, airport transfer',                               activities: ['Final Prayers', 'Airport Transfer', 'Departure'] },
+  const itinerary = itineraryDays ?? [
+    { day: 1, title: 'Arrival in Jeddah',    activities: ['Airport Pickup', 'Hotel Check-in', 'Welcome Dinner'] },
+    { day: 2, title: 'Umrah Performance',    activities: ['Tawaf', "Sa'i", 'Hair Cutting'] },
+    { day: 3, title: 'Ziyarat in Makkah',   activities: ['Jabal al-Nour', 'Hira Cave', 'Masjid al-Jinn'] },
+    { day: 4, title: 'Transfer to Madinah', activities: ['Travel to Madinah', 'Hotel Check-in', 'Rawdah Visit'] },
+    { day: 5, title: 'Ziyarat in Madinah',  activities: ['Quba Mosque', 'Uhud Mountain', 'Qiblatain Mosque'] },
+    { day: 6, title: 'Spiritual Day',        activities: ['Optional Tours', 'Shopping', 'Personal Time'] },
+    { day: 7, title: 'Departure',            activities: ['Final Prayers', 'Airport Transfer', 'Departure'] },
   ];
 
   const reviews = [
@@ -553,7 +565,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                       <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-semibold mr-3">Day {day.day}</span>
                       <h3 className="text-lg font-semibold text-gray-900">{day.title}</h3>
                     </div>
-                    <p className="text-gray-600 mb-3">{day.description}</p>
                     <div className="flex flex-wrap gap-2">
                       {day.activities.map((act, idx) => (
                         <span key={idx} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">{act}</span>
