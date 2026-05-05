@@ -1013,7 +1013,28 @@ const ClientDashboard = ({ user, onLogout }) => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  // If there's no user, immediately clear loading states so nothing spins forever
+  // ── Inactivity auto-logout (30 min) ─────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return;
+    const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    let timer;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        onLogout?.();
+        navigate('/');
+      }, TIMEOUT_MS);
+    };
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }));
+    reset(); // start the timer
+    return () => {
+      clearTimeout(timer);
+      events.forEach(e => window.removeEventListener(e, reset));
+    };
+  }, [user?.id, onLogout, navigate]);
+
+    // If there's no user, immediately clear loading states so nothing spins forever
   useEffect(() => {
     if (!user?.id) {
       setLoading({ bookings: false, messages: false, favorites: false, stats: false });
@@ -1100,17 +1121,21 @@ const ClientDashboard = ({ user, onLogout }) => {
 
   const handleViewPackage = (pkg) => navigate(`/package/${pkg.id}`);
   const handleBookPackage  = (pkg) => {
+    // ── Auth guard: never allow booking when session is gone ──
+    if (!user?.id) {
+      showToast('Your session has expired. Please sign in to book.', 'error');
+      setTimeout(() => { onLogout?.(); navigate('/'); }, 1500);
+      return;
+    }
     // Check if user already has a confirmed or pending booking for this package
     const existingBooking = bookings.find(b => 
       String(b.package_id) === String(pkg.id) && 
       ['confirmed', 'pending'].includes(b.status?.toLowerCase())
     );
-    
     if (existingBooking) {
       showToast('You have already booked this package', 'info');
       return;
     }
-    
     setBookingPkg(pkg);
   };
   const handleViewBooking = (booking) => navigate(`/package/${booking.package_id ?? booking.package?.id}`);
@@ -1344,7 +1369,7 @@ const ClientDashboard = ({ user, onLogout }) => {
               <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-bold">Menu</h2><button onClick={() => setMobileMenuOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button></div>
               <div className="flex items-center space-x-3">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-lg">{user?.firstName?.charAt(0) || user?.name?.charAt(0) || 'U'}</div>
-                <div><h3 className="font-semibold">{user?.firstName || user?.name || 'User'} {user?.lastName || ''}</h3><p className="text-xs text-gray-500">{user?.email || 'user@example.com'}</p></div>
+                <div><h3 className="font-semibold">{user?.firstName || user?.name || 'User'} {user?.lastName || ''}</h3><p className="text-xs text-gray-500">{user?.email || ''}</p></div>
               </div>
             </div>
             <nav className="p-4">
