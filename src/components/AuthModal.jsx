@@ -199,45 +199,45 @@ const ClientForm = React.memo(({
   onInputChange, onTogglePassword, onSubmit, onToggleAuthType,
   alert,
 }) => (
-  <form onSubmit={onSubmit} className="space-y-6">
+  <form onSubmit={onSubmit} className="space-y-3.5">
     <Alert {...alert} />
 
     {authType === 'register' && (
       <>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               First Name <span className="text-emerald-500">*</span>
             </label>
             <div className="relative group">
               <User className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-300 pointer-events-none" />
               <input type="text" name="firstName" value={formData.firstName || ''} onChange={onInputChange}
                 placeholder="Muhammad"
-                className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
+                className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
                 required autoComplete="given-name" />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Last Name <span className="text-emerald-500">*</span>
             </label>
             <div className="relative group">
               <User className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-300 pointer-events-none" />
               <input type="text" name="lastName" value={formData.lastName || ''} onChange={onInputChange}
                 placeholder="Ahmed"
-                className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
+                className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
                 required autoComplete="family-name" />
             </div>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
           <div className="relative group">
             <Smartphone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-300 pointer-events-none" />
             <input type="tel" name="phone" value={formData.phone || ''} onChange={onInputChange}
               placeholder="+1 (555) 000-0000"
-              className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
+              className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
               autoComplete="tel" />
           </div>
         </div>
@@ -245,27 +245,27 @@ const ClientForm = React.memo(({
     )}
 
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
         Email Address <span className="text-emerald-500">*</span>
       </label>
       <div className="relative group">
         <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-300 pointer-events-none" />
         <input type="email" name="email" value={formData.email || ''} onChange={onInputChange}
           placeholder="your@email.com"
-          className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
+          className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
           required autoComplete="email" />
       </div>
     </div>
 
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
         Password <span className="text-emerald-500">*</span>
       </label>
       <div className="relative group">
         <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-300 pointer-events-none" />
         <input type={showPassword ? 'text' : 'password'} name="password" value={formData.password || ''} onChange={onInputChange}
           placeholder="••••••••"
-          className="w-full pl-12 pr-12 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
+          className="w-full pl-12 pr-12 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
           required autoComplete={authType === 'login' ? 'current-password' : 'new-password'} />
         <button type="button" onClick={onTogglePassword}
           className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-emerald-600 transition-colors duration-300" tabIndex="-1">
@@ -273,7 +273,7 @@ const ClientForm = React.memo(({
         </button>
       </div>
       {authType === 'register' && (
-        <p className="text-xs text-gray-400 mt-1.5">Min 8 chars · uppercase · lowercase · number · special char</p>
+        <p className="text-xs text-gray-400 mt-1">Min 8 chars · uppercase · lowercase · number · special char</p>
       )}
     </div>
 
@@ -302,7 +302,7 @@ const ClientForm = React.memo(({
     )}
 
     <button type="submit" disabled={isLoading}
-      className="relative w-full py-4 bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-500 text-white font-semibold rounded-xl hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-500 transform hover:-translate-y-1 active:scale-[0.99] overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
+      className="relative w-full py-3 bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-500 text-white font-semibold rounded-xl hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-500 transform hover:-translate-y-1 active:scale-[0.99] overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
       <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       {isLoading ? (
         <div className="flex items-center justify-center">
@@ -317,14 +317,25 @@ const ClientForm = React.memo(({
       )}
     </button>
 
-    <div className="text-center">
-      <p className="text-sm text-gray-600">
-        {authType === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
-        <button type="button" onClick={onToggleAuthType}
-          className="text-emerald-600 font-semibold hover:text-emerald-700 transition-colors duration-300">
-          {authType === 'login' ? 'Create Account' : 'Sign In'}
-        </button>
-      </p>
+    <div className="text-center pt-1">
+      {authType === 'login' ? (
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm text-gray-500">New here?</span>
+          <button type="button" onClick={onToggleAuthType}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:shadow-md hover:shadow-emerald-500/30 hover:-translate-y-0.5">
+            <span>Create Account</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-600">
+          Already have an account?{' '}
+          <button type="button" onClick={onToggleAuthType}
+            className="text-emerald-600 font-semibold hover:text-emerald-700 transition-colors duration-300 underline underline-offset-2">
+            Sign In
+          </button>
+        </p>
+      )}
     </div>
   </form>
 ));
@@ -335,73 +346,73 @@ const AgentForm = React.memo(({
   onInputChange, onTogglePassword, onSubmit, onToggleAuthType,
   alert,
 }) => (
-  <form onSubmit={onSubmit} className="space-y-6">
+  <form onSubmit={onSubmit} className="space-y-3.5">
     <Alert {...alert} />
 
     {authType === 'register' && (
       <>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Agency/Business Name <span className="text-blue-500">*</span>
           </label>
           <div className="relative group">
             <Building className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
             <input type="text" name="agencyName" value={formData.agencyName || ''} onChange={onInputChange}
               placeholder="Your Agency Name"
-              className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+              className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
               required autoComplete="organization" />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Director/Owner First Name <span className="text-blue-500">*</span>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Director First Name <span className="text-blue-500">*</span>
             </label>
             <div className="relative group">
               <User className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
               <input type="text" name="directorFirstName" value={formData.directorFirstName || ''} onChange={onInputChange}
                 placeholder="First Name"
-                className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+                className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
                 required autoComplete="given-name" />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Director/Owner Last Name <span className="text-blue-500">*</span>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Director Last Name <span className="text-blue-500">*</span>
             </label>
             <div className="relative group">
               <User className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
               <input type="text" name="directorLastName" value={formData.directorLastName || ''} onChange={onInputChange}
                 placeholder="Last Name"
-                className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+                className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
                 required autoComplete="family-name" />
             </div>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Travel License Number <span className="text-blue-500">*</span>
           </label>
           <div className="relative group">
             <Key className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
             <input type="text" name="licenseNumber" value={formData.licenseNumber || ''} onChange={onInputChange}
               placeholder="License Number"
-              className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+              className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
               required />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Phone Number <span className="text-blue-500">*</span>
           </label>
           <div className="relative group">
             <Smartphone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
             <input type="tel" name="phone" value={formData.phone || ''} onChange={onInputChange}
               placeholder="+1 (555) 000-0000"
-              className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+              className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
               required autoComplete="tel" />
           </div>
         </div>
@@ -409,27 +420,27 @@ const AgentForm = React.memo(({
     )}
 
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
         {authType === 'register' ? 'Business Email' : 'Email Address'} <span className="text-blue-500">*</span>
       </label>
       <div className="relative group">
         <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
         <input type="email" name="email" value={formData.email || ''} onChange={onInputChange}
           placeholder={authType === 'register' ? 'agency@email.com' : 'your@email.com'}
-          className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+          className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
           required autoComplete="email" />
       </div>
     </div>
 
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
         Password <span className="text-blue-500">*</span>
       </label>
       <div className="relative group">
         <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
         <input type={showPassword ? 'text' : 'password'} name="password" value={formData.password || ''} onChange={onInputChange}
           placeholder="••••••••"
-          className="w-full pl-12 pr-12 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+          className="w-full pl-12 pr-12 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
           required autoComplete={authType === 'login' ? 'current-password' : 'new-password'} />
         <button type="button" onClick={onTogglePassword}
           className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-blue-600 transition-colors duration-300" tabIndex="-1">
@@ -437,7 +448,7 @@ const AgentForm = React.memo(({
         </button>
       </div>
       {authType === 'register' && (
-        <p className="text-xs text-gray-400 mt-1.5">Min 8 chars · uppercase · lowercase · number · special char</p>
+        <p className="text-xs text-gray-400 mt-1">Min 8 chars · uppercase · lowercase · number · special char</p>
       )}
     </div>
 
@@ -454,7 +465,7 @@ const AgentForm = React.memo(({
     )}
 
     {authType === 'register' && (
-      <div className="space-y-3">
+      <div className="space-y-2">
         <div className="flex items-start">
           <input type="checkbox" id="agent-terms" className="h-4 w-4 mt-1 text-blue-600 border-gray-300 rounded focus:ring-blue-500" required />
           <label htmlFor="agent-terms" className="ml-2 text-sm text-gray-700">
@@ -464,7 +475,7 @@ const AgentForm = React.memo(({
             <button type="button" className="text-blue-600 hover:text-blue-700 font-semibold">Privacy Policy</button>
           </label>
         </div>
-        <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100">
+        <div className="p-2.5 rounded-lg bg-blue-50/50 border border-blue-100">
           <p className="text-xs text-blue-700">
             <span className="font-semibold">Important:</span> You'll need to upload verification documents from your dashboard.
           </p>
@@ -473,7 +484,7 @@ const AgentForm = React.memo(({
     )}
 
     <button type="submit" disabled={isLoading}
-      className="relative w-full py-4 bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-500 text-white font-semibold rounded-xl hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-500 transform hover:-translate-y-1 active:scale-[0.99] overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
+      className="relative w-full py-3 bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-500 text-white font-semibold rounded-xl hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-500 transform hover:-translate-y-1 active:scale-[0.99] overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
       <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       {isLoading ? (
         <div className="flex items-center justify-center">
@@ -488,14 +499,25 @@ const AgentForm = React.memo(({
       )}
     </button>
 
-    <div className="text-center">
-      <p className="text-sm text-gray-600">
-        {authType === 'login' ? 'Not an agent yet?' : 'Already registered?'}{' '}
-        <button type="button" onClick={onToggleAuthType}
-          className="text-blue-600 font-semibold hover:text-blue-700 transition-colors duration-300">
-          {authType === 'login' ? 'Apply Now' : 'Sign In'}
-        </button>
-      </p>
+    <div className="text-center pt-1">
+      {authType === 'login' ? (
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm text-gray-500">Not an agent yet?</span>
+          <button type="button" onClick={onToggleAuthType}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:shadow-md hover:shadow-blue-500/30 hover:-translate-y-0.5">
+            <span>Apply Now</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-600">
+          Already registered?{' '}
+          <button type="button" onClick={onToggleAuthType}
+            className="text-blue-600 font-semibold hover:text-blue-700 transition-colors duration-300 underline underline-offset-2">
+            Sign In
+          </button>
+        </p>
+      )}
     </div>
   </form>
 ));
@@ -1225,7 +1247,7 @@ const handleGoogleLogin = useCallback(() => {
       </div>
 
       <div ref={modalRef}
-        className="relative w-full max-w-2xl max-h-[90vh] bg-white/95 backdrop-blur-xl rounded-3xl overflow-hidden shadow-2xl shadow-black/20 animate-slideUp flex flex-col border border-white/20">
+        className="relative w-full max-w-lg max-h-[95vh] sm:max-h-[90vh] bg-white/95 backdrop-blur-xl rounded-3xl overflow-hidden shadow-2xl shadow-black/20 animate-slideUp flex flex-col border border-white/20">
         
         <div className={`h-1.5 flex-shrink-0 ${
           authMode === 'client'
@@ -1241,12 +1263,12 @@ const handleGoogleLogin = useCallback(() => {
 
         <div className="overflow-y-auto flex-1">
           {!showDocumentUpload && (
-            <div className="p-6 sm:p-8 pb-0 flex-shrink-0">
-              <div className="flex bg-gray-100/80 rounded-2xl p-1 mb-6">
+            <div className="p-4 sm:p-6 pb-0 flex-shrink-0">
+              <div className="flex bg-gray-100/80 rounded-2xl p-1 mb-4">
                 {['client', 'agent'].map((mode) => (
                   <button key={mode}
                     onClick={() => handleModeSwitch(mode)}
-                    className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
                       authMode === mode
                         ? mode === 'client'
                           ? 'bg-white text-emerald-700 shadow-md shadow-emerald-500/10'
@@ -1258,8 +1280,8 @@ const handleGoogleLogin = useCallback(() => {
                 ))}
               </div>
 
-              <div className="mb-6">
-                <h2 className={`text-2xl font-bold ${
+              <div className="mb-4">
+                <h2 className={`text-xl font-bold ${
                   authMode === 'client' ? 'text-gray-900' : 'text-gray-900'
                 }`}>
                   {authType === 'login'
@@ -1277,7 +1299,7 @@ const handleGoogleLogin = useCallback(() => {
             </div>
           )}
 
-          <div className="p-6 sm:p-8 pt-4">
+          <div className="p-4 sm:p-6 pt-3">
             {showDocumentUpload ? (
               <div>
                 <div className="mb-6">
@@ -1350,19 +1372,22 @@ const handleGoogleLogin = useCallback(() => {
               <>
                 {/* Google Sign-In Button - CLIENT MODE ONLY */}
                 {authMode === 'client' && (
-                  <div className="space-y-4 mb-8">
+                  <div className="space-y-3 mb-6">
                    {/* Google Sign-In Button */}
 <button
   onClick={handleGoogleLogin}
   disabled={isLoading}
   id="google-signin-btn"
-  className="w-full group relative px-6 py-4 bg-white border-2 border-gray-200 rounded-xl transition-all duration-500 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-500/10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
-  <div className="absolute left-6 top-1/2 transform -translate-y-1/2">
-    <div className="w-6 h-6 bg-gradient-to-br from-[#4285F4] via-[#34A853] to-[#FBBC05] rounded-full flex items-center justify-center">
-      <span className="text-white text-xs font-bold">G</span>
-    </div>
+  className="w-full group relative flex items-center justify-center gap-3 px-6 py-3.5 bg-white border-2 border-[#4285F4] rounded-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/20 hover:bg-blue-50/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
+  <div className="w-5 h-5 flex-shrink-0">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
   </div>
-  <span className="text-gray-700 font-semibold">
+  <span className="text-[#4285F4] font-bold text-sm tracking-wide">
     {isLoading ? 'Connecting...' : 'Continue with Google'}
   </span>
 </button>
@@ -1390,7 +1415,7 @@ const handleGoogleLogin = useCallback(() => {
         </div>
 
         {!showDocumentUpload && (
-          <div className="p-6 border-t border-gray-200/50 bg-gradient-to-b from-white to-gray-50/50 flex-shrink-0">
+          <div className="p-4 border-t border-gray-200/50 bg-gradient-to-b from-white to-gray-50/50 flex-shrink-0">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-3">
                 <div className="p-1.5 rounded-full bg-emerald-50 border border-emerald-100 flex-shrink-0">
