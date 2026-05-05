@@ -15,7 +15,7 @@ import {
 import logoImage from '../assets/umramarket.png';
 import AuthModal from './AuthModal';
 
-const Header = () => {
+const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeNav, setActiveNav] = useState('Packages');
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -24,8 +24,12 @@ const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Close the auth modal as soon as a user is present (login completed)
   useEffect(() => {
-    setShowAuthModal(false);
+    if (currentUser) setShowAuthModal(false);
+  }, [currentUser]);
+
+  useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
@@ -131,18 +135,35 @@ const Header = () => {
               </button>
 
               {/* Account button — sm+ (tablet shows this, not the hamburger) */}
-              <button
-                onClick={() => setShowAuthModal(true)}
-                className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 hover:border-emerald-200 hover:shadow-md hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-teal-50/50 transition-all duration-300 group"
-              >
-                <Menu className="h-4 w-4 text-gray-500 group-hover:text-emerald-600 transition-colors" />
-                <div className="p-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm">
-                  <User className="h-3.5 w-3.5 text-white" />
-                </div>
-                <span className="hidden lg:inline text-sm font-medium text-gray-700 group-hover:text-emerald-700">
-                  Account
-                </span>
-              </button>
+              {currentUser ? (
+                <button
+                  onClick={() => {
+                    if (currentUser.role === 'agent') navigate('/agent/dashboard');
+                    else navigate('/client/dashboard');
+                  }}
+                  className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-full border border-emerald-200 bg-gradient-to-r from-emerald-50/70 to-teal-50/70 hover:shadow-md transition-all duration-300 group"
+                >
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                    {currentUser.firstName?.charAt(0) || currentUser.name?.charAt(0) || 'U'}
+                  </div>
+                  <span className="hidden lg:inline text-sm font-semibold text-emerald-700 max-w-[100px] truncate">
+                    {currentUser.firstName || currentUser.name || 'Account'}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowAuthModal(true)}
+                  className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 hover:border-emerald-200 hover:shadow-md hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-teal-50/50 transition-all duration-300 group"
+                >
+                  <Menu className="h-4 w-4 text-gray-500 group-hover:text-emerald-600 transition-colors" />
+                  <div className="p-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm">
+                    <User className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <span className="hidden lg:inline text-sm font-medium text-gray-700 group-hover:text-emerald-700">
+                    Account
+                  </span>
+                </button>
+              )}
 
               {/* Hamburger — xs/mobile only */}
               <button
@@ -199,11 +220,22 @@ const Header = () => {
             </button>
           ))}
           <button
-            onClick={() => setShowAuthModal(true)}
+            onClick={() => currentUser
+              ? navigate(currentUser.role === 'agent' ? '/agent/dashboard' : '/client/dashboard')
+              : setShowAuthModal(true)
+            }
             className="flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl text-gray-400 hover:text-emerald-500 transition-all duration-300"
           >
-            <User className="h-4 w-4" />
-            <span className="text-[10px] mt-0.5 font-semibold">Account</span>
+            {currentUser ? (
+              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center text-white text-[10px] font-bold">
+                {currentUser.firstName?.charAt(0) || currentUser.name?.charAt(0) || 'U'}
+              </div>
+            ) : (
+              <User className="h-4 w-4" />
+            )}
+            <span className={`text-[10px] mt-0.5 font-semibold ${currentUser ? 'text-emerald-600' : ''}`}>
+              {currentUser ? (currentUser.firstName || 'Me') : 'Account'}
+            </span>
           </button>
         </div>
       </div>
@@ -261,13 +293,23 @@ const Header = () => {
             <span className="text-sm font-semibold text-emerald-700">Verified Platform</span>
             <Sparkles className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
           </div>
-          <button
-            onClick={() => { setMobileMenuOpen(false); setShowAuthModal(true); }}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold shadow-md shadow-emerald-200 hover:from-emerald-600 hover:to-teal-600 transition-all duration-300"
-          >
-            <User className="h-4 w-4" />
-            Sign In / Register
-          </button>
+          {currentUser ? (
+            <button
+              onClick={() => { setMobileMenuOpen(false); onLogout?.(); }}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-red-500 to-rose-500 text-white text-sm font-semibold shadow-md hover:from-red-600 hover:to-rose-600 transition-all duration-300"
+            >
+              <User className="h-4 w-4" />
+              Sign Out
+            </button>
+          ) : (
+            <button
+              onClick={() => { setMobileMenuOpen(false); setShowAuthModal(true); }}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold shadow-md shadow-emerald-200 hover:from-emerald-600 hover:to-teal-600 transition-all duration-300"
+            >
+              <User className="h-4 w-4" />
+              Sign In / Register
+            </button>
+          )}
         </div>
       </div>
 
@@ -296,11 +338,22 @@ const Header = () => {
 
           {/* Account in bottom nav */}
           <button
-            onClick={() => setShowAuthModal(true)}
+            onClick={() => currentUser
+              ? navigate(currentUser.role === 'agent' ? '/agent/dashboard' : '/client/dashboard')
+              : setShowAuthModal(true)
+            }
             className="flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl text-gray-400 hover:text-emerald-500 transition-all duration-300"
           >
-            <User className="h-4 w-4" />
-            <span className="text-[10px] mt-0.5 font-semibold">Account</span>
+            {currentUser ? (
+              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center text-white text-[10px] font-bold">
+                {currentUser.firstName?.charAt(0) || currentUser.name?.charAt(0) || 'U'}
+              </div>
+            ) : (
+              <User className="h-4 w-4" />
+            )}
+            <span className={`text-[10px] mt-0.5 font-semibold ${currentUser ? 'text-emerald-600' : ''}`}>
+              {currentUser ? (currentUser.firstName || 'Me') : 'Account'}
+            </span>
           </button>
         </div>
       </div>
@@ -312,6 +365,8 @@ const Header = () => {
             onClose={() => setShowAuthModal(false)}
             onAuthSuccess={(user) => {
               setShowAuthModal(false);
+              // Update App-level state immediately — no refresh needed
+              onAuthSuccess?.(user);
               const targetUrl =
                 user?.role === 'agent'
                   ? '/agent/dashboard?welcome=true'

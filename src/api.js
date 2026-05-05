@@ -38,7 +38,8 @@ export const userStore = {
 };
 
 // ─── Session expiry handler ────────────────────────────────────────────────────
-// Called when refresh token is also expired — clears state and redirects to login
+// Called when refresh token is also expired — clears state, shows banner, and
+// fires a 'session:expired' event that App.jsx can catch to open the auth modal.
 const handleSessionExpired = () => {
   tokenStore.clear();
   userStore.clear();
@@ -50,10 +51,16 @@ const handleSessionExpired = () => {
     padding:14px;font-size:14px;font-weight:600;
     box-shadow:0 2px 12px rgba(0,0,0,0.2);
   `;
-  banner.textContent = 'Your session has expired. Redirecting to login\u2026';
+  banner.textContent = 'Your session has expired. Please sign in again\u2026';
   document.body.appendChild(banner);
 
-  setTimeout(() => { window.location.href = '/'; }, 2000);
+  // Let App.jsx know so it can clear currentUser and open the auth modal
+  window.dispatchEvent(new CustomEvent('session:expired'));
+
+  setTimeout(() => {
+    banner.remove();
+    window.location.href = '/';
+  }, 2500);
 };
 
 // ─── Axios instance ───────────────────────────────────────────────────────────

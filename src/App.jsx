@@ -124,12 +124,24 @@ function App() {
       .catch(() => {}); // silently ignore — not critical
   }, [currentUser]);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     tokenStore.clear();
     userStore.clear();
     setCurrentUser(null);
     window.location.href = '/';
-  };
+  }, []);
+
+  // ── Listen for token expiry fired by api.js interceptor ──────────────────
+  useEffect(() => {
+    const onExpired = () => {
+      tokenStore.clear();
+      userStore.clear();
+      setCurrentUser(null);
+      // Redirect happens inside api.js after 2.5 s; we just sync React state here
+    };
+    window.addEventListener('session:expired', onExpired);
+    return () => window.removeEventListener('session:expired', onExpired);
+  }, []);
 
   // ── Inactivity timeout — log out after 30 min of no interaction ───────────
   useEffect(() => {
@@ -163,7 +175,14 @@ function App() {
           {/* Home */}
           <Route path="/" element={
             <>
-              <Header currentUser={currentUser} />
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
               <HeroSection
                 packages={packages}
                 loading={pkgLoading}

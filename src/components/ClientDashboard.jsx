@@ -1013,26 +1013,14 @@ const ClientDashboard = ({ user, onLogout }) => {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  // ── Inactivity auto-logout (30 min) ─────────────────────────────────────────
+  // ── Session guard: redirect to login if user disappears (token expired) ────
   useEffect(() => {
-    if (!user?.id) return;
-    const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-    let timer;
-    const reset = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        onLogout?.();
-        navigate('/');
-      }, TIMEOUT_MS);
-    };
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
-    events.forEach(e => window.addEventListener(e, reset, { passive: true }));
-    reset(); // start the timer
-    return () => {
-      clearTimeout(timer);
-      events.forEach(e => window.removeEventListener(e, reset));
-    };
-  }, [user?.id, onLogout, navigate]);
+    if (authReady !== undefined) return; // only run inside dashboard context
+    if (!user?.id) {
+      // Token expired mid-session — send to home with login modal
+      navigate('/', { replace: true });
+    }
+  }, [user?.id, navigate]);
 
     // If there's no user, immediately clear loading states so nothing spins forever
   useEffect(() => {
