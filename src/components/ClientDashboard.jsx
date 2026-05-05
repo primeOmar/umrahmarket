@@ -1014,10 +1014,15 @@ const ClientDashboard = ({ user, onLogout }) => {
   }, [darkMode]);
 
   // ── Session guard: redirect to login if user disappears (token expired) ────
+  // isMounted ref prevents a false redirect on the very first render before
+  // App.jsx's initAuth() has resolved and passed the user prop down.
+  const isMounted = React.useRef(false);
   useEffect(() => {
-    if (authReady !== undefined) return; // only run inside dashboard context
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return; // skip first render — user prop may not be set yet
+    }
     if (!user?.id) {
-      // Token expired mid-session — send to home with login modal
       navigate('/', { replace: true });
     }
   }, [user?.id, navigate]);
