@@ -11,13 +11,14 @@ import {
   Send, Paperclip, Smile, ChevronUp, Info, CheckCheck,
   Loader, Circle, ArrowLeft
 } from 'lucide-react';
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns';
 import CreatePackageModal from './agent/packages/creation/CreatePackageModal';
 import PackagesTab from './agent/packages/display/PackagesTab';
 import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
 import { getAgentPackages } from './agent/packages/services/packagesApi';
 import DocumentsTab from './agent/documents/DocumentsTab';
+import { useBookingNotifications } from '../hooks/useBookingNotifications';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -616,16 +617,32 @@ const AgentDashboard = ({ user, onLogout }) => {
   const { conversations } = useAgentConversations();
   const unreadCount = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-  // ── Package count (PackagesTab is self-fetching; we just need the count here) ─
-  const [packageCount, setPackageCount] = useState(null);
+  // ── Packages (full list for notification filtering + count display) ──────────
+  const [agentPackages, setAgentPackages] = useState([]);
+  const packageCount = agentPackages.length || null;
   useEffect(() => {
     getAgentPackages()
       .then((data) => {
         const list = Array.isArray(data) ? data : (data.packages ?? data.data ?? []);
-        setPackageCount(list.length);
+        setAgentPackages(list);
       })
-      .catch(() => setPackageCount(null));
+      .catch(() => setAgentPackages([]));
   }, []);
+
+  // ── Booking notifications (Supabase Realtime) ──────────────────────────────
+  const {
+    notifications: bookingNotifications,
+    unreadCount: bookingUnreadCount,
+    toasts: bookingToasts,
+    bookingVersion,
+    markAllRead: markAllNotificationsRead,
+    dismissToast,
+  } = useBookingNotifications(agentPackages);
+
+  // Refetch clients list whenever a new booking arrives
+  useEffect(() => {
+    if (bookingVersion > 0) refetchClients();
+  }, [bookingVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived stats ─────────────────────────────────────────────────────────────
   const activeClientsCount = clients.filter(c => c.status === 'confirmed').length;
@@ -646,11 +663,6 @@ const AgentDashboard = ({ user, onLogout }) => {
     status: c.status,
   }));
 
-  const notifications = [
-    { id: 1, title: 'New Booking Request', message: 'Fatima Hassan requested Hajj package', time: '5 min ago', read: false },
-    { id: 2, title: 'Document Verified', message: 'Your license has been approved', time: '2 hours ago', read: true },
-    { id: 3, title: 'Payment Received', message: '$4,500 from Ahmed Mohammed', time: '1 day ago', read: true }
-  ];
 
   const menuItems = [
     { id: 'overview',  icon: Home,         label: 'Overview' },
@@ -706,6 +718,33 @@ const AgentDashboard = ({ user, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+
+      {/* Booking toast notifications */}
+      <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+        {bookingToasts.map((toast) => (
+          <div
+            key={toast.toastId}
+            className="pointer-events-auto flex items-start gap-3 w-80 bg-white border border-emerald-200 rounded-xl shadow-xl p-4 animate-slide-in-right"
+          >
+            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+              <CheckCircle className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900">New Booking!</p>
+              <p className="text-sm text-gray-600 truncate">{toast.message}</p>
+              <p className="text-xs text-emerald-600 font-medium mt-0.5">
+                {toast.amount?.toLocaleString()} {toast.currency}
+              </p>
+            </div>
+            <button
+              onClick={() => dismissToast(toast.toastId)}
+              className="text-gray-400 hover:text-gray-600 flex-shrink-0 mt-0.5"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
 
       {/* Create Package Modal */}
       <CreatePackageModal
@@ -888,30 +927,69 @@ const AgentDashboard = ({ user, onLogout }) => {
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative"
                 >
                   <Bell className="h-5 w-5 text-gray-600" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                  {bookingUnreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full text-white text-[10px] font-bold flex items-center justify-center px-1 leading-none">
+                      {bookingUnreadCount > 9 ? '9+' : bookingUnreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {/* Notifications Dropdown */}
                 {showNotifications && (
                   <div className="absolute right-0 mt-2 w-80 md:w-96 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
                     <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                      <h3 className="font-semibold text-gray-900">Notifications</h3>
-                      <button className="text-xs text-blue-600 hover:text-blue-700">Mark all as read</button>
+                      <h3 className="font-semibold text-gray-900">
+                        Notifications
+                        {bookingUnreadCount > 0 && (
+                          <span className="ml-2 text-xs font-medium text-white bg-red-500 rounded-full px-1.5 py-0.5">{bookingUnreadCount}</span>
+                        )}
+                      </h3>
+                      {bookingUnreadCount > 0 && (
+                        <button onClick={markAllNotificationsRead} className="text-xs text-blue-600 hover:text-blue-700">Mark all as read</button>
+                      )}
                     </div>
                     <div className="max-h-96 overflow-y-auto">
-                      {notifications.map((notif) => (
-                        <div key={notif.id} className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${!notif.read ? 'bg-blue-50/30' : ''}`}>
-                          <div className="flex items-start justify-between mb-1">
-                            <h4 className="text-sm font-medium text-gray-900">{notif.title}</h4>
-                            <span className="text-xs text-gray-500">{notif.time}</span>
-                          </div>
-                          <p className="text-sm text-gray-600">{notif.message}</p>
+                      {bookingNotifications.length === 0 ? (
+                        <div className="p-8 text-center">
+                          <Bell className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                          <p className="text-sm text-gray-400">No notifications yet</p>
+                          <p className="text-xs text-gray-400 mt-1">New bookings will appear here</p>
                         </div>
-                      ))}
+                      ) : (
+                        bookingNotifications.map((notif) => (
+                          <div
+                            key={notif.id}
+                            className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${!notif.read ? 'bg-blue-50/40' : ''}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${!notif.read ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                                <CheckCircle className={`h-4 w-4 ${!notif.read ? 'text-blue-500' : 'text-gray-400'}`} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <h4 className="text-sm font-semibold text-gray-900">{notif.title}</h4>
+                                  {!notif.read && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />}
+                                </div>
+                                <p className="text-sm text-gray-600 truncate">{notif.message}</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
-                    <div className="p-3 text-center border-t border-gray-200">
-                      <button className="text-sm text-blue-600 hover:text-blue-700">View All</button>
-                    </div>
+                    {bookingNotifications.length > 0 && (
+                      <div className="p-3 text-center border-t border-gray-200">
+                        <button
+                          onClick={() => { setActiveTab('clients'); setShowNotifications(false); }}
+                          className="text-sm text-blue-600 hover:text-blue-700"
+                        >
+                          View All Clients →
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
