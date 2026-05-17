@@ -6,12 +6,14 @@ import PackageDetailPage from './components/PackageDetailPage';
 import Footer from './components/Footer';
 import AgentDashboard from './components/AgentDashboard';
 import ClientDashboard from './components/ClientDashboard';
+import SuperAdminLogin from './components/SuperAdminLogin';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
 import GoogleCallback from './pages/GoogleCallback';
 import GoogleDone from './pages/GoogleDone';
 import { refreshToken, userStore, tokenStore } from './api';
 import PaymentCallback from './pages/PaymentCallback';
 import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
-
+import SuperAdminRegister from './components/SuperAdminRegister';
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
@@ -50,6 +52,20 @@ const ProtectedClientRoute = ({ children, authReady }) => {
   );
   const user = userStore.get();
   if (!user || user.role !== 'client') return <Navigate to="/" state={{ from: location.pathname }} replace />;
+  return children;
+};
+
+// ── Superadmin Route Protection ───────────────────────────────────────────────
+const ProtectedSuperAdminRoute = ({ children, authReady }) => {
+  const location = useLocation();
+  if (!authReady) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-8 w-8 border-4 border-red-200 border-t-red-600 rounded-full animate-spin" />
+    </div>
+  );
+  const token = localStorage.getItem('superadmin_token');
+  const user = localStorage.getItem('superadmin_user');
+  if (!token || !user) return <Navigate to="/superadmin/login" state={{ from: location.pathname }} replace />;
   return children;
 };
 
@@ -212,6 +228,7 @@ function App() {
             </ProtectedAgentRoute>
           } />
 
+<Route path="/superadmin/register" element={<SuperAdminRegister />} />
           <Route path="/client/dashboard" element={
             <ProtectedClientRoute authReady={authReady}>
               <ClientDashboard user={currentUser} onLogout={handleLogout} packages={packages} />
@@ -223,6 +240,17 @@ function App() {
 
           {/* FIX: packageId is in the path so Pesapal can't stomp it on redirect */}
           <Route path="/payment/callback/:packageId" element={<PaymentCallback />} />
+
+          {/* ─────────────────────────────────────────────────────────────────── */}
+          {/* SUPERADMIN ROUTES - Restricted Access                             */}
+          {/* ─────────────────────────────────────────────────────────────────── */}
+          <Route path="/superadmin/login" element={<SuperAdminLogin />} />
+          
+          <Route path="/superadmin/dashboard" element={
+            <ProtectedSuperAdminRoute authReady={authReady}>
+              <SuperAdminDashboard />
+            </ProtectedSuperAdminRoute>
+          } />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
