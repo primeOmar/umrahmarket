@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const BASE_API = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+const BASE_API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Password strength scorer
 const scorePassword = (pwd) => {

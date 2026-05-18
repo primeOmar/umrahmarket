@@ -11,7 +11,7 @@ import axios from 'axios';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 
-const BASE_API = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+const BASE_API = import.meta.env.VITE_API_URL || 'https://umrahmarket-backend.onrender.com/api';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const authHeaders = () => ({
