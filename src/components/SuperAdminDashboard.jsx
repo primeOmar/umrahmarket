@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LayoutDashboard, Users, MessageCircle, FileText, Package, Settings,
   LogOut, Search, Menu, X, Shield, Activity, TrendingUp, Briefcase,
@@ -123,6 +123,7 @@ export const SuperAdminDashboard = () => {
   // Chat state
   const [chatMessages, setChatMessages] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const refreshTimerRef = useRef(null);
 
   // Modals
   const [selectedChat,     setSelectedChat]     = useState(null);
@@ -185,31 +186,54 @@ export const SuperAdminDashboard = () => {
     navigate('/superadmin/login');
   };
 
-  const fetchChatMessages = async (bookingId) => {
-    setChatMessages([]);
-    setChatLoading(true);
+  const fetchChatMessages = useCallback(async (bookingId, silent = false) => {
+    if (!bookingId) return;
+    if (!silent) setChatMessages([]);
+    if (!silent) setChatLoading(true);
     try {
       const res = await saApi.get(`/superadmin/chats/${bookingId}/messages`);
       const data = await res.json();
-      setChatMessages(Array.isArray(data?.data) ? data.data : []);
+      const messages = Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data?.messages)
+          ? data.messages
+          : Array.isArray(data?.messages?.data)
+            ? data.messages.data
+            : [];
+      setChatMessages(messages);
     } catch (e) {
       toast.error(e.message || 'Failed to load chat messages');
     } finally {
-      setChatLoading(false);
+      if (!silent) setChatLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!showChatModal || !selectedChat) return;
+    const bookingId = selectedChat.bookingId || selectedChat.booking_id || selectedChat.id;
+    if (!bookingId) return;
+    if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+    refreshTimerRef.current = setInterval(() => fetchChatMessages(bookingId, true), 5000);
+    return () => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, [showChatModal, selectedChat, fetchChatMessages]);
 
   const handleOpenChat = async (chat) => {
     setSelectedChat(chat);
     setShowChatModal(true);
-    await fetchChatMessages(chat.bookingId || chat.id);
+    await fetchChatMessages(chat.bookingId || chat.booking_id || chat.id);
   };
 
   const handleCloseChat = async () => {
     if (!selectedChat || !closeReason.trim()) { toast.error('Please provide a reason'); return; }
     setActionLoading(true);
     try {
-      await saJson(await saApi.post(`/superadmin/chats/${selectedChat.bookingId || selectedChat.id}/close`, { reason: closeReason }));
+      const bookingId = selectedChat.bookingId || selectedChat.booking_id || selectedChat.id;
+      await saJson(await saApi.post(`/superadmin/chats/${bookingId}/close`, { reason: closeReason }));
       toast.success('Chat closed');
       setShowChatModal(false); setCloseReason(''); fetchAll();
     } catch (e) { toast.error(e.message || 'Failed to close chat'); }
@@ -831,18 +855,16 @@ const ChatsTab = ({ chats, searchQuery, setSearchQuery, onSelectChat }) => {
           <thead><tr><Th>Client</Th><Th>Agent</Th><Th>Messages</Th><Th>Status</Th><Th>Last Activity</Th><Th>Actions</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(chat => (
-              <tr key={chat.id} className="hover:bg-gray-50 transition-colors">
+              <tr key={chat.id} onClick={() => onSelectChat(chat)} className="hover:bg-gray-50 transition-colors cursor-pointer">
                 <Td><span className="font-medium text-gray-900">{chat.clientName}</span></Td>
                 <Td>{chat.agentName}</Td>
                 <Td>{chat.messageCount ?? 0}</Td>
                 <Td><StatusBadge status={chat.status} /></Td>
                 <Td className="text-gray-400">{chat.lastActivity ? formatDistanceToNow(new Date(chat.lastActivity)) + ' ago' : '—'}</Td>
                 <Td>
-                  {chat.status !== 'closed' && (
-                    <button onClick={() => onSelectChat(chat)} className="text-red-600 hover:text-red-700 text-sm font-medium hover:underline">
-                      Close
-                    </button>
-                  )}
+                  <button onClick={(e) => { e.stopPropagation(); onSelectChat(chat); }} className="text-blue-600 hover:text-blue-700 text-sm font-medium hover:underline">
+                    View
+                  </button>
                 </Td>
               </tr>
             ))}
