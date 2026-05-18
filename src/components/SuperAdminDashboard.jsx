@@ -145,36 +145,36 @@ export const SuperAdminDashboard = () => {
   }, [navigate]);
 
   const fetchAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [statsRes, agentsRes, clientsRes, chatsRes, docsRes, pkgsRes, logsRes] = await Promise.all([
-        saApi.get('/superadmin/stats'),
-        saApi.get('/superadmin/agents'),
-        saApi.get('/superadmin/clients'),
-        saApi.get('/superadmin/chats'),
-        saApi.get('/superadmin/documents'),
-        saApi.get('/superadmin/packages'),
-        saApi.get('/superadmin/audit-logs?limit=50'),
-      ]);
+  setLoading(true);
+  try {
+    const [statsRes, agentsRes, clientsRes, chatsRes, docsRes, pkgsRes, logsRes] = await Promise.all([
+      saApi.get('/superadmin/stats'),
+      saApi.get('/superadmin/agents'),
+      saApi.get('/superadmin/clients'),
+      saApi.get('/superadmin/chats'),
+      saApi.get('/superadmin/documents'),
+      saApi.get('/superadmin/packages'),
+      saApi.get('/superadmin/audit-logs?limit=50'),
+    ]);
 
-      const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, logsData] = await Promise.all([
-        statsRes.json(), agentsRes.json(), clientsRes.json(),
-        chatsRes.json(), docsRes.json(),   pkgsRes.json(), logsRes.json(),
-      ]);
+    const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, logsData] = await Promise.all([
+      statsRes.json(), agentsRes.json(), clientsRes.json(),
+      chatsRes.json(), docsRes.json(),   pkgsRes.json(), logsRes.json(),
+    ]);
 
-      setStats(statsData?.data ?? statsData);
-      setAgents(agentsData?.data ?? agentsData ?? []);
-      setClients(clientsData?.data ?? clientsData ?? []);
-      setChats(chatsData?.data ?? chatsData ?? []);
-      setDocuments(docsData?.data ?? docsData ?? []);
-      setPackages(pkgsData?.data ?? pkgsData ?? []);
-      setAuditLogs(logsData?.data ?? logsData ?? []);
-    } catch (e) {
-      toast.error(e.message || 'Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    setStats(statsData?.data ?? statsData);
+    setAgents(Array.isArray(agentsData?.data) ? agentsData.data : []);
+    setClients(Array.isArray(clientsData?.data) ? clientsData.data : []);
+    setChats(Array.isArray(chatsData?.data) ? chatsData.data : []);
+    setDocuments(Array.isArray(docsData?.data) ? docsData.data : []);
+    setPackages(Array.isArray(pkgsData?.data) ? pkgsData.data : []);
+    setAuditLogs(Array.isArray(logsData?.data) ? logsData.data : []);
+  } catch (e) {
+    toast.error(e.message || 'Failed to load dashboard data');
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   const handleLogout = () => {
     saStore.clear();

@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const BASE_API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const BASE_API = _base.endsWith('/api') ? _base : `${_base}/api`;
 
 export const SuperAdminLogin = ({ onLoginSuccess }) => {
   const navigate = useNavigate();
