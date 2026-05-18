@@ -504,61 +504,81 @@ export const SuperAdminDashboard = () => {
       )}
 
       {showDocumentModal && (
-        <Modal title="Verify Document" onClose={() => { setShowDocumentModal(false); setVerificationNotes(''); }}>
-          <p className="text-sm text-gray-600 mb-1">Agent: <strong>{selectedDocument?.agentName}</strong></p>
-          <div className="flex flex-wrap gap-2 my-3">
-            {selectedDocument?.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
-            {selectedDocument?.tourismDoc        && <Badge color="green">Tourism</Badge>}
-            {selectedDocument?.kraPin            && <Badge color="purple">KRA PIN</Badge>}
-          </div>
-          {/* Document links */}
-          {(selectedDocument?.incorporationDoc || selectedDocument?.tourismDoc || selectedDocument?.kraPin) && (
-            <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-1.5">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">View Documents</p>
-              {selectedDocument?.incorporationDoc && (
-                <a href={selectedDocument.incorporationDoc} target="_blank" rel="noreferrer"
-                   className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                  <FileText className="h-3.5 w-3.5" /> Incorporation Certificate
-                </a>
-              )}
-              {selectedDocument?.tourismDoc && (
-                <a href={selectedDocument.tourismDoc} target="_blank" rel="noreferrer"
-                   className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                  <FileText className="h-3.5 w-3.5" /> Tourism License
-                </a>
-              )}
-              {selectedDocument?.kraPin && (
-                <a href={selectedDocument.kraPin} target="_blank" rel="noreferrer"
-                   className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                  <FileText className="h-3.5 w-3.5" /> KRA PIN Certificate
-                </a>
-              )}
+        <Modal title="Verify Agent Documents" onClose={() => { setShowDocumentModal(false); setVerificationNotes(''); }}>
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Agent</p>
+                  <p className="text-base font-semibold text-gray-900">{selectedDocument?.agentName || 'Unknown Agent'}</p>
+                  {selectedDocument?.agentEmail && <p className="text-sm text-gray-500">{selectedDocument.agentEmail}</p>}
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-600">Status</p>
+                  <StatusBadge status={selectedDocument?.status || 'pending'} />
+                </div>
+              </div>
+              <p className="text-sm text-gray-500 mt-3">Review the uploaded documents and confirm whether the agent is genuine.</p>
             </div>
-          )}
-          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-          <textarea
-            value={verificationNotes}
-            onChange={e => setVerificationNotes(e.target.value)}
-            rows={3}
-            placeholder="Verification notes (optional)…"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          />
-          <div className="flex gap-3 mt-4">
-            <button onClick={() => { setShowDocumentModal(false); setVerificationNotes(''); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-            <button
-              onClick={() => handleVerifyDocument('rejected')}
-              disabled={actionLoading}
-              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Reject
-            </button>
-            <button
-              onClick={() => handleVerifyDocument('approved')}
-              disabled={actionLoading}
-              className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Approve
-            </button>
+
+            <div className="flex flex-wrap gap-2">
+              {selectedDocument?.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
+              {selectedDocument?.tourismDoc && <Badge color="green">Tourism</Badge>}
+              {selectedDocument?.kraPin && <Badge color="purple">KRA PIN</Badge>}
+            </div>
+
+            {(selectedDocument?.incorporationDoc || selectedDocument?.tourismDoc || selectedDocument?.kraPin) ? (
+              <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Document links</p>
+                {selectedDocument?.incorporationDoc && (
+                  <a href={selectedDocument.incorporationDoc} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                    <FileText className="h-3.5 w-3.5" /> View Incorporation Certificate
+                  </a>
+                )}
+                {selectedDocument?.tourismDoc && (
+                  <a href={selectedDocument.tourismDoc} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                    <FileText className="h-3.5 w-3.5" /> View Tourism License
+                  </a>
+                )}
+                {selectedDocument?.kraPin && (
+                  <a href={selectedDocument.kraPin} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                    <FileText className="h-3.5 w-3.5" /> View KRA PIN Certificate
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="bg-gray-50 rounded-2xl p-4 text-sm text-gray-500">No document links available for this agent.</div>
+            )}
+
+            <label className="block text-sm font-medium text-gray-700">Verification notes</label>
+            <textarea
+              value={verificationNotes}
+              onChange={e => setVerificationNotes(e.target.value)}
+              rows={3}
+              placeholder="Notes about agent verification, document authenticity, or concerns…"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => { setShowDocumentModal(false); setVerificationNotes(''); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => handleVerifyDocument('rejected')}
+                disabled={actionLoading}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Mark as Not Genuine
+              </button>
+              <button
+                onClick={() => handleVerifyDocument('approved')}
+                disabled={actionLoading}
+                className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Approve as Genuine
+              </button>
+            </div>
           </div>
         </Modal>
       )}
@@ -883,7 +903,8 @@ const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocume
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agent Documents</h1>
-          <p className="text-sm text-gray-500 mt-1">{documents.filter(d => d.status === 'pending').length} pending review</p>
+          <p className="text-sm text-gray-500 mt-1">Review uploaded documents and confirm whether the agent is genuine.</p>
+          <p className="text-sm text-gray-500 mt-1">{documents.filter(d => d.status === 'pending').length} pending verification</p>
         </div>
         <select
           value={filterStatus}
@@ -917,7 +938,7 @@ const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocume
                   onClick={() => onSelectDocument(doc)}
                   className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
                 >
-                  Review
+                  Verify
                 </button>
               </div>
             </div>
