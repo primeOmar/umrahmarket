@@ -120,6 +120,10 @@ export const SuperAdminDashboard = () => {
   const [auditLogs, setAuditLogs] = useState([]);
   const [stats,     setStats]     = useState(null);
 
+  // Chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+
   // Modals
   const [selectedChat,     setSelectedChat]     = useState(null);
   const [selectedDocument, setSelectedDocument] = useState(null);
@@ -181,11 +185,31 @@ export const SuperAdminDashboard = () => {
     navigate('/superadmin/login');
   };
 
+  const fetchChatMessages = async (bookingId) => {
+    setChatMessages([]);
+    setChatLoading(true);
+    try {
+      const res = await saApi.get(`/superadmin/chats/${bookingId}/messages`);
+      const data = await res.json();
+      setChatMessages(Array.isArray(data?.data) ? data.data : []);
+    } catch (e) {
+      toast.error(e.message || 'Failed to load chat messages');
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleOpenChat = async (chat) => {
+    setSelectedChat(chat);
+    setShowChatModal(true);
+    await fetchChatMessages(chat.bookingId || chat.id);
+  };
+
   const handleCloseChat = async () => {
     if (!selectedChat || !closeReason.trim()) { toast.error('Please provide a reason'); return; }
     setActionLoading(true);
     try {
-      await saJson(await saApi.post(`/superadmin/chats/${selectedChat.id}/close`, { reason: closeReason }));
+      await saJson(await saApi.post(`/superadmin/chats/${selectedChat.bookingId || selectedChat.id}/close`, { reason: closeReason }));
       toast.success('Chat closed');
       setShowChatModal(false); setCloseReason(''); fetchAll();
     } catch (e) { toast.error(e.message || 'Failed to close chat'); }
@@ -379,7 +403,7 @@ export const SuperAdminDashboard = () => {
               chats={chats}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
-              onSelectChat={c => { setSelectedChat(c); setShowChatModal(true); }}
+              onSelectChat={handleOpenChat}
             />
           )}
           {activeTab === 'documents' && (
@@ -401,27 +425,56 @@ export const SuperAdminDashboard = () => {
       {/* ── MODALS ───────────────────────────────────────────────────────── */}
 
       {showChatModal && (
-        <Modal title="Close Chat" onClose={() => { setShowChatModal(false); setCloseReason(''); }}>
-          <p className="text-sm text-gray-600 mb-4">
-            Chat between <strong>{selectedChat?.clientName}</strong> and <strong>{selectedChat?.agentName}</strong>
-          </p>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
-          <textarea
-            value={closeReason}
-            onChange={e => setCloseReason(e.target.value)}
-            rows={3}
-            placeholder="Enter reason for closing this chat…"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          />
-          <div className="flex gap-3 mt-4">
-            <button onClick={() => { setShowChatModal(false); setCloseReason(''); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-            <button
-              onClick={handleCloseChat}
-              disabled={actionLoading || !closeReason.trim()}
-              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Close Chat
-            </button>
+        <Modal title="Chat Thread" onClose={() => { setShowChatModal(false); setCloseReason(''); setChatMessages([]); }}>
+          <div className="space-y-3">
+            <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+              <p className="text-sm text-gray-600">Chat between</p>
+              <p className="text-base font-semibold text-gray-900">{selectedChat?.clientName || 'Client'}</p>
+              <p className="text-base font-semibold text-gray-900">and {selectedChat?.agentName || 'Agent'}</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <Badge color={selectedChat?.status === 'closed' ? 'red' : 'green'}>{selectedChat?.status === 'closed' ? 'Closed' : 'Active'}</Badge>
+                <span className="text-slate-500">{selectedChat?.messageCount ?? 0} messages</span>
+                <span className="text-slate-500">Last activity: {selectedChat?.lastActivity ? formatDistanceToNow(new Date(selectedChat.lastActivity)) + ' ago' : '—'}</span>
+              </div>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 space-y-3">
+              {chatLoading && (
+                <div className="text-center py-10 text-sm text-gray-500">Loading messages…</div>
+              )}
+              {!chatLoading && chatMessages.length === 0 && (
+                <div className="text-center py-10 text-sm text-gray-500">No messages found for this chat.</div>
+              )}
+              {!chatLoading && chatMessages.map(msg => (
+                <div key={msg.id} className={`rounded-2xl p-3 ${msg.senderType === 'agent' ? 'bg-blue-50 text-slate-900' : msg.senderType === 'client' ? 'bg-slate-100 text-slate-900' : 'bg-gray-100 text-slate-900'}`}>
+                  <div className="flex items-center justify-between gap-3 mb-2 text-xs text-slate-500">
+                    <span>{msg.senderName}</span>
+                    <span>{msg.createdAt ? format(new Date(msg.createdAt), 'MMM d, yyyy HH:mm') : '—'}</span>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
+                </div>
+              ))}
+            </div>
+
+            <label className="block text-sm font-medium text-gray-700">Reason for closing chat <span className="text-red-500">*</span></label>
+            <textarea
+              value={closeReason}
+              onChange={e => setCloseReason(e.target.value)}
+              rows={3}
+              placeholder="Enter reason for closing this chat…"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => { setShowChatModal(false); setCloseReason(''); setChatMessages([]); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={handleCloseChat}
+                disabled={actionLoading || !closeReason.trim() || selectedChat?.status === 'closed'}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Close Chat
+              </button>
+            </div>
           </div>
         </Modal>
       )}
