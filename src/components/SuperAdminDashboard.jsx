@@ -16,9 +16,16 @@ const BASE_API = import.meta.env.VITE_API_URL
   : import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-const authHeaders = () => ({
-  Authorization: `Bearer ${localStorage.getItem('superadmin_token')}`,
-});
+const authHeaders = () => {
+  const headers = {
+    Authorization: `Bearer ${localStorage.getItem('superadmin_token')}`,
+  };
+  // DEV MODE: Add bypass header for testing
+  if (import.meta.env.DEV) {
+    headers['x-dev-bypass'] = 'true';
+  }
+  return headers;
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT COMPONENT
@@ -94,6 +101,9 @@ export const SuperAdminDashboard = () => {
     localStorage.removeItem('superadmin_token');
     localStorage.removeItem('superadmin_refresh_token');
     localStorage.removeItem('superadmin_user');
+    // Also clear global tokens mirrored earlier
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
     navigate('/superadmin/login');
   };
 
