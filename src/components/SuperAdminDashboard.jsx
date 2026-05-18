@@ -1,30 +1,102 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, Users, MessageCircle, FileText, Package, Settings,
-  LogOut, Bell, Search, Menu, X, BarChart3, AlertCircle, Check, Trash2,
-  Eye, ChevronDown, Download, RefreshCw, Lock, Shield,
-  Activity, TrendingUp, Briefcase, Calendar, CheckCircle, XCircle,
-  Loader, MoreVertical, Flag, Play, Pause, Filter
+  LogOut, Search, Menu, X, Shield, Activity, TrendingUp, Briefcase,
+  Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
+  Eye, EyeOff, Lock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import axios from 'axios';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 
-const BASE_API = import.meta.env.VITE_API_URL
-  ? (import.meta.env.VITE_API_URL.endsWith('/api') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/api`)
-  : import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+// ─── API base (no trailing /api duplication) ──────────────────────────────────
+const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const BASE_API = _base.endsWith('/api') ? _base : `${_base}/api`;
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-const authHeaders = () => {
-  const headers = {
-    Authorization: `Bearer ${localStorage.getItem('superadmin_token')}`,
-  };
-  // DEV MODE: Add bypass header for testing
-  if (import.meta.env.DEV) {
-    headers['x-dev-bypass'] = 'true';
+// ─── Superadmin-scoped token store ────────────────────────────────────────────
+const saStore = {
+  getToken:  ()    => localStorage.getItem('superadmin_token'),
+  getUser:   ()    => { try { return JSON.parse(localStorage.getItem('superadmin_user')); } catch { return null; } },
+  clear:     ()    => {
+    ['superadmin_token','superadmin_refresh_token','superadmin_user'].forEach(k => localStorage.removeItem(k));
+  },
+};
+
+// ─── Fetch wrapper with auto-refresh ─────────────────────────────────────────
+let _refreshing = false;
+let _queue = [];
+
+const processQueue = (err, token) => {
+  _queue.forEach(({ resolve, reject }) => err ? reject(err) : resolve(token));
+  _queue = [];
+};
+
+const saFetch = async (url, options = {}) => {
+  const doRequest = (token) => fetch(`${BASE_API}${url}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  let token = saStore.getToken();
+  let res = await doRequest(token);
+
+  if (res.status !== 401) return res;
+
+  // 401 → try refresh
+  if (_refreshing) {
+    return new Promise((resolve, reject) => {
+      _queue.push({
+        resolve: (newToken) => resolve(doRequest(newToken)),
+        reject,
+      });
+    });
   }
-  return headers;
+
+  _refreshing = true;
+  try {
+    const refreshToken = localStorage.getItem('superadmin_refresh_token');
+    if (!refreshToken) throw new Error('No refresh token');
+
+    const refreshRes = await fetch(`${BASE_API}/superadmin/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!refreshRes.ok) throw new Error('Refresh failed');
+    const data = await refreshRes.json();
+    const newToken = data?.data?.accessToken || data?.accessToken;
+    if (!newToken) throw new Error('No new token in refresh response');
+
+    localStorage.setItem('superadmin_token', newToken);
+    processQueue(null, newToken);
+    return doRequest(newToken);
+  } catch (err) {
+    processQueue(err, null);
+    saStore.clear();
+    window.location.href = '/superadmin/login';
+    throw err;
+  } finally {
+    _refreshing = false;
+  }
+};
+
+const saApi = {
+  get:    (url)          => saFetch(url, { method: 'GET' }),
+  post:   (url, body)    => saFetch(url, { method: 'POST',   body: JSON.stringify(body) }),
+  delete: (url, body)    => saFetch(url, { method: 'DELETE', body: JSON.stringify(body) }),
+};
+
+const saJson = async (res) => {
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -33,8 +105,8 @@ const authHeaders = () => {
 export const SuperAdminDashboard = () => {
   const navigate = useNavigate();
   const [superadmin, setSuperadmin] = useState(null);
-  const [sidebarOpen, setSidebarOpen]     = useState(false);   // mobile drawer
-  const [sidebarHovered, setSidebarHovered] = useState(false); // desktop rail hover
+  const [sidebarOpen, setSidebarOpen]       = useState(false);
+  const [sidebarHovered, setSidebarHovered] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,118 +127,130 @@ export const SuperAdminDashboard = () => {
   const [showChatModal,     setShowChatModal]     = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [showPackageModal,  setShowPackageModal]  = useState(false);
+  const [confirmModal,      setConfirmModal]      = useState(null); // { title, body, onConfirm }
 
   // Forms
-  const [closeReason,        setCloseReason]        = useState('');
-  const [verificationNotes,  setVerificationNotes]  = useState('');
-  const [filterStatus,       setFilterStatus]       = useState('all');
+  const [closeReason,       setCloseReason]       = useState('');
+  const [verificationNotes, setVerificationNotes] = useState('');
+  const [filterStatus,      setFilterStatus]      = useState('all');
+  const [actionLoading,     setActionLoading]     = useState(false);
 
   // ── init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const token = localStorage.getItem('superadmin_token');
-    const user  = localStorage.getItem('superadmin_user');
+    const token = saStore.getToken();
+    const user  = saStore.getUser();
     if (!token || !user) { navigate('/superadmin/login'); return; }
-    setSuperadmin(JSON.parse(user));
+    setSuperadmin(user);
     fetchAll();
   }, [navigate]);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const h = { headers: authHeaders() };
       const [statsRes, agentsRes, clientsRes, chatsRes, docsRes, pkgsRes, logsRes] = await Promise.all([
-        axios.get(`${BASE_API}/superadmin/stats`, h),
-        axios.get(`${BASE_API}/superadmin/agents`, h),
-        axios.get(`${BASE_API}/superadmin/clients`, h),
-        axios.get(`${BASE_API}/superadmin/chats`, h),
-        axios.get(`${BASE_API}/superadmin/documents`, h),
-        axios.get(`${BASE_API}/superadmin/packages`, h),
-        axios.get(`${BASE_API}/superadmin/audit-logs?limit=50`, h),
+        saApi.get('/superadmin/stats'),
+        saApi.get('/superadmin/agents'),
+        saApi.get('/superadmin/clients'),
+        saApi.get('/superadmin/chats'),
+        saApi.get('/superadmin/documents'),
+        saApi.get('/superadmin/packages'),
+        saApi.get('/superadmin/audit-logs?limit=50'),
       ]);
-      setStats(statsRes.data);
-      setAgents(agentsRes.data);
-      setClients(clientsRes.data);
-      setChats(chatsRes.data);
-      setDocuments(docsRes.data);
-      setPackages(pkgsRes.data);
-      setAuditLogs(logsRes.data);
-    } catch {
-      toast.error('Failed to load dashboard data');
+
+      const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, logsData] = await Promise.all([
+        statsRes.json(), agentsRes.json(), clientsRes.json(),
+        chatsRes.json(), docsRes.json(),   pkgsRes.json(), logsRes.json(),
+      ]);
+
+      setStats(statsData?.data ?? statsData);
+      setAgents(agentsData?.data ?? agentsData ?? []);
+      setClients(clientsData?.data ?? clientsData ?? []);
+      setChats(chatsData?.data ?? chatsData ?? []);
+      setDocuments(docsData?.data ?? docsData ?? []);
+      setPackages(pkgsData?.data ?? pkgsData ?? []);
+      setAuditLogs(logsData?.data ?? logsData ?? []);
+    } catch (e) {
+      toast.error(e.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('superadmin_token');
-    localStorage.removeItem('superadmin_refresh_token');
-    localStorage.removeItem('superadmin_user');
-    // Also clear global tokens mirrored earlier
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    saStore.clear();
     navigate('/superadmin/login');
   };
 
   const handleCloseChat = async () => {
     if (!selectedChat || !closeReason.trim()) { toast.error('Please provide a reason'); return; }
+    setActionLoading(true);
     try {
-      await axios.post(`${BASE_API}/superadmin/chats/${selectedChat.id}/close`,
-        { reason: closeReason }, { headers: authHeaders() });
+      await saJson(await saApi.post(`/superadmin/chats/${selectedChat.id}/close`, { reason: closeReason }));
       toast.success('Chat closed');
       setShowChatModal(false); setCloseReason(''); fetchAll();
-    } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+    } catch (e) { toast.error(e.message || 'Failed to close chat'); }
+    finally { setActionLoading(false); }
   };
 
   const handleVerifyDocument = async (status) => {
     if (!selectedDocument) return;
+    setActionLoading(true);
     try {
-      await axios.post(`${BASE_API}/superadmin/documents/${selectedDocument.id}/verify`,
-        { status, notes: verificationNotes }, { headers: authHeaders() });
+      await saJson(await saApi.post(`/superadmin/documents/${selectedDocument.id}/verify`, { status, notes: verificationNotes }));
       toast.success(`Document ${status}`);
       setShowDocumentModal(false); setVerificationNotes(''); fetchAll();
-    } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+    } catch (e) { toast.error(e.message || 'Failed to verify document'); }
+    finally { setActionLoading(false); }
   };
 
   const handleDeletePackage = async () => {
     if (!selectedPackage || !closeReason.trim()) { toast.error('Please provide a reason'); return; }
-    if (!window.confirm('This cannot be undone. Continue?')) return;
-    try {
-      await axios.delete(`${BASE_API}/superadmin/packages/${selectedPackage.id}`,
-        { data: { reason: closeReason }, headers: authHeaders() });
-      toast.success('Package deleted');
-      setShowPackageModal(false); setCloseReason(''); fetchAll();
-    } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+    setConfirmModal({
+      title: 'Delete Package',
+      body: `Are you sure you want to permanently delete "${selectedPackage.name}"? This cannot be undone.`,
+      onConfirm: async () => {
+        setActionLoading(true);
+        try {
+          await saJson(await saApi.delete(`/superadmin/packages/${selectedPackage.id}`, { reason: closeReason }));
+          toast.success('Package deleted');
+          setShowPackageModal(false); setCloseReason(''); fetchAll();
+        } catch (e) { toast.error(e.message || 'Failed to delete package'); }
+        finally { setActionLoading(false); setConfirmModal(null); }
+      },
+    });
   };
 
   const handleExport = async (dataType) => {
     try {
-      const res = await axios.get(`${BASE_API}/superadmin/export/${dataType}`,
-        { headers: authHeaders(), responseType: 'blob' });
-      const url  = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${dataType}-${Date.now()}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      toast.success('Exported');
-    } catch { toast.error('Export failed'); }
+      const res = await saFetch(`/superadmin/export/${dataType}`, { method: 'GET' });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url  = window.URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = `${dataType}-${Date.now()}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Exported successfully');
+    } catch (e) { toast.error(e.message || 'Export failed'); }
   };
 
   const navItems = [
-    { id: 'overview',   label: 'Dashboard',   icon: LayoutDashboard },
-    { id: 'agents',     label: 'Agents',       icon: Briefcase,    count: agents.filter(a => a.status === 'pending').length },
-    { id: 'clients',    label: 'Clients',      icon: Users },
-    { id: 'chats',      label: 'Chats',        icon: MessageCircle, count: chats.filter(c => c.status === 'active').length },
-    { id: 'documents',  label: 'Documents',    icon: FileText,     count: documents.filter(d => d.status === 'pending').length },
-    { id: 'packages',   label: 'Packages',     icon: Package },
-    { id: 'audit',      label: 'Audit Logs',   icon: Activity },
-    { id: 'settings',   label: 'Settings',     icon: Settings },
+    { id: 'overview',  label: 'Dashboard',  icon: LayoutDashboard },
+    { id: 'agents',    label: 'Agents',      icon: Briefcase,     count: agents.filter(a => a.status === 'pending').length },
+    { id: 'clients',   label: 'Clients',     icon: Users },
+    { id: 'chats',     label: 'Chats',       icon: MessageCircle, count: chats.filter(c => c.status === 'active').length },
+    { id: 'documents', label: 'Documents',   icon: FileText,      count: documents.filter(d => d.status === 'pending').length },
+    { id: 'packages',  label: 'Packages',    icon: Package },
+    { id: 'audit',     label: 'Audit Logs',  icon: Activity },
+    { id: 'settings',  label: 'Settings',    icon: Settings },
   ];
 
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <Loader className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="text-center space-y-3">
+        <Loader className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
+        <p className="text-sm text-gray-500">Loading dashboard…</p>
+      </div>
     </div>
   );
 
@@ -190,18 +274,16 @@ export const SuperAdminDashboard = () => {
           ${sidebarHovered ? 'lg:w-64 lg:shadow-2xl' : 'lg:w-16'}
         `}
       >
-        {/* Brand */}
         <div className="h-16 flex items-center gap-3 px-3 border-b border-slate-700 flex-shrink-0">
           <div className="w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
             <Shield className="h-5 w-5 text-white" />
           </div>
           <div className={`transition-all duration-200 overflow-hidden ${sidebarHovered ? 'lg:opacity-100 lg:w-auto' : 'lg:opacity-0 lg:w-0'}`}>
             <p className="font-bold text-white text-sm whitespace-nowrap">Superadmin</p>
-            <p className="text-slate-400 text-xs whitespace-nowrap">{superadmin?.email}</p>
+            <p className="text-slate-400 text-xs whitespace-nowrap truncate max-w-[140px]">{superadmin?.email}</p>
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2">
           <ul className="space-y-0.5">
             {navItems.map(item => (
@@ -209,10 +291,8 @@ export const SuperAdminDashboard = () => {
                 <button
                   onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
                   title={!sidebarHovered ? item.label : undefined}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group ${
-                    activeTab === item.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-800'
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${
+                    activeTab === item.id ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <div className="relative flex-shrink-0">
@@ -235,7 +315,6 @@ export const SuperAdminDashboard = () => {
           </ul>
         </nav>
 
-        {/* Logout */}
         <div className="p-2 border-t border-slate-700 flex-shrink-0">
           <button
             onClick={handleLogout}
@@ -253,7 +332,6 @@ export const SuperAdminDashboard = () => {
       {/* ── MAIN ─────────────────────────────────────────────────────────── */}
       <div className="transition-all duration-300 lg:ml-16">
 
-        {/* Top bar */}
         <header className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
           <div className="px-4 md:px-8 py-3 md:py-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -263,12 +341,11 @@ export const SuperAdminDashboard = () => {
               >
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
-
               <div className="relative hidden sm:block w-full max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search agents, clients, packages..."
+                  placeholder="Search agents, clients, packages…"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -277,10 +354,9 @@ export const SuperAdminDashboard = () => {
             </div>
 
             <div className="flex items-center gap-3 flex-shrink-0">
-              <button onClick={fetchAll} className="p-2 hover:bg-gray-100 rounded-lg" title="Refresh">
+              <button onClick={fetchAll} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
                 <RefreshCw className="h-5 w-5 text-gray-500" />
               </button>
-
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
                   {superadmin?.email?.[0]?.toUpperCase() || 'A'}
@@ -294,19 +370,11 @@ export const SuperAdminDashboard = () => {
           </div>
         </header>
 
-        {/* Page content */}
         <main className="p-4 md:p-6 lg:p-8">
-
-          {activeTab === 'overview' && (
-            <OverviewTab stats={stats} auditLogs={auditLogs} onExport={handleExport} />
-          )}
-          {activeTab === 'agents' && (
-            <AgentsTab agents={agents} searchQuery={searchQuery} />
-          )}
-          {activeTab === 'clients' && (
-            <ClientsTab clients={clients} searchQuery={searchQuery} />
-          )}
-          {activeTab === 'chats' && (
+          {activeTab === 'overview'  && <OverviewTab stats={stats} auditLogs={auditLogs} onExport={handleExport} />}
+          {activeTab === 'agents'    && <AgentsTab   agents={agents} searchQuery={searchQuery} />}
+          {activeTab === 'clients'   && <ClientsTab  clients={clients} searchQuery={searchQuery} />}
+          {activeTab === 'chats'     && (
             <ChatsTab
               chats={chats}
               searchQuery={searchQuery}
@@ -322,85 +390,144 @@ export const SuperAdminDashboard = () => {
               onSelectDocument={d => { setSelectedDocument(d); setShowDocumentModal(true); }}
             />
           )}
-          {activeTab === 'packages' && (
-            <PackagesTab
-              packages={packages}
-              onSelectPackage={p => { setSelectedPackage(p); setShowPackageModal(true); }}
-            />
+          {activeTab === 'packages'  && (
+            <PackagesTab packages={packages} onSelectPackage={p => { setSelectedPackage(p); setShowPackageModal(true); }} />
           )}
-          {activeTab === 'audit' && (
-            <AuditTab logs={auditLogs} />
-          )}
-          {activeTab === 'settings' && (
-            <SettingsTab superadmin={superadmin} onLogout={handleLogout} />
-          )}
-
+          {activeTab === 'audit'     && <AuditTab logs={auditLogs} />}
+          {activeTab === 'settings'  && <SettingsTab superadmin={superadmin} onLogout={handleLogout} />}
         </main>
       </div>
 
       {/* ── MODALS ───────────────────────────────────────────────────────── */}
+
       {showChatModal && (
-        <Modal title="Close Chat" onClose={() => setShowChatModal(false)}>
+        <Modal title="Close Chat" onClose={() => { setShowChatModal(false); setCloseReason(''); }}>
           <p className="text-sm text-gray-600 mb-4">
             Chat between <strong>{selectedChat?.clientName}</strong> and <strong>{selectedChat?.agentName}</strong>
           </p>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
           <textarea
             value={closeReason}
             onChange={e => setCloseReason(e.target.value)}
             rows={3}
-            placeholder="Enter reason..."
+            placeholder="Enter reason for closing this chat…"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
           />
           <div className="flex gap-3 mt-4">
-            <button onClick={() => setShowChatModal(false)} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-            <button onClick={handleCloseChat} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">Close Chat</button>
+            <button onClick={() => { setShowChatModal(false); setCloseReason(''); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <button
+              onClick={handleCloseChat}
+              disabled={actionLoading || !closeReason.trim()}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Close Chat
+            </button>
           </div>
         </Modal>
       )}
 
       {showDocumentModal && (
-        <Modal title="Verify Document" onClose={() => setShowDocumentModal(false)}>
+        <Modal title="Verify Document" onClose={() => { setShowDocumentModal(false); setVerificationNotes(''); }}>
           <p className="text-sm text-gray-600 mb-1">Agent: <strong>{selectedDocument?.agentName}</strong></p>
-          <div className="flex gap-2 my-3">
+          <div className="flex flex-wrap gap-2 my-3">
             {selectedDocument?.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
             {selectedDocument?.tourismDoc        && <Badge color="green">Tourism</Badge>}
             {selectedDocument?.kraPin            && <Badge color="purple">KRA PIN</Badge>}
           </div>
+          {/* Document links */}
+          {(selectedDocument?.incorporationDoc || selectedDocument?.tourismDoc || selectedDocument?.kraPin) && (
+            <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-1.5">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">View Documents</p>
+              {selectedDocument?.incorporationDoc && (
+                <a href={selectedDocument.incorporationDoc} target="_blank" rel="noreferrer"
+                   className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                  <FileText className="h-3.5 w-3.5" /> Incorporation Certificate
+                </a>
+              )}
+              {selectedDocument?.tourismDoc && (
+                <a href={selectedDocument.tourismDoc} target="_blank" rel="noreferrer"
+                   className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                  <FileText className="h-3.5 w-3.5" /> Tourism License
+                </a>
+              )}
+              {selectedDocument?.kraPin && (
+                <a href={selectedDocument.kraPin} target="_blank" rel="noreferrer"
+                   className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                  <FileText className="h-3.5 w-3.5" /> KRA PIN Certificate
+                </a>
+              )}
+            </div>
+          )}
           <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
           <textarea
             value={verificationNotes}
             onChange={e => setVerificationNotes(e.target.value)}
             rows={3}
-            placeholder="Verification notes..."
+            placeholder="Verification notes (optional)…"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
           />
           <div className="flex gap-3 mt-4">
-            <button onClick={() => setShowDocumentModal(false)} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-            <button onClick={() => handleVerifyDocument('rejected')} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">Reject</button>
-            <button onClick={() => handleVerifyDocument('approved')} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">Approve</button>
+            <button onClick={() => { setShowDocumentModal(false); setVerificationNotes(''); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <button
+              onClick={() => handleVerifyDocument('rejected')}
+              disabled={actionLoading}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Reject
+            </button>
+            <button
+              onClick={() => handleVerifyDocument('approved')}
+              disabled={actionLoading}
+              className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Approve
+            </button>
           </div>
         </Modal>
       )}
 
       {showPackageModal && (
-        <Modal title="Delete Package" onClose={() => setShowPackageModal(false)}>
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-            <p className="text-sm font-medium text-red-800">⚠️ This action cannot be undone</p>
+        <Modal title="Delete Package" onClose={() => { setShowPackageModal(false); setCloseReason(''); }}>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0" />
+            <p className="text-sm font-medium text-red-800">This action cannot be undone</p>
           </div>
           <p className="text-sm text-gray-600 mb-1">Package: <strong>{selectedPackage?.name}</strong></p>
           <p className="text-sm text-gray-600 mb-4">Price: <strong>KES {selectedPackage?.price?.toLocaleString()}</strong></p>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Deletion</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
           <textarea
             value={closeReason}
             onChange={e => setCloseReason(e.target.value)}
             rows={3}
-            placeholder="Enter reason..."
+            placeholder="Enter reason for deletion…"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
           />
           <div className="flex gap-3 mt-4">
-            <button onClick={() => setShowPackageModal(false)} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-            <button onClick={handleDeletePackage} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">Delete</button>
+            <button onClick={() => { setShowPackageModal(false); setCloseReason(''); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <button
+              onClick={handleDeletePackage}
+              disabled={actionLoading || !closeReason.trim()}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Delete Package
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirm modal (replaces window.confirm) */}
+      {confirmModal && (
+        <Modal title={confirmModal.title} onClose={() => setConfirmModal(null)}>
+          <p className="text-sm text-gray-600 mb-6">{confirmModal.body}</p>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmModal(null)} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <button
+              onClick={confirmModal.onConfirm}
+              disabled={actionLoading}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Confirm
+            </button>
           </div>
         </Modal>
       )}
@@ -413,11 +540,11 @@ export const SuperAdminDashboard = () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 const Modal = ({ title, onClose, children }) => (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
       <div className="flex items-center justify-between p-5 border-b border-gray-200">
         <h2 className="font-semibold text-gray-900">{title}</h2>
-        <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X className="h-4 w-4" /></button>
+        <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><X className="h-4 w-4" /></button>
       </div>
       <div className="p-5">{children}</div>
     </div>
@@ -429,35 +556,41 @@ const Badge = ({ color, children }) => {
     blue:   'bg-blue-100 text-blue-700',
     green:  'bg-green-100 text-green-700',
     purple: 'bg-purple-100 text-purple-700',
-    yellow: 'bg-yellow-100 text-yellow-700',
+    yellow: 'bg-yellow-100 text-yellow-800',
     red:    'bg-red-100 text-red-700',
-    gray:   'bg-gray-100 text-gray-700',
+    gray:   'bg-gray-100 text-gray-600',
   };
   return <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[color] || colors.gray}`}>{children}</span>;
 };
 
 const StatusBadge = ({ status }) => {
   const map = {
-    active:   { color: 'green',  label: 'Active' },
-    inactive: { color: 'gray',   label: 'Inactive' },
-    pending:  { color: 'yellow', label: 'Pending' },
-    approved: { color: 'green',  label: 'Approved' },
-    rejected: { color: 'red',    label: 'Rejected' },
-    suspended:{ color: 'red',    label: 'Suspended' },
+    active:    { color: 'green',  label: 'Active' },
+    inactive:  { color: 'gray',   label: 'Inactive' },
+    pending:   { color: 'yellow', label: 'Pending' },
+    approved:  { color: 'green',  label: 'Approved' },
+    rejected:  { color: 'red',    label: 'Rejected' },
+    suspended: { color: 'red',    label: 'Suspended' },
+    closed:    { color: 'gray',   label: 'Closed' },
   };
-  const { color, label } = map[status] || { color: 'gray', label: status };
+  const { color, label } = map[status] || { color: 'gray', label: status ?? '—' };
   return <Badge color={color}>{label}</Badge>;
 };
 
 const StatCard = ({ title, value, icon: Icon, color, trend, sub }) => {
-  const bg = { blue: 'bg-blue-50 text-blue-600', green: 'bg-green-50 text-green-600', purple: 'bg-purple-50 text-purple-600', amber: 'bg-amber-50 text-amber-600' };
+  const bg = {
+    blue:   'bg-blue-50 text-blue-600',
+    green:  'bg-green-50 text-green-600',
+    purple: 'bg-purple-50 text-purple-600',
+    amber:  'bg-amber-50 text-amber-600',
+  };
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">{title}</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">{value ?? '—'}</p>
-          {sub  && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+          {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
           {trend != null && (
             <p className={`text-xs font-medium mt-2 ${trend >= 0 ? 'text-green-600' : 'text-red-500'}`}>
               {trend >= 0 ? '↑' : '↓'} {Math.abs(trend)}% from last week
@@ -491,11 +624,14 @@ const Td = ({ children, className = '' }) => (
   <td className={`px-5 py-4 text-sm text-gray-700 ${className}`}>{children}</td>
 );
 
+const EmptyRow = ({ colSpan, message = 'No data found' }) => (
+  <tr><td colSpan={colSpan} className="px-5 py-10 text-center text-sm text-gray-400">{message}</td></tr>
+);
+
 // ═════════════════════════════════════════════════════════════════════════════
 // TAB COMPONENTS
 // ═════════════════════════════════════════════════════════════════════════════
 
-// ── Overview ──────────────────────────────────────────────────────────────────
 const OverviewTab = ({ stats, auditLogs, onExport }) => (
   <div className="space-y-6">
     <div>
@@ -505,14 +641,13 @@ const OverviewTab = ({ stats, auditLogs, onExport }) => (
 
     {stats && (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard title="Total Agents"       value={stats.totalAgents}      icon={Briefcase}     color="blue"   trend={stats.agentsTrend} />
-        <StatCard title="Total Clients"      value={stats.totalClients}     icon={Users}         color="green"  trend={stats.clientsTrend} />
-        <StatCard title="Active Chats"       value={stats.activeChats}      icon={MessageCircle} color="purple" trend={stats.chatsTrend} />
-        <StatCard title="Pending Documents"  value={stats.pendingDocuments} icon={FileText}      color="amber"  trend={stats.docsTrend} />
+        <StatCard title="Total Agents"      value={stats.totalAgents}      icon={Briefcase}     color="blue"   trend={stats.agentsTrend} />
+        <StatCard title="Total Clients"     value={stats.totalClients}     icon={Users}         color="green"  trend={stats.clientsTrend} />
+        <StatCard title="Active Chats"      value={stats.activeChats}      icon={MessageCircle} color="purple" trend={stats.chatsTrend} />
+        <StatCard title="Pending Documents" value={stats.pendingDocuments} icon={FileText}      color="amber"  trend={stats.docsTrend} />
       </div>
     )}
 
-    {/* Export */}
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <SectionHeader title="Export Data" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -529,7 +664,6 @@ const OverviewTab = ({ stats, auditLogs, onExport }) => (
       </div>
     </div>
 
-    {/* Recent activity */}
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <SectionHeader title="Recent Activity" />
       <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
@@ -541,7 +675,7 @@ const OverviewTab = ({ stats, auditLogs, onExport }) => (
               <p className="text-xs text-gray-400">{log.resourceType} · {log.reason || '—'}</p>
             </div>
             <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
-              {formatDistanceToNow(new Date(log.createdAt))} ago
+              {log.createdAt ? formatDistanceToNow(new Date(log.createdAt)) + ' ago' : '—'}
             </span>
           </div>
         ))}
@@ -551,13 +685,11 @@ const OverviewTab = ({ stats, auditLogs, onExport }) => (
   </div>
 );
 
-// ── Agents ────────────────────────────────────────────────────────────────────
 const AgentsTab = ({ agents, searchQuery }) => {
   const filtered = agents.filter(a =>
     a.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     a.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
   return (
     <div className="space-y-6">
       <div>
@@ -566,23 +698,19 @@ const AgentsTab = ({ agents, searchQuery }) => {
       </div>
       <TableWrapper>
         <table className="w-full">
-          <thead><tr>
-            <Th>Agent</Th><Th>Email</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th>
-          </tr></thead>
+          <thead><tr><Th>Agent</Th><Th>Email</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(agent => (
               <tr key={agent.id} className="hover:bg-gray-50 transition-colors">
                 <Td><span className="font-medium text-gray-900">{agent.name}</span></Td>
                 <Td>{agent.email}</Td>
                 <Td><StatusBadge status={agent.status} /></Td>
-                <Td>{agent.packageCount || 0}</Td>
-                <Td>{agent.clientCount || 0}</Td>
+                <Td>{agent.packageCount ?? 0}</Td>
+                <Td>{agent.clientCount ?? 0}</Td>
                 <Td className="text-gray-400">{agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : '—'}</Td>
               </tr>
             ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400">No agents found</td></tr>
-            )}
+            {filtered.length === 0 && <EmptyRow colSpan={6} message="No agents found" />}
           </tbody>
         </table>
       </TableWrapper>
@@ -590,13 +718,11 @@ const AgentsTab = ({ agents, searchQuery }) => {
   );
 };
 
-// ── Clients ───────────────────────────────────────────────────────────────────
 const ClientsTab = ({ clients, searchQuery }) => {
   const filtered = clients.filter(c =>
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
   return (
     <div className="space-y-6">
       <div>
@@ -605,22 +731,18 @@ const ClientsTab = ({ clients, searchQuery }) => {
       </div>
       <TableWrapper>
         <table className="w-full">
-          <thead><tr>
-            <Th>Client</Th><Th>Email</Th><Th>Status</Th><Th>Bookings</Th><Th>Joined</Th>
-          </tr></thead>
+          <thead><tr><Th>Client</Th><Th>Email</Th><Th>Status</Th><Th>Bookings</Th><Th>Joined</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(client => (
               <tr key={client.id} className="hover:bg-gray-50 transition-colors">
                 <Td><span className="font-medium text-gray-900">{client.name}</span></Td>
                 <Td>{client.email}</Td>
                 <Td><StatusBadge status={client.status} /></Td>
-                <Td>{client.bookingCount || 0}</Td>
+                <Td>{client.bookingCount ?? 0}</Td>
                 <Td className="text-gray-400">{client.createdAt ? format(new Date(client.createdAt), 'MMM d, yyyy') : '—'}</Td>
               </tr>
             ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No clients found</td></tr>
-            )}
+            {filtered.length === 0 && <EmptyRow colSpan={5} message="No clients found" />}
           </tbody>
         </table>
       </TableWrapper>
@@ -628,13 +750,11 @@ const ClientsTab = ({ clients, searchQuery }) => {
   );
 };
 
-// ── Chats ─────────────────────────────────────────────────────────────────────
 const ChatsTab = ({ chats, searchQuery, setSearchQuery, onSelectChat }) => {
   const filtered = chats.filter(c =>
     c.clientName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.agentName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -646,40 +766,34 @@ const ChatsTab = ({ chats, searchQuery, setSearchQuery, onSelectChat }) => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search chats..."
+            placeholder="Search chats…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
           />
         </div>
       </div>
-
       <TableWrapper>
         <table className="w-full">
-          <thead><tr>
-            <Th>Client</Th><Th>Agent</Th><Th>Messages</Th><Th>Status</Th><Th>Last Activity</Th><Th>Actions</Th>
-          </tr></thead>
+          <thead><tr><Th>Client</Th><Th>Agent</Th><Th>Messages</Th><Th>Status</Th><Th>Last Activity</Th><Th>Actions</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(chat => (
               <tr key={chat.id} className="hover:bg-gray-50 transition-colors">
                 <Td><span className="font-medium text-gray-900">{chat.clientName}</span></Td>
                 <Td>{chat.agentName}</Td>
-                <Td>{chat.messageCount}</Td>
+                <Td>{chat.messageCount ?? 0}</Td>
                 <Td><StatusBadge status={chat.status} /></Td>
                 <Td className="text-gray-400">{chat.lastActivity ? formatDistanceToNow(new Date(chat.lastActivity)) + ' ago' : '—'}</Td>
                 <Td>
-                  <button
-                    onClick={() => onSelectChat(chat)}
-                    className="text-red-600 hover:text-red-700 text-sm font-medium hover:underline"
-                  >
-                    Close
-                  </button>
+                  {chat.status !== 'closed' && (
+                    <button onClick={() => onSelectChat(chat)} className="text-red-600 hover:text-red-700 text-sm font-medium hover:underline">
+                      Close
+                    </button>
+                  )}
                 </Td>
               </tr>
             ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400">No chats found</td></tr>
-            )}
+            {filtered.length === 0 && <EmptyRow colSpan={6} message="No chats found" />}
           </tbody>
         </table>
       </TableWrapper>
@@ -687,10 +801,8 @@ const ChatsTab = ({ chats, searchQuery, setSearchQuery, onSelectChat }) => {
   );
 };
 
-// ── Documents ─────────────────────────────────────────────────────────────────
 const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocument }) => {
   const filtered = documents.filter(d => filterStatus === 'all' || d.status === filterStatus);
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -709,7 +821,6 @@ const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocume
           <option value="rejected">Rejected</option>
         </select>
       </div>
-
       <div className="grid grid-cols-1 gap-3">
         {filtered.map(doc => (
           <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
@@ -747,7 +858,6 @@ const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocume
   );
 };
 
-// ── Packages ──────────────────────────────────────────────────────────────────
 const PackagesTab = ({ packages, onSelectPackage }) => (
   <div className="space-y-6">
     <div>
@@ -756,37 +866,29 @@ const PackagesTab = ({ packages, onSelectPackage }) => (
     </div>
     <TableWrapper>
       <table className="w-full">
-        <thead><tr>
-          <Th>Package</Th><Th>Type</Th><Th>Price</Th><Th>Bookings</Th><Th>Created By</Th><Th>Actions</Th>
-        </tr></thead>
+        <thead><tr><Th>Package</Th><Th>Type</Th><Th>Price</Th><Th>Bookings</Th><Th>Created By</Th><Th>Actions</Th></tr></thead>
         <tbody className="divide-y divide-gray-100">
           {packages.map(pkg => (
             <tr key={pkg.id} className="hover:bg-gray-50 transition-colors">
               <Td><span className="font-medium text-gray-900">{pkg.name}</span></Td>
               <Td>{pkg.type}</Td>
               <Td>KES {pkg.price?.toLocaleString()}</Td>
-              <Td>{pkg.bookingCount || 0}</Td>
+              <Td>{pkg.bookingCount ?? 0}</Td>
               <Td>{pkg.createdByName || '—'}</Td>
               <Td>
-                <button
-                  onClick={() => onSelectPackage(pkg)}
-                  className="text-red-600 hover:text-red-700 text-sm font-medium hover:underline"
-                >
+                <button onClick={() => onSelectPackage(pkg)} className="text-red-600 hover:text-red-700 text-sm font-medium hover:underline">
                   Delete
                 </button>
               </Td>
             </tr>
           ))}
-          {packages.length === 0 && (
-            <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400">No packages</td></tr>
-          )}
+          {packages.length === 0 && <EmptyRow colSpan={6} message="No packages" />}
         </tbody>
       </table>
     </TableWrapper>
   </div>
 );
 
-// ── Audit ─────────────────────────────────────────────────────────────────────
 const AuditTab = ({ logs }) => (
   <div className="space-y-6">
     <div>
@@ -795,9 +897,7 @@ const AuditTab = ({ logs }) => (
     </div>
     <TableWrapper>
       <table className="w-full">
-        <thead><tr>
-          <Th>Admin</Th><Th>Action</Th><Th>Resource</Th><Th>Reason</Th><Th>Status</Th><Th>Timestamp</Th>
-        </tr></thead>
+        <thead><tr><Th>Admin</Th><Th>Action</Th><Th>Resource</Th><Th>Reason</Th><Th>Status</Th><Th>Timestamp</Th></tr></thead>
         <tbody className="divide-y divide-gray-100">
           {logs.map(log => (
             <tr key={log.id} className="hover:bg-gray-50 transition-colors">
@@ -811,16 +911,13 @@ const AuditTab = ({ logs }) => (
               </Td>
             </tr>
           ))}
-          {logs.length === 0 && (
-            <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400">No logs yet</td></tr>
-          )}
+          {logs.length === 0 && <EmptyRow colSpan={6} message="No logs yet" />}
         </tbody>
       </table>
     </TableWrapper>
   </div>
 );
 
-// ── Settings ──────────────────────────────────────────────────────────────────
 const SettingsTab = ({ superadmin, onLogout }) => (
   <div className="space-y-6 max-w-xl">
     <div>
@@ -848,8 +945,8 @@ const SettingsTab = ({ superadmin, onLogout }) => (
 
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <h2 className="font-semibold text-gray-900 mb-4">Security</h2>
-      <button className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
-        Change Password
+      <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+        <Lock className="h-4 w-4" /> Change Password
       </button>
     </div>
 
