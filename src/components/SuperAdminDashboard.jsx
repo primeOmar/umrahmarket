@@ -153,19 +153,14 @@ export const SuperAdminDashboard = () => {
   setLoading(true);
   let documentsList = [];
   try {
-    const [statsRes, agentsRes, clientsRes, chatsRes, docsRes, pkgsRes, logsRes] = await Promise.all([
-      saApi.get('/superadmin/stats'),
-      saApi.get('/superadmin/agents'),
-      saApi.get('/superadmin/clients'),
-      saApi.get('/superadmin/chats'),
-      saApi.get('/superadmin/documents'),
-      saApi.get('/superadmin/packages'),
-      saApi.get('/superadmin/audit-logs?limit=50'),
-    ]);
-
     const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, logsData] = await Promise.all([
-      statsRes.json(), agentsRes.json(), clientsRes.json(),
-      chatsRes.json(), docsRes.json(),   pkgsRes.json(), logsRes.json(),
+      saJson(await saApi.get('/superadmin/stats')),
+      saJson(await saApi.get('/superadmin/agents')),
+      saJson(await saApi.get('/superadmin/clients')),
+      saJson(await saApi.get('/superadmin/chats')),
+      saJson(await saApi.get('/superadmin/documents')),
+      saJson(await saApi.get('/superadmin/packages')),
+      saJson(await saApi.get('/superadmin/audit-logs?limit=50')),
     ]);
 
     setStats(statsData?.data ?? statsData);
