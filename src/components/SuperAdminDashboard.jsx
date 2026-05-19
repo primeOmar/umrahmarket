@@ -151,6 +151,7 @@ export const SuperAdminDashboard = () => {
 
   const fetchAll = useCallback(async () => {
   setLoading(true);
+  let documentsList = [];
   try {
     const [statsRes, agentsRes, clientsRes, chatsRes, docsRes, pkgsRes, logsRes] = await Promise.all([
       saApi.get('/superadmin/stats'),
@@ -171,7 +172,9 @@ export const SuperAdminDashboard = () => {
     setAgents(Array.isArray(agentsData?.data) ? agentsData.data : []);
     setClients(Array.isArray(clientsData?.data) ? clientsData.data : []);
     setChats(Array.isArray(chatsData?.data) ? chatsData.data : []);
-    setDocuments(Array.isArray(docsData?.data) ? docsData.data : []);
+    const fetchedDocuments = Array.isArray(docsData?.data) ? docsData.data : [];
+    setDocuments(fetchedDocuments);
+    documentsList = fetchedDocuments;
     setPackages(Array.isArray(pkgsData?.data) ? pkgsData.data : []);
     setAuditLogs(Array.isArray(logsData?.data) ? logsData.data : []);
   } catch (e) {
@@ -179,6 +182,7 @@ export const SuperAdminDashboard = () => {
   } finally {
     setLoading(false);
   }
+  return documentsList;
 }, []);
 
   const handleLogout = () => {
@@ -245,10 +249,16 @@ export const SuperAdminDashboard = () => {
     setActionLoading(true);
     try {
       await saJson(await saApi.post(`/superadmin/documents/${selectedDocument.id}/verify`, { status, notes: verificationNotes }));
-      toast.success(`Document ${status}`);
-      setShowDocumentModal(false); setVerificationNotes(''); fetchAll();
-    } catch (e) { toast.error(e.message || 'Failed to verify document'); }
-    finally { setActionLoading(false); }
+      const docs = await fetchAll();
+      const refreshed = docs.find((doc) => doc.id === selectedDocument.id);
+      if (refreshed) setSelectedDocument(refreshed);
+      setVerificationNotes('');
+      toast.success(`Document ${status} successfully`);
+    } catch (e) {
+      toast.error(e.message || 'Failed to verify document');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleDeletePackage = async () => {
@@ -526,6 +536,19 @@ export const SuperAdminDashboard = () => {
               {selectedDocument?.tourismDoc && <Badge color="green">Tourism</Badge>}
               {selectedDocument?.kraPin && <Badge color="purple">KRA PIN</Badge>}
             </div>
+
+            {selectedDocument?.status !== 'pending' && (
+              <div className="rounded-2xl bg-white border border-gray-200 p-4 mt-3">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-medium text-gray-700">Review history</p>
+                  <span className="text-xs text-slate-500">{selectedDocument?.reviewedAt ? format(new Date(selectedDocument.reviewedAt), 'MMM d, yyyy HH:mm') : 'No review date'}</span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">Reviewed by {selectedDocument?.reviewerName || 'superadmin'}.</p>
+                {selectedDocument?.reviewNotes && (
+                  <p className="text-sm text-gray-700 mt-3 whitespace-pre-wrap">{selectedDocument.reviewNotes}</p>
+                )}
+              </div>
+            )}
 
             {(selectedDocument?.incorporationDoc || selectedDocument?.tourismDoc || selectedDocument?.kraPin) ? (
               <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
