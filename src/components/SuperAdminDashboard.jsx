@@ -119,6 +119,7 @@ export const SuperAdminDashboard = () => {
   const [packages,  setPackages]  = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [stats,     setStats]     = useState(null);
+  const [documentsError, setDocumentsError] = useState(null);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -150,35 +151,51 @@ export const SuperAdminDashboard = () => {
   }, [navigate]);
 
   const fetchAll = useCallback(async () => {
-  setLoading(true);
-  let documentsList = [];
-  try {
-    const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, logsData] = await Promise.all([
-      saJson(await saApi.get('/superadmin/stats')),
-      saJson(await saApi.get('/superadmin/agents')),
-      saJson(await saApi.get('/superadmin/clients')),
-      saJson(await saApi.get('/superadmin/chats')),
-      saJson(await saApi.get('/superadmin/documents')),
-      saJson(await saApi.get('/superadmin/packages')),
-      saJson(await saApi.get('/superadmin/audit-logs?limit=50')),
-    ]);
+    setLoading(true);
+    let documentsList = [];
+    try {
+      const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, logsData] = await Promise.all([
+        saJson(await saApi.get('/superadmin/stats')),
+        saJson(await saApi.get('/superadmin/agents')),
+        saJson(await saApi.get('/superadmin/clients')),
+        saJson(await saApi.get('/superadmin/chats')),
+        saJson(await saApi.get('/superadmin/documents')),
+        saJson(await saApi.get('/superadmin/packages')),
+        saJson(await saApi.get('/superadmin/audit-logs?limit=50')),
+      ]);
 
-    setStats(statsData?.data ?? statsData);
-    setAgents(Array.isArray(agentsData?.data) ? agentsData.data : []);
-    setClients(Array.isArray(clientsData?.data) ? clientsData.data : []);
-    setChats(Array.isArray(chatsData?.data) ? chatsData.data : []);
-    const fetchedDocuments = Array.isArray(docsData?.data) ? docsData.data : [];
-    setDocuments(fetchedDocuments);
-    documentsList = fetchedDocuments;
-    setPackages(Array.isArray(pkgsData?.data) ? pkgsData.data : []);
-    setAuditLogs(Array.isArray(logsData?.data) ? logsData.data : []);
-  } catch (e) {
-    toast.error(e.message || 'Failed to load dashboard data');
-  } finally {
-    setLoading(false);
-  }
-  return documentsList;
-}, []);
+      setStats(statsData?.data ?? statsData);
+      setAgents(Array.isArray(agentsData?.data) ? agentsData.data : []);
+      setClients(Array.isArray(clientsData?.data) ? clientsData.data : []);
+      setChats(Array.isArray(chatsData?.data) ? chatsData.data : []);
+      
+      // Documents with error handling
+      let fetchedDocuments = [];
+      try {
+        fetchedDocuments = Array.isArray(docsData?.data) ? docsData.data : [];
+        setDocuments(fetchedDocuments);
+        documentsList = fetchedDocuments;
+        setDocumentsError(null);
+        if (fetchedDocuments.length > 0) {
+          toast.success(`Loaded ${fetchedDocuments.length} document(s)`);
+        }
+      } catch (docErr) {
+        console.error('Failed to fetch documents:', docErr);
+        setDocumentsError(docErr.message);
+        toast.error('Could not load documents. Check console.');
+      }
+      
+      setPackages(Array.isArray(pkgsData?.data) ? pkgsData.data : []);
+      setAuditLogs(Array.isArray(logsData?.data) ? logsData.data : []);
+    } catch (e) {
+      const msg = e.message || 'Failed to load dashboard data';
+      console.error('Dashboard load error:', msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+    return documentsList;
+  }, []);
 
   const handleLogout = () => {
     saStore.clear();
@@ -244,8 +261,11 @@ export const SuperAdminDashboard = () => {
     setActionLoading(true);
     try {
       await saJson(await saApi.post(`/superadmin/documents/${selectedDocument.id}/verify`, { status, notes: verificationNotes }));
-      const docs = await fetchAll();
-      const refreshed = docs.find((doc) => doc.id === selectedDocument.id);
+      // Refresh only documents
+      const docsData = await saJson(await saApi.get('/superadmin/documents'));
+      const refreshedDocs = Array.isArray(docsData?.data) ? docsData.data : [];
+      setDocuments(refreshedDocs);
+      const refreshed = refreshedDocs.find((doc) => doc.id === selectedDocument.id);
       if (refreshed) setSelectedDocument(refreshed);
       setVerificationNotes('');
       toast.success(`Document ${status} successfully`);
@@ -441,6 +461,7 @@ export const SuperAdminDashboard = () => {
               filterStatus={filterStatus}
               setFilterStatus={setFilterStatus}
               onSelectDocument={d => { setSelectedDocument(d); setShowDocumentModal(true); }}
+              error={documentsError}
             />
           )}
           {activeTab === 'packages'  && (
@@ -530,6 +551,7 @@ export const SuperAdminDashboard = () => {
               {selectedDocument?.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
               {selectedDocument?.tourismDoc && <Badge color="green">Tourism</Badge>}
               {selectedDocument?.kraPin && <Badge color="purple">KRA PIN</Badge>}
+              {selectedDocument?.directorIdDoc && <Badge color="purple">Director ID</Badge>}
             </div>
 
             {selectedDocument?.status !== 'pending' && (
@@ -545,7 +567,7 @@ export const SuperAdminDashboard = () => {
               </div>
             )}
 
-            {(selectedDocument?.incorporationDoc || selectedDocument?.tourismDoc || selectedDocument?.kraPin) ? (
+            {(selectedDocument?.incorporationDoc || selectedDocument?.tourismDoc || selectedDocument?.kraPin || selectedDocument?.directorIdDoc || selectedDocument?.officePhoto) ? (
               <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Document links</p>
                 {selectedDocument?.incorporationDoc && (
@@ -565,6 +587,25 @@ export const SuperAdminDashboard = () => {
                      className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
                     <FileText className="h-3.5 w-3.5" /> View KRA PIN Certificate
                   </a>
+                )}
+                {selectedDocument?.directorIdDoc && (
+                  <a href={selectedDocument.directorIdDoc} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                    <FileText className="h-3.5 w-3.5" /> View Director ID
+                  </a>
+                )}
+                {selectedDocument?.officePhoto && (
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-gray-500 mb-2">Office Photos</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(Array.isArray(selectedDocument.officePhoto) ? selectedDocument.officePhoto : [selectedDocument.officePhoto]).map((photo, idx) => (
+                        <a key={idx} href={photo.publicUrl || photo} target="_blank" rel="noreferrer"
+                           className="text-sm text-blue-600 hover:underline truncate">
+                          Photo {idx + 1}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             ) : (
@@ -914,63 +955,67 @@ const ChatsTab = ({ chats, searchQuery, setSearchQuery, onSelectChat }) => {
   );
 };
 
-const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocument }) => {
-  const filtered = documents.filter(d => filterStatus === 'all' || d.status === filterStatus);
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agent Documents</h1>
-          <p className="text-sm text-gray-500 mt-1">Review uploaded documents and confirm whether the agent is genuine.</p>
-          <p className="text-sm text-gray-500 mt-1">{documents.filter(d => d.status === 'pending').length} pending verification</p>
-        </div>
-        <select
-          value={filterStatus}
-          onChange={e => setFilterStatus(e.target.value)}
-          className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="all">All Status</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-        </select>
+const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocument, error }) => (
+  <div className="space-y-6">
+    <div className="flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Agent Documents</h1>
+        <p className="text-sm text-gray-500 mt-1">Review uploaded documents and confirm whether the agent is genuine.</p>
+        <p className="text-sm text-gray-500 mt-1">{documents.filter(d => d.status === 'pending').length} pending verification</p>
       </div>
-      <div className="grid grid-cols-1 gap-3">
-        {filtered.map(doc => (
-          <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900">{doc.agentName}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Submitted {doc.submittedAt ? format(new Date(doc.submittedAt), 'MMM d, yyyy') : '—'}
-                </p>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {doc.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
-                  {doc.tourismDoc       && <Badge color="green">Tourism</Badge>}
-                  {doc.kraPin          && <Badge color="purple">KRA PIN</Badge>}
-                </div>
-              </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <StatusBadge status={doc.status} />
-                <button
-                  onClick={() => onSelectDocument(doc)}
-                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Verify
-                </button>
+      <select
+        value={filterStatus}
+        onChange={e => setFilterStatus(e.target.value)}
+        className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option value="all">All Status</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+    </div>
+
+    {error && (
+      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+        Failed to load documents: {error}
+      </div>
+    )}
+
+    <div className="grid grid-cols-1 gap-3">
+      {documents.map(doc => (
+        <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-900">{doc.agentName}</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Submitted {doc.submittedAt ? format(new Date(doc.submittedAt), 'MMM d, yyyy') : '—'}
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {doc.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
+                {doc.tourismDoc       && <Badge color="green">Tourism</Badge>}
+                {doc.kraPin          && <Badge color="purple">KRA PIN</Badge>}
               </div>
             </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <StatusBadge status={doc.status} />
+              <button
+                onClick={() => onSelectDocument(doc)}
+                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                Verify
+              </button>
+            </div>
           </div>
-        ))}
-        {filtered.length === 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
-            <p className="text-sm text-gray-400">No documents found</p>
-          </div>
-        )}
-      </div>
+        </div>
+      ))}
+      {documents.length === 0 && !error && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+          <p className="text-sm text-gray-400">No documents found</p>
+        </div>
+      )}
     </div>
-  );
-};
+  </div>
+);
 
 const PackagesTab = ({ packages, onSelectPackage }) => (
   <div className="space-y-6">
