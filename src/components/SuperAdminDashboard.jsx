@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   LayoutDashboard, Users, MessageCircle, FileText, Package, Settings,
   LogOut, Search, Menu, X, Shield, Activity, TrendingUp, Briefcase,
@@ -120,6 +120,10 @@ export const SuperAdminDashboard = () => {
   const [auditLogs, setAuditLogs] = useState([]);
   const [stats,     setStats]     = useState(null);
   const [documentsError, setDocumentsError] = useState(null);
+  const [lastViewedAgentsAt, setLastViewedAgentsAt] = useState(null);
+  const [lastViewedClientsAt, setLastViewedClientsAt] = useState(null);
+  const [lastViewedChatsAt, setLastViewedChatsAt] = useState(null);
+  const [lastViewedDocumentsAt, setLastViewedDocumentsAt] = useState(null);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -201,6 +205,48 @@ export const SuperAdminDashboard = () => {
     saStore.clear();
     navigate('/superadmin/login');
   };
+
+  const getLastViewedKey = useCallback((tab) => {
+    if (!superadmin?.id) return `superadmin_last_viewed_${tab}_global`;
+    return `superadmin_last_viewed_${superadmin.id}_${tab}`;
+  }, [superadmin?.id]);
+
+  useEffect(() => {
+    if (!superadmin?.id) return;
+    const tabSetters = {
+      agents: setLastViewedAgentsAt,
+      clients: setLastViewedClientsAt,
+      chats: setLastViewedChatsAt,
+      documents: setLastViewedDocumentsAt,
+    };
+
+    Object.entries(tabSetters).forEach(([tab, setter]) => {
+      const stored = localStorage.getItem(getLastViewedKey(tab));
+      if (!stored) return;
+      const parsed = new Date(stored);
+      if (!Number.isNaN(parsed.getTime())) {
+        setter(parsed);
+      }
+    });
+  }, [superadmin?.id, getLastViewedKey]);
+
+  const markTabViewed = useCallback((tab) => {
+    const key = getLastViewedKey(tab);
+    if (!key) return;
+    const now = new Date().toISOString();
+    localStorage.setItem(key, now);
+    const timestamp = new Date(now);
+    if (tab === 'agents') setLastViewedAgentsAt(timestamp);
+    if (tab === 'clients') setLastViewedClientsAt(timestamp);
+    if (tab === 'chats') setLastViewedChatsAt(timestamp);
+    if (tab === 'documents') setLastViewedDocumentsAt(timestamp);
+  }, [getLastViewedKey]);
+
+  useEffect(() => {
+    if (['agents', 'clients', 'chats', 'documents'].includes(activeTab)) {
+      markTabViewed(activeTab);
+    }
+  }, [activeTab, markTabViewed]);
 
   const fetchChatMessages = useCallback(async (bookingId, silent = false) => {
     if (!bookingId) return;
@@ -307,12 +353,49 @@ export const SuperAdminDashboard = () => {
     } catch (e) { toast.error(e.message || 'Export failed'); }
   };
 
+  const isNewPendingAgent = (agent) => {
+    if (!agent || agent.status !== 'pending') return false;
+    if (!lastViewedAgentsAt) return true;
+    if (!agent.createdAt) return false;
+    const created = new Date(agent.createdAt);
+    return !Number.isNaN(created.getTime()) && created > lastViewedAgentsAt;
+  };
+
+  const isNewPendingClient = (client) => {
+    if (!client || client.status !== 'pending') return false;
+    if (!lastViewedClientsAt) return true;
+    if (!client.createdAt) return false;
+    const created = new Date(client.createdAt);
+    return !Number.isNaN(created.getTime()) && created > lastViewedClientsAt;
+  };
+
+  const isNewActiveChat = (chat) => {
+    if (!chat || chat.status === 'closed') return false;
+    if (!lastViewedChatsAt) return true;
+    if (!chat.lastActivity) return false;
+    const lastActivity = new Date(chat.lastActivity);
+    return !Number.isNaN(lastActivity.getTime()) && lastActivity > lastViewedChatsAt;
+  };
+
+  const documentIsNew = (doc) => {
+    if (!doc || doc.status !== 'pending') return false;
+    if (!lastViewedDocumentsAt) return true;
+    if (!doc.submittedAt) return false;
+    const submitted = new Date(doc.submittedAt);
+    return !Number.isNaN(submitted.getTime()) && submitted > lastViewedDocumentsAt;
+  };
+
+  const newPendingAgentsCount = agents.filter(isNewPendingAgent).length;
+  const newPendingClientsCount = clients.filter(isNewPendingClient).length;
+  const newActiveChatsCount = chats.filter(isNewActiveChat).length;
+  const newPendingDocumentsCount = documents.filter(documentIsNew).length;
+
   const navItems = [
     { id: 'overview',  label: 'Dashboard',  icon: LayoutDashboard },
-    { id: 'agents',    label: 'Agents',      icon: Briefcase,     count: agents.filter(a => a.status === 'pending').length },
-    { id: 'clients',   label: 'Clients',     icon: Users },
-    { id: 'chats',     label: 'Chats',       icon: MessageCircle, count: chats.filter(c => c.status === 'active').length },
-    { id: 'documents', label: 'Documents',   icon: FileText,      count: documents.filter(d => d.status === 'pending').length },
+    { id: 'agents',    label: 'Agents',      icon: Briefcase,     count: newPendingAgentsCount },
+    { id: 'clients',   label: 'Clients',     icon: Users,         count: newPendingClientsCount },
+    { id: 'chats',     label: 'Chats',       icon: MessageCircle, count: newActiveChatsCount },
+    { id: 'documents', label: 'Documents',   icon: FileText,      count: newPendingDocumentsCount },
     { id: 'packages',  label: 'Packages',    icon: Package },
     { id: 'audit',     label: 'Audit Logs',  icon: Activity },
     { id: 'settings',  label: 'Settings',    icon: Settings },
