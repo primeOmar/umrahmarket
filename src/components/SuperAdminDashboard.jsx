@@ -99,6 +99,28 @@ const saJson = async (res) => {
   return res.json();
 };
 
+// ─── Per-item "viewed" helpers ────────────────────────────────────────────────
+// Each category stores a JSON array of IDs in localStorage so badge counts
+// only clear when the admin has individually opened every pending item.
+const VIEWED_KEY = (category) => `superadmin_viewed_ids_${category}`;
+
+const loadViewedIds = (category) => {
+  try {
+    const raw = localStorage.getItem(VIEWED_KEY(category));
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
+
+const persistViewedIds = (category, set) => {
+  try {
+    localStorage.setItem(VIEWED_KEY(category), JSON.stringify([...set]));
+  } catch {
+    // quota exceeded — silently ignore
+  }
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
@@ -120,10 +142,13 @@ export const SuperAdminDashboard = () => {
   const [auditLogs, setAuditLogs] = useState([]);
   const [stats,     setStats]     = useState(null);
   const [documentsError, setDocumentsError] = useState(null);
-  const [lastViewedAgentsAt, setLastViewedAgentsAt] = useState(null);
-  const [lastViewedClientsAt, setLastViewedClientsAt] = useState(null);
-  const [lastViewedChatsAt, setLastViewedChatsAt] = useState(null);
-  const [lastViewedDocumentsAt, setLastViewedDocumentsAt] = useState(null);
+
+  // ── Per-item viewed tracking (Set of IDs persisted in localStorage) ──────
+  // Count only drops when the admin has individually opened each item.
+  const [viewedAgentIds,    setViewedAgentIds]    = useState(() => loadViewedIds('agents'));
+  const [viewedClientIds,   setViewedClientIds]   = useState(() => loadViewedIds('clients'));
+  const [viewedChatIds,     setViewedChatIds]     = useState(() => loadViewedIds('chats'));
+  const [viewedDocumentIds, setViewedDocumentIds] = useState(() => loadViewedIds('documents'));
 
   // Chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -206,47 +231,28 @@ export const SuperAdminDashboard = () => {
     navigate('/superadmin/login');
   };
 
-  const getLastViewedKey = useCallback((tab) => {
-    if (!superadmin?.id) return `superadmin_last_viewed_${tab}_global`;
-    return `superadmin_last_viewed_${superadmin.id}_${tab}`;
-  }, [superadmin?.id]);
-
-  useEffect(() => {
-    if (!superadmin?.id) return;
-    const tabSetters = {
-      agents: setLastViewedAgentsAt,
-      clients: setLastViewedClientsAt,
-      chats: setLastViewedChatsAt,
-      documents: setLastViewedDocumentsAt,
+  // ── Per-item viewed tracking ─────────────────────────────────────────────
+  // Badge counts only reach 0 once every individual pending item has been opened.
+  // Clicking a sidebar tab no longer clears counts; only opening each item does.
+  const markItemViewed = useCallback((category, id) => {
+    if (id == null) return;
+    const strId = String(id);
+    const setters = {
+      agents:    setViewedAgentIds,
+      clients:   setViewedClientIds,
+      chats:     setViewedChatIds,
+      documents: setViewedDocumentIds,
     };
-
-    Object.entries(tabSetters).forEach(([tab, setter]) => {
-      const stored = localStorage.getItem(getLastViewedKey(tab));
-      if (!stored) return;
-      const parsed = new Date(stored);
-      if (!Number.isNaN(parsed.getTime())) {
-        setter(parsed);
-      }
+    const setter = setters[category];
+    if (!setter) return;
+    setter(prev => {
+      if (prev.has(strId)) return prev; // already viewed, no re-render
+      const next = new Set(prev);
+      next.add(strId);
+      persistViewedIds(category, next);
+      return next;
     });
-  }, [superadmin?.id, getLastViewedKey]);
-
-  const markTabViewed = useCallback((tab) => {
-    const key = getLastViewedKey(tab);
-    if (!key) return;
-    const now = new Date().toISOString();
-    localStorage.setItem(key, now);
-    const timestamp = new Date(now);
-    if (tab === 'agents') setLastViewedAgentsAt(timestamp);
-    if (tab === 'clients') setLastViewedClientsAt(timestamp);
-    if (tab === 'chats') setLastViewedChatsAt(timestamp);
-    if (tab === 'documents') setLastViewedDocumentsAt(timestamp);
-  }, [getLastViewedKey]);
-
-  useEffect(() => {
-    if (['agents', 'clients', 'chats', 'documents'].includes(activeTab)) {
-      markTabViewed(activeTab);
-    }
-  }, [activeTab, markTabViewed]);
+  }, []);
 
   const fetchChatMessages = useCallback(async (bookingId, silent = false) => {
     if (!bookingId) return;
@@ -287,6 +293,8 @@ export const SuperAdminDashboard = () => {
   const handleOpenChat = async (chat) => {
     setSelectedChat(chat);
     setShowChatModal(true);
+    // Mark this specific chat as viewed so its badge count drops
+    markItemViewed('chats', chat.id ?? chat.bookingId ?? chat.booking_id);
     await fetchChatMessages(chat.bookingId || chat.booking_id || chat.id);
   };
 
@@ -353,42 +361,24 @@ export const SuperAdminDashboard = () => {
     } catch (e) { toast.error(e.message || 'Export failed'); }
   };
 
-  const isNewPendingAgent = (agent) => {
-    if (!agent || agent.status !== 'pending') return false;
-    if (!lastViewedAgentsAt) return true;
-    if (!agent.createdAt) return false;
-    const created = new Date(agent.createdAt);
-    return !Number.isNaN(created.getTime()) && created > lastViewedAgentsAt;
-  };
-
-  const isNewPendingClient = (client) => {
-    if (!client || client.status !== 'pending') return false;
-    if (!lastViewedClientsAt) return true;
-    if (!client.createdAt) return false;
-    const created = new Date(client.createdAt);
-    return !Number.isNaN(created.getTime()) && created > lastViewedClientsAt;
-  };
-
-  const isNewActiveChat = (chat) => {
-    if (!chat || chat.status === 'closed') return false;
-    if (!lastViewedChatsAt) return true;
-    if (!chat.lastActivity) return false;
-    const lastActivity = new Date(chat.lastActivity);
-    return !Number.isNaN(lastActivity.getTime()) && lastActivity > lastViewedChatsAt;
-  };
-
-  const documentIsNew = (doc) => {
-    if (!doc || doc.status !== 'pending') return false;
-    if (!lastViewedDocumentsAt) return true;
-    if (!doc.submittedAt) return false;
-    const submitted = new Date(doc.submittedAt);
-    return !Number.isNaN(submitted.getTime()) && submitted > lastViewedDocumentsAt;
-  };
-
-  const newPendingAgentsCount = agents.filter(isNewPendingAgent).length;
-  const newPendingClientsCount = clients.filter(isNewPendingClient).length;
-  const newActiveChatsCount = chats.filter(isNewActiveChat).length;
-  const newPendingDocumentsCount = documents.filter(documentIsNew).length;
+  // Badge counts: pending/active items whose individual ID has NOT yet been opened.
+  // Counts only drop when the admin opens each specific item — never on tab click.
+  const newPendingAgentsCount    = useMemo(
+    () => agents.filter(a => a?.status === 'pending' && !viewedAgentIds.has(String(a.id))).length,
+    [agents, viewedAgentIds],
+  );
+  const newPendingClientsCount   = useMemo(
+    () => clients.filter(c => c?.status === 'pending' && !viewedClientIds.has(String(c.id))).length,
+    [clients, viewedClientIds],
+  );
+  const newActiveChatsCount      = useMemo(
+    () => chats.filter(ch => ch?.status !== 'closed' && !viewedChatIds.has(String(ch.id ?? ch.bookingId))).length,
+    [chats, viewedChatIds],
+  );
+  const newPendingDocumentsCount = useMemo(
+    () => documents.filter(d => d?.status === 'pending' && !viewedDocumentIds.has(String(d.id))).length,
+    [documents, viewedDocumentIds],
+  );
 
   const navItems = [
     { id: 'overview',  label: 'Dashboard',  icon: LayoutDashboard },
@@ -528,8 +518,8 @@ export const SuperAdminDashboard = () => {
 
         <main className="p-4 md:p-6 lg:p-8">
           {activeTab === 'overview'  && <OverviewTab stats={stats} auditLogs={auditLogs} onExport={handleExport} />}
-          {activeTab === 'agents'    && <AgentsTab   agents={agents} searchQuery={searchQuery} />}
-          {activeTab === 'clients'   && <ClientsTab  clients={clients} searchQuery={searchQuery} />}
+          {activeTab === 'agents'    && <AgentsTab   agents={agents} searchQuery={searchQuery} onViewAgent={id => markItemViewed('agents', id)} />}
+          {activeTab === 'clients'   && <ClientsTab  clients={clients} searchQuery={searchQuery} onViewClient={id => markItemViewed('clients', id)} />}
           {activeTab === 'chats'     && (
             <ChatsTab
               chats={chats}
@@ -544,7 +534,7 @@ export const SuperAdminDashboard = () => {
               filterStatus={filterStatus}
               setFilterStatus={setFilterStatus}
               onRefreshDocuments={fetchAll}
-              onSelectDocument={d => { setSelectedDocument(d); setShowDocumentModal(true); }}
+              onSelectDocument={d => { setSelectedDocument(d); setShowDocumentModal(true); markItemViewed('documents', d.id); }}
               error={documentsError}
             />
           )}
@@ -868,6 +858,52 @@ const EmptyRow = ({ colSpan, message = 'No data found' }) => (
   <tr><td colSpan={colSpan} className="px-5 py-10 text-center text-sm text-gray-400">{message}</td></tr>
 );
 
+/**
+ * ObservedRow — a <tr> that calls onViewed(id) once when the row scrolls
+ * into the viewport (threshold 0.5, 600 ms dwell).
+ * Only fires for items where isPending=true and onViewed is provided.
+ * This lets agents/clients badge counts drop row-by-row as the admin
+ * actually sees them in the table, rather than on tab click.
+ */
+const ObservedRow = ({ id, isPending, onViewed, children }) => {
+  const rowRef = React.useRef(null);
+  const firedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isPending || !onViewed || firedRef.current) return;
+    const el = rowRef.current;
+    if (!el) return;
+
+    let timer = null;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          // Require 600 ms of visibility so a quick scroll-past doesn't count
+          timer = setTimeout(() => {
+            if (!firedRef.current) {
+              firedRef.current = true;
+              onViewed(id);
+            }
+            observer.disconnect();
+          }, 600);
+        } else {
+          clearTimeout(timer);
+        }
+      },
+      { threshold: 0.5 },
+    );
+
+    observer.observe(el);
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [id, isPending, onViewed]);
+
+  return (
+    <tr ref={rowRef} className="hover:bg-gray-50 transition-colors">
+      {children}
+    </tr>
+  );
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 // TAB COMPONENTS
 // ═════════════════════════════════════════════════════════════════════════════
@@ -925,7 +961,7 @@ const OverviewTab = ({ stats, auditLogs, onExport }) => (
   </div>
 );
 
-const AgentsTab = ({ agents, searchQuery }) => {
+const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
   const filtered = agents.filter(a =>
     a.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     a.email?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -941,14 +977,14 @@ const AgentsTab = ({ agents, searchQuery }) => {
           <thead><tr><Th>Agent</Th><Th>Email</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(agent => (
-              <tr key={agent.id} className="hover:bg-gray-50 transition-colors">
+              <ObservedRow key={agent.id} id={agent.id} isPending={agent.status === 'pending'} onViewed={onViewAgent}>
                 <Td><span className="font-medium text-gray-900">{agent.name}</span></Td>
                 <Td>{agent.email}</Td>
                 <Td><StatusBadge status={agent.status} /></Td>
                 <Td>{agent.packageCount ?? 0}</Td>
                 <Td>{agent.clientCount ?? 0}</Td>
                 <Td className="text-gray-400">{agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : '—'}</Td>
-              </tr>
+              </ObservedRow>
             ))}
             {filtered.length === 0 && <EmptyRow colSpan={6} message="No agents found" />}
           </tbody>
@@ -958,7 +994,7 @@ const AgentsTab = ({ agents, searchQuery }) => {
   );
 };
 
-const ClientsTab = ({ clients, searchQuery }) => {
+const ClientsTab = ({ clients, searchQuery, onViewClient }) => {
   const filtered = clients.filter(c =>
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.email?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -974,13 +1010,13 @@ const ClientsTab = ({ clients, searchQuery }) => {
           <thead><tr><Th>Client</Th><Th>Email</Th><Th>Status</Th><Th>Bookings</Th><Th>Joined</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(client => (
-              <tr key={client.id} className="hover:bg-gray-50 transition-colors">
+              <ObservedRow key={client.id} id={client.id} isPending={client.status === 'pending'} onViewed={onViewClient}>
                 <Td><span className="font-medium text-gray-900">{client.name}</span></Td>
                 <Td>{client.email}</Td>
                 <Td><StatusBadge status={client.status} /></Td>
                 <Td>{client.bookingCount ?? 0}</Td>
                 <Td className="text-gray-400">{client.createdAt ? format(new Date(client.createdAt), 'MMM d, yyyy') : '—'}</Td>
-              </tr>
+              </ObservedRow>
             ))}
             {filtered.length === 0 && <EmptyRow colSpan={5} message="No clients found" />}
           </tbody>

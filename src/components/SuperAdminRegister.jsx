@@ -291,7 +291,7 @@ const SuperAdminRegister = () => {
             <div className="pt-2 border-t border-gray-100">
               <label className={labelClass}>
                 Registration Secret <span className="text-red-500">*</span>
-                <span className="ml-2 text-xs font-normal text-gray-400">(set in your .env as SUPERADMIN_REGISTER_SECRET)</span>
+                <span className="ml-2 text-xs font-normal text-gray-400">(Must match Backend)</span>
               </label>
               <div className="relative">
                 <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
