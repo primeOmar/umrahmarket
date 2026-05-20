@@ -598,10 +598,10 @@ export const SuperAdminDashboard = () => {
                 {selectedDocument?.officePhoto && (
                   <div className="mt-2">
                     <p className="text-xs font-medium text-gray-500 mb-2">Office Photos</p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(Array.isArray(selectedDocument.officePhoto) ? selectedDocument.officePhoto : [selectedDocument.officePhoto]).map((photo, idx) => (
                         <a key={idx} href={photo.publicUrl || photo} target="_blank" rel="noreferrer"
-                           className="text-sm text-blue-600 hover:underline truncate">
+                           className="text-sm text-blue-600 hover:underline truncate break-words">
                           Photo {idx + 1}
                         </a>
                       ))}
@@ -698,12 +698,12 @@ export const SuperAdminDashboard = () => {
 
 const Modal = ({ title, onClose, children }) => (
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
-    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-full sm:max-w-xl md:max-w-2xl max-h-[90vh] overflow-hidden">
       <div className="flex items-center justify-between p-5 border-b border-gray-200">
         <h2 className="font-semibold text-gray-900">{title}</h2>
         <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><X className="h-4 w-4" /></button>
       </div>
-      <div className="p-5">{children}</div>
+      <div className="p-5 overflow-y-auto max-h-[calc(90vh-5rem)]">{children}</div>
     </div>
   </div>
 );
