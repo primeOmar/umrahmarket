@@ -460,6 +460,7 @@ export const SuperAdminDashboard = () => {
               documents={documents}
               filterStatus={filterStatus}
               setFilterStatus={setFilterStatus}
+              onRefreshDocuments={fetchAll}
               onSelectDocument={d => { setSelectedDocument(d); setShowDocumentModal(true); }}
               error={documentsError}
             />
@@ -955,7 +956,7 @@ const ChatsTab = ({ chats, searchQuery, setSearchQuery, onSelectChat }) => {
   );
 };
 
-const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocument, error }) => (
+const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onRefreshDocuments, onSelectDocument, error }) => (
   <div className="space-y-6">
     <div className="flex items-center justify-between flex-wrap gap-3">
       <div>
@@ -963,16 +964,26 @@ const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onSelectDocume
         <p className="text-sm text-gray-500 mt-1">Review uploaded documents and confirm whether the agent is genuine.</p>
         <p className="text-sm text-gray-500 mt-1">{documents.filter(d => d.status === 'pending').length} pending verification</p>
       </div>
-      <select
-        value={filterStatus}
-        onChange={e => setFilterStatus(e.target.value)}
-        className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        <option value="all">All Status</option>
-        <option value="pending">Pending</option>
-        <option value="approved">Approved</option>
-        <option value="rejected">Rejected</option>
-      </select>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onRefreshDocuments}
+          className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </button>
+        <select
+          value={filterStatus}
+          onChange={e => setFilterStatus(e.target.value)}
+          className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
     </div>
 
     {error && (
