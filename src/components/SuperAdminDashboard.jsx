@@ -1292,61 +1292,6 @@ const AuditTab = ({ logs }) => (
   </div>
 );
 
-const AccountingTab = ({ transactions = [], loading = false, onDisburse, onDownloadReceipt }) => {
-  const pending = transactions.filter(t => !t.disbursed);
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Accounting</h1>
-        <p className="text-sm text-gray-500 mt-1">Track successful payments, profits and disbursements to agents.</p>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <SectionHeader title={`Recent Transactions (${transactions.length})`} />
-        <TableWrapper>
-          <table className="w-full">
-            <thead>
-              <tr>
-                <Th>ID</Th>
-                <Th>Package</Th>
-                <Th>Client</Th>
-                <Th>Agent</Th>
-                <Th>Amount</Th>
-                <Th>Profit</Th>
-                <Th>Status</Th>
-                <Th>Actions</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {transactions.map(tx => (
-                <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                  <Td className="font-medium text-gray-900">{tx.id}</Td>
-                  <Td>{tx.packageName || tx.package?.name || '—'}</Td>
-                  <Td>{tx.clientName || tx.clientEmail || '—'}</Td>
-                  <Td>{tx.agentName || tx.agentEmail || '—'}</Td>
-                  <Td>{formatCurrency(tx.amount)}</Td>
-                  <Td>{formatCurrency(tx.profit ?? (tx.amount * (tx.percentage ?? 0) / 100))}</Td>
-                  <Td>{tx.disbursed ? <Badge color="green">Disbursed</Badge> : <Badge color="yellow">Pending</Badge>}</Td>
-                  <Td>
-                    <div className="flex items-center gap-2">
-                      {!tx.disbursed && (
-                        <button onClick={() => onDisburse(tx)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Disburse</button>
-                      )}
-                      <button onClick={() => onDownloadReceipt(tx)} className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm hover:bg-gray-100">Preview</button>
-                      <button onClick={() => onDownloadReceipt(tx)} className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm hover:bg-gray-100">Download</button>
-                      <button onClick={() => handleEmailReceipt(tx)} className="px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-sm hover:bg-amber-100">Email</button>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-              {transactions.length === 0 && <EmptyRow colSpan={8} message="No transactions found" />}
-            </tbody>
-          </table>
-        </TableWrapper>
-      </div>
-    </div>
-  );
-};
 
 const SettingsTab = ({ superadmin, onLogout }) => (
   <div className="space-y-6 max-w-xl">
