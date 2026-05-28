@@ -18,6 +18,8 @@ import SuperAdminRegister from './components/SuperAdminRegister';
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
 const initAuth = async () => {
+  const storedToken = localStorage.getItem('refresh_token') || localStorage.getItem('superadmin_refresh_token');
+  if (!storedToken) return userStore.get();
   try {
     const res = await refreshToken();
     const user = res?.data?.data?.user;

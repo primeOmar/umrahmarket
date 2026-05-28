@@ -194,7 +194,9 @@ export const SuperAdminDashboard = () => {
         saJson(await saApi.get('/superadmin/documents')),
         saJson(await saApi.get('/superadmin/packages')),
         // accounting transactions (backend should implement /superadmin/accounting/transactions)
-        saJson(await saApi.get('/superadmin/accounting/transactions?limit=200')),
+        saApi.get('/superadmin/accounting/transactions?limit=200')
+          .then(r => saJson(r))
+          .catch(() => ({ data: [] })),
         saJson(await saApi.get('/superadmin/audit-logs?limit=50')),
       ]);
 
