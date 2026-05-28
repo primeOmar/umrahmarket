@@ -8,6 +8,7 @@ import {
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { AccountingTab } from './AccountingTab';
 
 // ─── API base (no trailing /api duplication) ──────────────────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
@@ -262,23 +263,28 @@ export const SuperAdminDashboard = () => {
     } finally { setActionLoading(false); }
   };
 
-  const handleDownloadReceipt = async (tx) => {
-    if (!tx || !tx.id) return;
-    try {
-      const res = await saFetch(`/superadmin/accounting/transactions/${tx.id}/receipt`, { method: 'GET' });
-      if (!res.ok) throw new Error('Failed to fetch receipt');
-      const blob = await res.blob();
-      // Preview in new tab
-      const url = window.URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      // Also offer download
-      const filename = `receipt-${tx.id}.pdf`;
-      downloadBlob(blob, filename);
-      toast.success('Receipt opened and downloaded');
-    } catch (e) {
-      toast.error(e.message || 'Failed to download receipt');
+  const handleDownloadReceipt = async (tx, preview = false) => {
+  if (!tx?.id) return;
+  try {
+    const url = preview
+      ? `/superadmin/accounting/transactions/${tx.id}/receipt?inline=1`
+      : `/superadmin/accounting/transactions/${tx.id}/receipt`;
+
+    const res = await saFetch(url, { method: 'GET' });
+    if (!res.ok) throw new Error('Failed to fetch receipt');
+    const blob = await res.blob();
+
+    if (preview) {
+      window.open(window.URL.createObjectURL(blob), '_blank');
+      toast.success('Receipt opened in new tab');
+    } else {
+      downloadBlob(blob, `receipt-${tx.id.slice(0, 8)}.pdf`);
+      toast.success('Receipt downloaded');
     }
-  };
+  } catch (e) {
+    toast.error(e.message || 'Failed to get receipt');
+  }
+};
 
   const handleEmailReceipt = async (tx) => {
     if (!tx || !tx.id) return;
@@ -605,14 +611,22 @@ export const SuperAdminDashboard = () => {
             <PackagesTab packages={packages} onSelectPackage={p => { setSelectedPackage(p); setShowPackageModal(true); }} />
           )}
           {activeTab === 'audit'     && <AuditTab logs={auditLogs} />}
-          {activeTab === 'accounting' && (
-            <AccountingTab
-              transactions={accountingTransactions}
-              loading={accountingLoading}
-              onDisburse={handleDisburseTransaction}
-              onDownloadReceipt={handleDownloadReceipt}
-            />
-          )}
+         {activeTab === 'accounting' && (
+  <AccountingTab
+    transactions={accountingTransactions}
+    loading={accountingLoading}
+    onDisburse={handleDisburseTransaction}
+    onDownloadReceipt={handleDownloadReceipt}
+    onEmailReceipt={handleEmailReceipt}
+    onRefresh={fetchAll}
+    onExportCsv={() => {
+      saFetch('/superadmin/accounting/export', { method: 'GET' })
+        .then(r => r.blob())
+        .then(blob => downloadBlob(blob, `accounting-${Date.now()}.csv`))
+        .catch(e => toast.error(e.message));
+    }}
+  />
+)}
           {activeTab === 'settings'  && <SettingsTab superadmin={superadmin} onLogout={handleLogout} />}
         </main>
       </div>
