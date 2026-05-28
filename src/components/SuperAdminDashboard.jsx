@@ -140,6 +140,8 @@ export const SuperAdminDashboard = () => {
   const [documents, setDocuments] = useState([]);
   const [packages,  setPackages]  = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [accountingTransactions, setAccountingTransactions] = useState([]);
+  const [accountingLoading, setAccountingLoading] = useState(false);
   const [stats,     setStats]     = useState(null);
   const [documentsError, setDocumentsError] = useState(null);
 
@@ -183,13 +185,15 @@ export const SuperAdminDashboard = () => {
     setLoading(true);
     let documentsList = [];
     try {
-      const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, logsData] = await Promise.all([
+      const [statsData, agentsData, clientsData, chatsData, docsData, pkgsData, acctData, logsData] = await Promise.all([
         saJson(await saApi.get('/superadmin/stats')),
         saJson(await saApi.get('/superadmin/agents')),
         saJson(await saApi.get('/superadmin/clients')),
         saJson(await saApi.get('/superadmin/chats')),
         saJson(await saApi.get('/superadmin/documents')),
         saJson(await saApi.get('/superadmin/packages')),
+        // accounting transactions (backend should implement /superadmin/accounting/transactions)
+        saJson(await saApi.get('/superadmin/accounting/transactions?limit=200')),
         saJson(await saApi.get('/superadmin/audit-logs?limit=50')),
       ]);
 
@@ -215,6 +219,8 @@ export const SuperAdminDashboard = () => {
       }
       
       setPackages(Array.isArray(pkgsData?.data) ? pkgsData.data : []);
+      // acctData may be wrapped in { data: [...] }
+      setAccountingTransactions(Array.isArray(acctData?.data) ? acctData.data : (Array.isArray(acctData) ? acctData : []));
       setAuditLogs(Array.isArray(logsData?.data) ? logsData.data : []);
     } catch (e) {
       const msg = e.message || 'Failed to load dashboard data';
@@ -229,6 +235,62 @@ export const SuperAdminDashboard = () => {
   const handleLogout = () => {
     saStore.clear();
     navigate('/superadmin/login');
+  };
+
+  // Accounting helpers
+  const formatCurrency = (v) => {
+    if (v == null) return '—';
+    try { return `KES ${Number(v).toLocaleString()}`; } catch { return String(v); }
+  };
+
+  const downloadBlob = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+  };
+
+  const handleDisburseTransaction = async (tx) => {
+    if (!tx || !tx.id) return;
+    if (!window.confirm(`Mark transaction ${tx.id} as disbursed to ${tx.agentName || 'agent'} for ${formatCurrency(tx.amount)}?`)) return;
+    setActionLoading(true);
+    try {
+      const res = await saApi.post(`/superadmin/accounting/transactions/${tx.id}/disburse`, { });
+      const data = await saJson(res);
+      toast.success(data?.message || 'Marked as disbursed');
+      await fetchAll();
+    } catch (e) {
+      toast.error(e.message || 'Failed to disburse');
+    } finally { setActionLoading(false); }
+  };
+
+  const handleDownloadReceipt = async (tx) => {
+    if (!tx || !tx.id) return;
+    try {
+      const res = await saFetch(`/superadmin/accounting/transactions/${tx.id}/receipt`, { method: 'GET' });
+      if (!res.ok) throw new Error('Failed to fetch receipt');
+      const blob = await res.blob();
+      // Preview in new tab
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // Also offer download
+      const filename = `receipt-${tx.id}.pdf`;
+      downloadBlob(blob, filename);
+      toast.success('Receipt opened and downloaded');
+    } catch (e) {
+      toast.error(e.message || 'Failed to download receipt');
+    }
+  };
+
+  const handleEmailReceipt = async (tx) => {
+    if (!tx || !tx.id) return;
+    const email = window.prompt('Enter recipient email', tx.agentEmail || tx.clientEmail || '');
+    if (!email) return;
+    setActionLoading(true);
+    try {
+      const res = await saJson(await saApi.post(`/superadmin/accounting/transactions/${tx.id}/email`, { email }));
+      toast.success(res?.message || 'Email queued');
+    } catch (e) {
+      toast.error(e.message || 'Failed to email receipt');
+    } finally { setActionLoading(false); }
   };
 
   // ── Per-item viewed tracking ─────────────────────────────────────────────
@@ -388,6 +450,7 @@ export const SuperAdminDashboard = () => {
     { id: 'documents', label: 'Documents',   icon: FileText,      count: newPendingDocumentsCount },
     { id: 'packages',  label: 'Packages',    icon: Package },
     { id: 'audit',     label: 'Audit Logs',  icon: Activity },
+    { id: 'accounting',label: 'Accounting',  icon: TrendingUp },
     { id: 'settings',  label: 'Settings',    icon: Settings },
   ];
 
@@ -542,6 +605,14 @@ export const SuperAdminDashboard = () => {
             <PackagesTab packages={packages} onSelectPackage={p => { setSelectedPackage(p); setShowPackageModal(true); }} />
           )}
           {activeTab === 'audit'     && <AuditTab logs={auditLogs} />}
+          {activeTab === 'accounting' && (
+            <AccountingTab
+              transactions={accountingTransactions}
+              loading={accountingLoading}
+              onDisburse={handleDisburseTransaction}
+              onDownloadReceipt={handleDownloadReceipt}
+            />
+          )}
           {activeTab === 'settings'  && <SettingsTab superadmin={superadmin} onLogout={handleLogout} />}
         </main>
       </div>
@@ -1206,6 +1277,62 @@ const AuditTab = ({ logs }) => (
     </TableWrapper>
   </div>
 );
+
+const AccountingTab = ({ transactions = [], loading = false, onDisburse, onDownloadReceipt }) => {
+  const pending = transactions.filter(t => !t.disbursed);
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Accounting</h1>
+        <p className="text-sm text-gray-500 mt-1">Track successful payments, profits and disbursements to agents.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <SectionHeader title={`Recent Transactions (${transactions.length})`} />
+        <TableWrapper>
+          <table className="w-full">
+            <thead>
+              <tr>
+                <Th>ID</Th>
+                <Th>Package</Th>
+                <Th>Client</Th>
+                <Th>Agent</Th>
+                <Th>Amount</Th>
+                <Th>Profit</Th>
+                <Th>Status</Th>
+                <Th>Actions</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {transactions.map(tx => (
+                <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
+                  <Td className="font-medium text-gray-900">{tx.id}</Td>
+                  <Td>{tx.packageName || tx.package?.name || '—'}</Td>
+                  <Td>{tx.clientName || tx.clientEmail || '—'}</Td>
+                  <Td>{tx.agentName || tx.agentEmail || '—'}</Td>
+                  <Td>{formatCurrency(tx.amount)}</Td>
+                  <Td>{formatCurrency(tx.profit ?? (tx.amount * (tx.percentage ?? 0) / 100))}</Td>
+                  <Td>{tx.disbursed ? <Badge color="green">Disbursed</Badge> : <Badge color="yellow">Pending</Badge>}</Td>
+                  <Td>
+                    <div className="flex items-center gap-2">
+                      {!tx.disbursed && (
+                        <button onClick={() => onDisburse(tx)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Disburse</button>
+                      )}
+                      <button onClick={() => onDownloadReceipt(tx)} className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm hover:bg-gray-100">Preview</button>
+                      <button onClick={() => onDownloadReceipt(tx)} className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm hover:bg-gray-100">Download</button>
+                      <button onClick={() => handleEmailReceipt(tx)} className="px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-sm hover:bg-amber-100">Email</button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+              {transactions.length === 0 && <EmptyRow colSpan={8} message="No transactions found" />}
+            </tbody>
+          </table>
+        </TableWrapper>
+      </div>
+    </div>
+  );
+};
 
 const SettingsTab = ({ superadmin, onLogout }) => (
   <div className="space-y-6 max-w-xl">
