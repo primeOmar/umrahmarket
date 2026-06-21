@@ -14,13 +14,13 @@ import {
 import { request } from '../api';
 
 // ─── constants ────────────────────────────────────────────────────────────────
-const KES_RATE          = 130;
 const POLL_INTERVAL_MS  = 4_000;
 const POLL_MAX_ATTEMPTS = 18;          // 72 s total
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-const fmt    = (n) => Number(n).toLocaleString('en-US');
-const fmtKes = (usd) => `KES ${fmt(Math.round(usd * KES_RATE))}`;
+// NOTE: KES conversion no longer uses a hardcoded rate — see fxRate state below,
+// populated live from GET /api/fx/rate on mount.
+const fmt = (n) => Number(n).toLocaleString('en-US');
 
 function normalisePhone(raw) {
   const d = raw.replace(/\D/g, '');
@@ -72,10 +72,37 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
   // copy feedback
   const [copied, setCopied] = useState(null);
 
+  // live FX rate (USD → KES) + the currency the client wants to see/pay in
+  const [fxRate,    setFxRate]    = useState(null);   // null until /api/fx/rate resolves
+  const [fxLoading, setFxLoading] = useState(true);
+  const [fxError,   setFxError]   = useState(false);
+  const [currency,  setCurrency]  = useState('KES');  // 'KES' | 'USD'
+
   const pollRef   = useRef(null);
   const unmounted = useRef(false);
 
   useEffect(() => () => { unmounted.current = true; clearInterval(pollRef.current); }, []);
+
+  // ── fetch live USD/KES rate on mount ────────────────────────────────────────
+  const fetchFxRate = useCallback(async () => {
+    setFxLoading(true);
+    setFxError(false);
+    try {
+      const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+      const r    = await fetch(apiBase + '/fx/rate');
+      const json = await r.json();
+      if (!json?.success) throw new Error(json?.message || 'Rate fetch failed');
+      setFxRate(json.usdKes);
+    } catch (err) {
+      console.error('[BookingModal] FX rate fetch failed:', err.message);
+      setFxRate(130); // safe fallback so modal is usable
+      setFxError(true);
+    } finally {
+      setFxLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchFxRate(); }, [fetchFxRate]);
 
   // lock body scroll
   useEffect(() => {
@@ -100,8 +127,13 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
     setOrderTrackingId(null);
   };
 
-  const pkgRef   = `UMRAH-${pkg.id.slice(-8).toUpperCase()}`;
-  const totalKes = Math.round(pkg.price * KES_RATE);
+  const pkgRef = `UMRAH-${pkg.id.slice(-8).toUpperCase()}`;
+
+  // live-rate-derived amounts — null until the fx rate has loaded
+  const totalKes    = fxRate ? Math.round(pkg.price * fxRate) : null;
+  const fmtKes       = (usd) => (fxRate ? `KES ${fmt(Math.round(usd * fxRate))}` : 'Loading rate…');
+  const fmtUsd       = (usd) => `$${fmt(usd)}`;
+  const fmtSelected  = (usd) => (currency === 'USD' ? fmtUsd(usd) : fmtKes(usd));
 
   // ── CARD (Pesapal Hosted Checkout) ────────────────────────────────────────
   // Flow:
@@ -115,13 +147,18 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
   //   5. Booking created in Supabase
 
   const handleCardPay = async () => {
+    if (!fxRate) {
+      setErrorMsg('Exchange rate is still loading — please wait a moment and try again.');
+      setStep('error');
+      return;
+    }
     setCardLoading(true);
     setStep('processing');
     try {
       const res = await request({
         method: 'post',
         url:    '/payments/card/initiate',
-        data:   { packageId: pkg.id },
+        data:   { packageId: pkg.id, currency, amountKes: totalKes },
       });
 
       if (!res.data?.success) throw new Error(res.data?.message || 'Failed to initiate payment');
@@ -196,12 +233,20 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
   const handleMpesaPay = async () => {
     const normPhone = validatePhone();
     if (!normPhone) return;
+    if (!fxRate) {
+      setErrorMsg('Exchange rate is still loading — please wait a moment and try again.');
+      setStep('error');
+      return;
+    }
     setStep('processing');
     try {
       const res = await request({
         method: 'post',
         url: '/payments/mpesa/initiate',
-        data: { packageId: pkg.id, phone: normPhone },
+        // M-Pesa STK push always settles in KES (Safaricom requirement) regardless
+        // of the display currency picked above — we still send `currency` +
+        // the live-rate `amountKes` for consistency/logging with the card flow.
+        data: { packageId: pkg.id, phone: normPhone, currency, amountKes: totalKes },
       });
       if (!res.data?.success) throw new Error(res.data?.message || 'STK push failed');
       setCheckoutId(res.data.checkoutRequestId);
@@ -294,15 +339,49 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
 
         {/* package summary */}
         {step !== 'success' && (
-          <div className="flex items-center gap-3 px-5 py-3 bg-gray-50 border-b flex-shrink-0">
-            <img src={pkg.image} alt={pkg.title} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-sm text-gray-900 truncate">{pkg.title}</p>
-              <p className="text-xs text-gray-500">{pkg.duration} days · {pkg.agencyName}</p>
+          <div className="px-5 py-3 bg-gray-50 border-b flex-shrink-0 space-y-2">
+            <div className="flex items-center gap-3">
+              <img src={pkg.image} alt={pkg.title} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-sm text-gray-900 truncate">{pkg.title}</p>
+                <p className="text-xs text-gray-500">{pkg.duration} days · {pkg.agencyName}</p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="font-bold text-emerald-600">{fmtSelected(pkg.price)}</p>
+                <p className="text-xs text-gray-400">
+                  {currency === 'USD' ? fmtKes(pkg.price) : fmtUsd(pkg.price)}
+                </p>
+              </div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <p className="font-bold text-emerald-600">${fmt(pkg.price)}</p>
-              <p className="text-xs text-gray-400">{fmtKes(pkg.price)}</p>
+
+            {/* currency toggle + live rate status */}
+            <div className="flex items-center justify-between">
+              <div className="inline-flex bg-gray-200/70 rounded-lg p-0.5">
+                {['KES', 'USD'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setCurrency(c)}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      currency === c ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              {fxLoading && (
+                <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Fetching live rate…
+                </span>
+              )}
+              {!fxLoading && fxError && !fxRate && (
+                <button onClick={fetchFxRate} className="text-[11px] text-red-500 underline">
+                  Rate unavailable — retry
+                </button>
+              )}
+              {!fxLoading && fxRate && (
+                <span className="text-[11px] text-gray-400">1 USD ≈ {fmt(fxRate)} KES</span>
+              )}
             </div>
           </div>
         )}
@@ -406,13 +485,15 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
 
               <button
                 onClick={handleCardPay}
-                disabled={cardLoading}
+                disabled={cardLoading || !fxRate}
                 className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}
               >
                 {cardLoading
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing checkout…</>
-                  : <><Lock className="h-4 w-4" /> Pay KES {fmt(Math.round(pkg.price * KES_RATE))} via Pesapal</>
+                  : !fxRate
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Loading rate…</>
+                    : <><Lock className="h-4 w-4" /> Pay {fmtSelected(pkg.price)} via Pesapal</>
                 }
               </button>
             </div>
@@ -480,10 +561,10 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
                 Do <strong className="mx-0.5">not</strong> share your M-Pesa PIN with anyone.
               </div>
 
-              <button onClick={handleMpesaPay} disabled={phone.length < 9}
+              <button onClick={handleMpesaPay} disabled={phone.length < 9 || !fxRate}
                 className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
-                Send STK Push — {fmtKes(pkg.price)}
+                {fxRate ? `Send STK Push — ${fmtKes(pkg.price)}` : 'Loading rate…'}
               </button>
             </div>
           )}
@@ -502,7 +583,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
                   ['Account number', '0123456789'],
                   ['Branch',         'Nairobi, Kenyatta Ave'],
                   ['Swift / BIC',    'EQBLKENA'],
-                  ['Amount',         `KES ${fmt(totalKes)}`],
+                  ['Amount',         totalKes ? `KES ${fmt(totalKes)}` : 'Loading…'],
                   ['Reference',      pkgRef],
                 ].map(([label, value]) => (
                   <div key={label} className="flex justify-between items-center px-4 py-3 bg-white">

@@ -25,10 +25,14 @@ import { format } from 'date-fns';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const fmt = (v) => {
-  if (v == null || v === '') return '—';
-  try { return `KES ${Number(v).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
-  catch { return String(v); }
+const fmtWithUsd = (kes, fxRate) => {
+  if (kes == null) return '—';
+  const kesStr = `KES ${Number(kes).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
+  if (fxRate && fxRate > 0) {
+    const usd = kes / fxRate;
+    return `${kesStr} (~$${usd.toFixed(2)})`;
+  }
+  return kesStr;
 };
 
 const fmtDate = (v) => {
@@ -603,45 +607,3 @@ export const AccountingTab = ({
 };
 
 export default AccountingTab;
-
-/* ─── INTEGRATION GUIDE ──────────────────────────────────────────────────────
- *
- * 1. In SuperAdminDashboard.jsx, update handleDownloadReceipt to accept a
- *    `preview` parameter:
- *
- *    const handleDownloadReceipt = async (tx, preview = false) => {
- *      if (!tx?.id) return;
- *      try {
- *        const res = await saFetch(`/superadmin/accounting/transactions/${tx.id}/receipt`, { method: 'GET' });
- *        if (!res.ok) throw new Error('Failed to fetch receipt');
- *        const blob = await res.blob();
- *        if (preview) {
- *          window.open(window.URL.createObjectURL(blob), '_blank');
- *        } else {
- *          downloadBlob(blob, `receipt-${tx.id}.pdf`);
- *        }
- *        toast.success(preview ? 'Receipt opened' : 'Receipt downloaded');
- *      } catch (e) {
- *        toast.error(e.message || 'Failed');
- *      }
- *    };
- *
- * 2. Replace the AccountingTab render in main:
- *
- *    {activeTab === 'accounting' && (
- *      <AccountingTab
- *        transactions={accountingTransactions}
- *        loading={accountingLoading}
- *        onDisburse={handleDisburseTransaction}
- *        onDownloadReceipt={handleDownloadReceipt}
- *        onEmailReceipt={handleEmailReceipt}
- *        onRefresh={fetchAll}
- *        onExportCsv={() => handleExport('transactions')}
- *      />
- *    )}
- *
- * 3. Import at top of SuperAdminDashboard.jsx:
- *    import { AccountingTab } from './AccountingTab';
- *    (Remove the inline AccountingTab const from the dashboard file)
- *
- * ─────────────────────────────────────────────────────────────────────────── */

@@ -48,20 +48,35 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
   const navigationItems = [
     {
       label: 'Packages',
+      path: '/',
       icon: <Briefcase className="h-4 w-4" />,
       activeIcon: <Briefcase className="h-4 w-4" />,
     },
     {
       label: 'Experiences',
+      path: '/experiences',
       icon: <Compass className="h-4 w-4" />,
       activeIcon: <Globe className="h-4 w-4" />,
     },
     {
       label: 'Guidance',
+      path: '/guidance',
       icon: <BookOpen className="h-4 w-4" />,
       activeIcon: <BookOpen className="h-4 w-4" fill="currentColor" />,
     },
   ];
+
+  const goToNav = (item) => {
+    setActiveNav(item.label);
+    if (item.path) navigate(item.path);
+  };
+
+  // Keep the highlighted tab in sync with the actual URL (covers direct
+  // links, refresh, and browser back/forward — not just in-app clicks).
+  useEffect(() => {
+    const match = navigationItems.find(i => i.path === location.pathname);
+    if (match) setActiveNav(match.label);
+  }, [location.pathname]);
 
   return (
     <>
@@ -92,7 +107,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
                 {navigationItems.map((item) => (
                   <button
                     key={item.label}
-                    onClick={() => setActiveNav(item.label)}
+                    onClick={() => goToNav(item)}
                     className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${
                       activeNav === item.label
                         ? 'bg-white text-emerald-700 shadow-lg shadow-emerald-100/50 border border-emerald-100/30'
@@ -203,7 +218,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
           {navigationItems.map((item) => (
             <button
               key={item.label}
-              onClick={() => setActiveNav(item.label)}
+              onClick={() => goToNav(item)}
               className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all duration-300 ${
                 activeNav === item.label ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500'
               }`}
@@ -271,7 +286,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
           {navigationItems.map((item) => (
             <button
               key={item.label}
-              onClick={() => { setActiveNav(item.label); setMobileMenuOpen(false); }}
+              onClick={() => { goToNav(item); setMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 activeNav === item.label
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
@@ -319,7 +334,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
           {navigationItems.map((item) => (
             <button
               key={item.label}
-              onClick={() => setActiveNav(item.label)}
+              onClick={() => goToNav(item)}
               className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all duration-300 ${
                 activeNav === item.label ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500'
               }`}

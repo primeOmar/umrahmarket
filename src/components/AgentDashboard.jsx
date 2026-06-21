@@ -9,7 +9,7 @@ import {
   BookOpen, Headphones, Image, Video, Camera, Lock,
   Printer, Share2, Copy, Check, RefreshCw,
   Send, Paperclip, Smile, ChevronUp, Info, CheckCheck,
-  Loader, Circle, ArrowLeft
+  Loader, Circle, ArrowLeft, DollarSign
 } from 'lucide-react';
 import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns';
 import CreatePackageModal from './agent/packages/creation/CreatePackageModal';
@@ -18,7 +18,10 @@ import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
 import { getAgentPackages } from './agent/packages/services/packagesApi';
 import DocumentsTab from './agent/documents/DocumentsTab';
+import AccountingTab from './AccountingTab';
+import AgentAccountingTab from './AgentAccountingTab';
 import { useBookingNotifications } from '../hooks/useBookingNotifications';
+import umLogo from '../assets/umramarket.png';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -441,127 +444,618 @@ const StatCard = ({ icon: Icon, label, value, change, trend, color }) => (
   </div>
 );
 
-// ==================== CLIENT CARD COMPONENT ====================
+// ==================== CLIENT MANAGEMENT COMPONENTS ====================
 const UMRAH_REQS = [
-  { key: 'passport', label: 'Passport (6+ months validity)' },
-  { key: 'visa', label: 'Saudi Umrah Visa' },
-  { key: 'mahram', label: 'Mahram letter (women under 45)' },
-  { key: 'vaccination', label: 'Meningitis vaccination certificate' },
-  { key: 'flights', label: 'Flight tickets' },
-  { key: 'photo', label: 'Passport-size photos (x6)' },
+  { key: 'passport',     label: 'Passport (6+ months validity)',       icon: '🛂' },
+  { key: 'visa',         label: 'Saudi Umrah Visa',                    icon: '📋' },
+  { key: 'mahram',       label: 'Mahram letter (women under 45)',       icon: '📄' },
+  { key: 'vaccination',  label: 'Meningitis vaccination certificate',   icon: '💉' },
+  { key: 'flights',      label: 'Flight tickets',                       icon: '✈️' },
+  { key: 'photo',        label: 'Passport-size photos (×6)',            icon: '📷' },
 ];
-
 const HAJJ_REQS = [
   ...UMRAH_REQS,
-  { key: 'hajj_permit', label: 'Hajj permit / quota slot' },
-  { key: 'health_cert', label: 'Health fitness certificate' },
-  { key: 'yellow_fever', label: 'Yellow fever vaccine (if applicable)' },
+  { key: 'hajj_permit',  label: 'Hajj permit / quota slot',            icon: '🕌' },
+  { key: 'health_cert',  label: 'Health fitness certificate',           icon: '🏥' },
+  { key: 'yellow_fever', label: 'Yellow fever vaccine (if applicable)', icon: '💉' },
 ];
 
-const ClientCard = ({ client, onView, onMessage }) => {
-  const [expanded, setExpanded] = useState(false);
+// ── Single client row inside a package group ──────────────────────────────────
+const ClientRow = ({ client, onMessage }) => {
+  const [open, setOpen] = useState(false);
+  const [checks, setChecks] = useState({});
   const reqs = client.packageType === 'hajj' ? HAJJ_REQS : UMRAH_REQS;
-  const travelDate = client.availableFrom
-    ? new Date(client.availableFrom).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '—';
+
+  const toggleCheck = (key) => setChecks(prev => ({ ...prev, [key]: !prev[key] }));
+  const checkedCount = reqs.filter(r => checks[r.key]).length;
+  const allDone = checkedCount === reqs.length;
+
+  const fmtAmt = () => {
+    if (client.amountUsd != null)
+      return `$${Number(client.amountUsd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (client.fxRateUsed)
+      return `$${(Number(client.amountPaid) / Number(client.fxRateUsed)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `${client.currency || 'KES'} ${Number(client.amountPaid || 0).toLocaleString()}`;
+  };
 
   return (
-    <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 overflow-hidden">
-      {/* Header */}
-      <div className="p-5">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center space-x-3">
-            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-              {client.name.charAt(0)}
+    <div className="border-b border-gray-100 last:border-0">
+      {/* Row header — click to expand */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+          {client.name.charAt(0)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{client.name}</p>
+          <p className="text-xs text-gray-400 truncate">{client.email}</p>
+        </div>
+        {/* prep progress pill */}
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+          allDone ? 'bg-emerald-100 text-emerald-700' : checkedCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
+        }`}>
+          {checkedCount}/{reqs.length} docs
+        </span>
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+          client.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
+          client.status === 'pending'   ? 'bg-amber-100 text-amber-700' :
+          client.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+        }`}>{client.status}</span>
+        <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Expanded drawer */}
+      {open && (
+        <div className="px-4 pb-4 bg-gray-50/60 border-t border-gray-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
+
+            {/* Left — client details + passport */}
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Client Details</p>
+              <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-1.5 text-xs">
+                {[
+                  ['Name',    client.name],
+                  ['Email',   client.email],
+                  ['Phone',   client.phone !== '—' ? client.phone : '—'],
+                  ['Paid',    fmtAmt()],
+                  ['Booked',  client.bookedAt ? new Date(client.bookedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—'],
+                ].map(([l, v]) => (
+                  <div key={l} className="flex justify-between">
+                    <span className="text-gray-400">{l}</span>
+                    <span className="font-medium text-gray-800 text-right max-w-[60%] truncate">{v}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Passport section */}
+              <div className="bg-white rounded-xl border border-blue-100 p-3">
+                <p className="text-xs font-bold text-blue-700 flex items-center gap-1.5 mb-2">
+                  <Shield className="h-3.5 w-3.5" /> Passport / Travel Docs
+                </p>
+                {client.passportVerified ? (
+                  <div className="flex items-center gap-2 text-emerald-600">
+                    <CheckCircle className="h-4 w-4" />
+                    <span className="text-xs font-semibold">Passport verified</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="text-xs">Passport not yet verified</span>
+                  </div>
+                )}
+                {client.passportExpiry && (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Expiry: {new Date(client.passportExpiry).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                  </p>
+                )}
+              </div>
+
+              {client.notes && (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                  <p className="text-xs font-bold text-amber-800 mb-1">Client Notes</p>
+                  <p className="text-xs text-amber-700">{client.notes}</p>
+                </div>
+              )}
+
+              <button
+                onClick={() => onMessage(client)}
+                className="w-full flex items-center justify-center gap-2 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 transition-colors"
+              >
+                <MessageCircle className="h-3.5 w-3.5" /> Message Client
+              </button>
             </div>
+
+            {/* Right — preparation checklist */}
             <div>
-              <h4 className="font-semibold text-gray-900 leading-tight">{client.name}</h4>
-              <p className="text-xs text-gray-500">{client.email}</p>
-              {client.phone !== '—' && <p className="text-xs text-gray-400">{client.phone}</p>}
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Preparation Checklist</p>
+              <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                {reqs.map(r => (
+                  <label key={r.key} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={!!checks[r.key]}
+                      onChange={() => toggleCheck(r.key)}
+                      className="w-4 h-4 rounded accent-emerald-600 flex-shrink-0"
+                    />
+                    <span className="text-xs text-gray-600 flex-1">{r.icon} {r.label}</span>
+                    {checks[r.key] && <CheckCircle className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />}
+                  </label>
+                ))}
+              </div>
+              {allDone && (
+                <div className="mt-2 flex items-center gap-1.5 text-emerald-600 text-xs font-semibold">
+                  <CheckCircle className="h-4 w-4" /> All requirements confirmed
+                </div>
+              )}
             </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => onMessage(client)} className="p-1.5 hover:bg-emerald-50 rounded-lg transition-colors" title="Message">
-              <MessageCircle className="h-4 w-4 text-emerald-600" />
-            </button>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-              client.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
-              client.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-              client.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-              'bg-gray-100 text-gray-600'
-            }`}>
-              {client.status}
-            </span>
           </div>
         </div>
+      )}
+    </div>
+  );
+};
 
-        {/* Package info */}
-        <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">Package</span>
-            <span className="text-xs font-medium text-gray-900 text-right max-w-[60%] truncate">{client.packageName}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">Type</span>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-              client.packageType === 'hajj' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-            }`}>
-              {client.packageType === 'hajj' ? 'Hajj' : 'Umrah'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500 flex items-center gap-1"><Calendar className="h-3 w-3" />Departure</span>
-            <span className="text-xs font-medium text-gray-900">{travelDate}</span>
-          </div>
-          {client.duration && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500 flex items-center gap-1"><Clock className="h-3 w-3" />Duration</span>
-              <span className="text-xs font-medium text-gray-900">{client.duration} days</span>
-            </div>
-          )}
-          {client.amountPaid > 0 && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500 flex items-center gap-1"><CreditCard className="h-3 w-3" />Paid</span>
-              <span className="text-xs font-semibold text-emerald-700">{client.currency} {Number(client.amountPaid).toLocaleString()}</span>
-            </div>
-          )}
+// ── Package group with clients list ───────────────────────────────────────────
+const PackageGroup = ({ packageName, packageType, departure, duration, clients, onMessage, onManifest }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const confirmedCount = clients.filter(c => c.status === 'confirmed').length;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* Package header */}
+      <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
+          <Package className="h-5 w-5 text-white" />
         </div>
-      </div>
-
-      {/* Requirements section */}
-      <div className="border-t border-gray-100">
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors text-left"
-        >
-          <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
-            <Shield className="h-3.5 w-3.5 text-blue-500" />
-            Preparation Requirements
-          </span>
-          <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-        </button>
-        {expanded && (
-          <div className="px-5 pb-4 space-y-2">
-            {reqs.map(r => (
-              <div key={r.key} className="flex items-center gap-2.5">
-                <div className="w-4 h-4 rounded border-2 border-gray-300 flex-shrink-0" />
-                <span className="text-xs text-gray-600">{r.label}</span>
-              </div>
-            ))}
-            {client.notes && (
-              <div className="mt-3 p-2.5 bg-amber-50 rounded-lg border border-amber-100">
-                <p className="text-xs text-amber-800 font-medium mb-0.5">Client notes</p>
-                <p className="text-xs text-amber-700">{client.notes}</p>
-              </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-gray-900 truncate">{packageName}</h3>
+          <div className="flex items-center gap-3 mt-0.5">
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              packageType === 'hajj' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+            }`}>{packageType === 'hajj' ? 'Hajj' : 'Umrah'}</span>
+            {departure && (
+              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                {new Date(departure).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+              </span>
+            )}
+            {duration && (
+              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                <Clock className="h-3 w-3" />{duration} days
+              </span>
             )}
           </div>
-        )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-xs text-gray-500 font-medium">{confirmedCount}/{clients.length} confirmed</span>
+          <button
+            onClick={() => onManifest(packageName, packageType, departure, duration, clients)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <FileText className="h-3.5 w-3.5" /> Manifest
+          </button>
+          <button onClick={() => setCollapsed(v => !v)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
       </div>
 
-      <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
-        <button onClick={() => onView(client)} className="text-xs font-medium text-emerald-600 hover:text-emerald-700">
-          View Full Details →
-        </button>
+      {/* Clients list */}
+      {!collapsed && (
+        <div>
+          {clients.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-6">No clients for this package yet</p>
+          ) : (
+            clients.map(client => (
+              <ClientRow key={client.bookingId} client={client} onMessage={onMessage} />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Manifest modal ────────────────────────────────────────────────────────────
+// Brand tokens — UmraMarket (emerald & gold)
+const UM_BRAND = {
+  emerald900: '#064E3B',
+  emerald700: '#0B6B4F',
+  gold: '#C9A227',
+  goldSoft: '#E6CB6B',
+  cream: '#FAF7EF',
+  creamDeep: '#F3EFE0',
+  parchment: '#EFEBDD',
+  ink: '#1C1B17',
+  inkSoft: '#6B6456',
+};
+
+const ManifestModal = ({ manifest, agent, onClose }) => {
+  const [downloading, setDownloading] = useState(false);
+  if (!manifest) return null;
+  const { packageName, packageType, departure, duration, clients } = manifest;
+
+  const generatedAt = new Date();
+  const docRef = `UM-${packageType === 'hajj' ? 'HJ' : 'UM'}-${generatedAt.getFullYear()}${String(generatedAt.getMonth() + 1).padStart(2, '0')}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
+  const confirmedCount = clients.filter(c => c.status === 'confirmed').length;
+  const pendingCount = clients.filter(c => c.status === 'pending').length;
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  const fmtMoney = (c) => c.amountUsd != null
+    ? `$${Number(c.amountUsd).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    : c.fxRateUsed
+      ? `$${(Number(c.amountPaid) / Number(c.fxRateUsed)).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+      : `${c.currency || 'KES'} ${Number(c.amountPaid || 0).toLocaleString()}`;
+
+  const handlePrint = () => window.print();
+
+  // Builds a true vector PDF (not a screenshot) so text stays crisp and searchable.
+  const handleDownloadPDF = async () => {
+    setDownloading(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+
+      const E = [6, 78, 59];     // emerald900
+      const EL = [11, 107, 79];  // emerald700
+      const G = [201, 162, 39];  // gold
+      const CR = [250, 247, 239]; // cream
+      const INK = [28, 27, 23];
+      const INKS = [107, 100, 86];
+
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const margin = 40;
+      const contentW = pageW - margin * 2;
+
+      // Load the real UmraMarket logo as a base64 image so it can be embedded
+      // as an actual image in the PDF (not a drawn placeholder).
+      const loadLogo = () => new Promise((resolve) => {
+        try {
+          const imgEl = new window.Image();
+          imgEl.crossOrigin = 'anonymous';
+          imgEl.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = imgEl.naturalWidth || 256;
+              canvas.height = imgEl.naturalHeight || 256;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(imgEl, 0, 0);
+              resolve({ dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height });
+            } catch {
+              resolve(null); // canvas tainted (CORS) — fall back to text mark
+            }
+          };
+          imgEl.onerror = () => resolve(null);
+          imgEl.src = umLogo;
+        } catch {
+          resolve(null);
+        }
+      });
+      const logo = await loadLogo();
+
+      // ── Header band ── (taller, to give the logo real visible size)
+      const headerH = 108;
+      doc.setFillColor(...E);
+      doc.rect(0, 0, pageW, headerH, 'F');
+      doc.setFillColor(...G);
+      doc.rect(0, headerH, pageW, 3, 'F');
+
+      const logoBox = 56;
+      const logoY = (headerH - logoBox) / 2;
+      if (logo) {
+        // Fit logo into a 56x56 box, preserving aspect ratio — large and clearly visible
+        const ratio = Math.min(logoBox / logo.w, logoBox / logo.h);
+        const w = logo.w * ratio, h = logo.h * ratio;
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(margin, logoY, logoBox, logoBox, 8, 8, 'F');
+        doc.addImage(logo.dataUrl, 'PNG', margin + (logoBox - w) / 2, logoY + (logoBox - h) / 2, w, h);
+      } else {
+        // Fallback mark if the logo can't be loaded
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(margin, logoY, logoBox, logoBox, 8, 8, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(26);
+        doc.setTextColor(...E);
+        doc.text('U', margin + logoBox / 2, logoY + logoBox / 2 + 9, { align: 'center' });
+      }
+
+      const textX = margin + logoBox + 16;
+      doc.setFont('times', 'bold');
+      doc.setFontSize(24);
+      doc.setTextColor(255, 255, 255);
+      doc.text('UmraMarket', textX, logoY + 24);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...G);
+      doc.text('O F F I C I A L   T R A V E L   M A N I F E S T', textX, logoY + 42);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(packageType === 'hajj' ? 'HAJJ PACKAGE' : 'UMRAH PACKAGE', pageW - margin, logoY + 14, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...G);
+      doc.text(`Ref: ${docRef}`, pageW - margin, logoY + 28, { align: 'right' });
+      doc.text(`Issued: ${fmtDate(generatedAt)}`, pageW - margin, logoY + 40, { align: 'right' });
+
+      let y = headerH + 26;
+      doc.setFont('times', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(...INK);
+      doc.text(packageName, margin, y);
+      y += 16;
+
+      // ── One merged summary block: agent + package facts together ──
+      // 3 columns x 4 rows, compact, all in a single box (no separate sections).
+      const summaryRows = [
+        ['Agency', agent?.agencyName, 'Agent', agent?.name, 'Agent ID', agent?.agentNumber],
+        ['Type', packageType === 'hajj' ? 'Hajj' : 'Umrah', 'Departure', fmtDate(departure), 'Duration', duration ? `${duration} days` : null],
+        ['Total Pax', String(clients.length), 'Confirmed', String(confirmedCount), 'Pending', String(pendingCount)],
+        ['Email', agent?.email, 'Phone', agent?.phone, 'License', agent?.licenseNumber],
+      ];
+      const SUM_ROW_H = 18;
+      const summaryH = 12 + summaryRows.length * SUM_ROW_H + 6;
+      doc.setFillColor(...CR);
+      doc.roundedRect(margin, y, contentW, summaryH, 5, 5, 'F');
+      const colW3 = contentW / 3;
+      const maxValW3 = colW3 - 26;
+      let ry = y + 16;
+      summaryRows.forEach(([l1, v1, l2, v2, l3, v3]) => {
+        [[l1, v1, 0], [l2, v2, 1], [l3, v3, 2]].forEach(([label, val, idx]) => {
+          const cx = margin + 14 + colW3 * idx;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7);
+          doc.setTextColor(...INKS);
+          doc.text(label.toUpperCase(), cx, ry);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9.5);
+          doc.setTextColor(...INK);
+          doc.text(doc.splitTextToSize(String(val || '—'), maxValW3)[0], cx, ry + 11);
+        });
+        ry += SUM_ROW_H;
+      });
+      y += summaryH + 18;
+
+      doc.setFillColor(...G);
+      doc.rect(margin, y - 9, 3, 11, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...E);
+      doc.text(`PASSENGER LIST  ·  ${clients.length} TOTAL`, margin + 9, y);
+      y += 10;
+
+      // Compact, single-line-per-passenger table sized to fit ~15 rows on
+      // one A4 page (header band + summary block leave roughly 560-600pt for
+      // the table; ~22pt per row at this padding/font comfortably fits 15+).
+      const colWidths = {
+        0: contentW * 0.06,  // #
+        1: contentW * 0.28,  // Passenger
+        2: contentW * 0.34,  // Contact
+        3: contentW * 0.18,  // Paid
+        4: contentW * 0.14,  // Status
+      };
+
+      autoTable(doc, {
+        startY: y,
+        margin: { top: 40, left: margin, right: margin, bottom: 50 },
+        tableWidth: contentW,
+        head: [['#', 'Passenger', 'Contact', 'Paid', 'Status']],
+        body: clients.map((c, i) => [
+          String(i + 1).padStart(2, '0'),
+          `${c.name}${c.passportVerified ? '  ✓' : '  !'}`,
+          `${c.email}${c.phone && c.phone !== '—' ? '  ·  ' + c.phone : ''}`,
+          fmtMoney(c),
+          c.status,
+        ]),
+        styles: { font: 'helvetica', fontSize: 8.3, textColor: INK, cellPadding: { top: 5, bottom: 5, left: 6, right: 6 }, lineColor: [228, 222, 204], lineWidth: 0.5, valign: 'middle', overflow: 'ellipsize' },
+        headStyles: { fillColor: E, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.3, valign: 'middle' },
+        alternateRowStyles: { fillColor: CR },
+        columnStyles: {
+          0: { cellWidth: colWidths[0] },
+          1: { cellWidth: colWidths[1] },
+          2: { cellWidth: colWidths[2] },
+          3: { cellWidth: colWidths[3] },
+          4: { cellWidth: colWidths[4] },
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 1) {
+            const verified = String(data.cell.raw).includes('✓');
+            data.cell.text = [String(data.cell.raw).replace(/  [✓!]$/, '')];
+            data.cell.styles.fontStyle = 'bold';
+            if (verified) data.cell.styles.textColor = INK;
+          }
+          if (data.section === 'body' && data.column.index === 4) {
+            const status = data.cell.raw;
+            if (status === 'confirmed') data.cell.styles.textColor = EL;
+            else if (status === 'pending') data.cell.styles.textColor = G;
+            else if (status === 'cancelled') data.cell.styles.textColor = [185, 28, 28];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        },
+        didDrawPage: (data) => {
+          const pageHeight = doc.internal.pageSize.getHeight();
+          if (data.pageNumber > 1) {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.setTextColor(...E);
+            doc.text(`UmraMarket — ${packageName} (continued)`, margin, 28);
+          }
+          doc.setDrawColor(...G);
+          doc.setLineWidth(0.75);
+          doc.line(margin, pageHeight - 40, pageW - margin, pageHeight - 40);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(...INKS);
+          doc.text(`Generated by UmraMarket  ·  ${generatedAt.toLocaleString('en-GB')}`, margin, pageHeight - 26);
+          doc.text(`Doc Ref: ${docRef}`, margin, pageHeight - 16);
+          doc.text(`Page ${data.pageNumber}`, pageW - margin, pageHeight - 26, { align: 'right' });
+          doc.text('System-generated · valid for official travel documentation', pageW - margin, pageHeight - 16, { align: 'right' });
+        },
+      });
+
+      doc.save(`Manifest-${packageName.replace(/\s+/g, '-')}-${generatedAt.toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('[ManifestModal] PDF generation failed:', err);
+      alert('Could not generate the PDF. Make sure "jspdf" and "jspdf-autotable" are installed (npm install jspdf jspdf-autotable).');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
+        {/* App toolbar — screen only, not part of the document */}
+        <div className="flex items-center justify-between px-6 py-3.5 flex-shrink-0 print:hidden" style={{ backgroundColor: UM_BRAND.ink }}>
+          <div>
+            <p className="text-sm font-semibold text-white">Travel Manifest Preview</p>
+            <p className="text-[11px] text-white/40 mt-0.5">{packageName}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handlePrint} className="flex items-center gap-1.5 px-3 py-2 bg-white/10 text-white text-xs font-semibold rounded-lg hover:bg-white/20 transition-colors">
+              <Printer className="h-3.5 w-3.5" /> Print
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              disabled={downloading}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg shadow-md hover:shadow-lg hover:brightness-105 transition-all disabled:opacity-60"
+              style={{ background: `linear-gradient(135deg, ${UM_BRAND.gold}, ${UM_BRAND.goldSoft})`, color: UM_BRAND.ink }}
+            >
+              {downloading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {downloading ? 'Preparing…' : 'Download PDF'}
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+              <X className="h-5 w-5 text-white/70" />
+            </button>
+          </div>
+        </div>
+
+        {/* Document */}
+        <div className="flex-1 overflow-y-auto print:overflow-visible" style={{ backgroundColor: UM_BRAND.parchment }}>
+          <div className="mx-auto my-5 max-w-[760px] rounded-lg shadow-sm overflow-hidden print:my-0 print:shadow-none print:rounded-none" style={{ backgroundColor: UM_BRAND.cream }}>
+
+            {/* Header band */}
+            <div className="relative px-7 pt-6 pb-5" style={{ background: `linear-gradient(120deg, ${UM_BRAND.emerald900}, ${UM_BRAND.emerald700})` }}>
+              <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: `linear-gradient(90deg, ${UM_BRAND.gold}, ${UM_BRAND.goldSoft}, ${UM_BRAND.gold})` }} />
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-16 h-16 rounded-xl bg-white flex items-center justify-center flex-shrink-0 overflow-hidden p-1 shadow-md">
+                    <img src={umLogo} alt="UmraMarket" className="w-full h-full object-contain" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-2xl font-bold text-white tracking-tight truncate" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>UmraMarket</h2>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] mt-0.5" style={{ color: UM_BRAND.goldSoft }}>Official Travel Manifest</p>
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <span
+                    className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-full"
+                    style={packageType === 'hajj' ? { backgroundColor: UM_BRAND.gold, color: UM_BRAND.ink } : { backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
+                  >
+                    {packageType === 'hajj' ? 'HAJJ PACKAGE' : 'UMRAH PACKAGE'}
+                  </span>
+                  <p className="text-[10px] text-white/55 mt-1.5">Ref: {docRef}</p>
+                  <p className="text-[10px] text-white/55">Issued {fmtDate(generatedAt)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Ticket-stub divider */}
+            <div className="border-t-2 border-dashed" style={{ borderColor: `${UM_BRAND.gold}4d` }} />
+
+            {/* Single merged summary strip: package name + agent + package facts, all in one compact section */}
+            <div className="px-7 pt-5 pb-4" style={{ backgroundColor: UM_BRAND.creamDeep, borderBottom: `1px solid ${UM_BRAND.emerald900}1a` }}>
+              <h3 className="text-base font-bold mb-3" style={{ color: UM_BRAND.ink, fontFamily: 'Georgia, serif' }}>{packageName}</h3>
+              <div className="bg-white rounded-lg px-5 py-3.5 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3.5" style={{ border: `1px solid ${UM_BRAND.emerald900}1a` }}>
+                {[
+                  ['Agency', agent?.agencyName || '—'],
+                  ['Agent', agent?.name || '—'],
+                  ['Type', packageType === 'hajj' ? 'Hajj' : 'Umrah'],
+                  ['Departure', fmtDate(departure)],
+                  ['Duration', duration ? `${duration} days` : '—'],
+                  ['Total Pax', String(clients.length)],
+                  ['Confirmed', String(confirmedCount)],
+                  ['Pending', String(pendingCount)],
+                  ['Agent ID', agent?.agentNumber || '—'],
+                  ['License', agent?.licenseNumber || '—'],
+                  ['Email', agent?.email || '—'],
+                  ['Phone', agent?.phone || '—'],
+                ].map(([l, v]) => (
+                  <div key={l} className="min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color: UM_BRAND.inkSoft }}>{l}</p>
+                    <p className="text-[12px] font-semibold mt-0.5 truncate" style={{ color: UM_BRAND.ink }}>{v}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-7 py-4">
+              {/* Passenger table */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-[3px] h-3.5 rounded-full" style={{ backgroundColor: UM_BRAND.gold }} />
+                    <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: UM_BRAND.emerald900 }}>Passenger List</p>
+                  </div>
+                  <span className="text-[10px] font-medium" style={{ color: UM_BRAND.inkSoft }}>{clients.length} total</span>
+                </div>
+                <div className="overflow-x-auto rounded-lg" style={{ border: `1px solid ${UM_BRAND.emerald900}1a` }}>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr style={{ backgroundColor: UM_BRAND.emerald900 }}>
+                        {['#', 'Passenger', 'Contact', 'Paid', 'Status'].map(h => (
+                          <th key={h} className="px-3 py-2 text-left font-semibold text-white whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clients.length === 0 ? (
+                        <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">No passengers on this manifest yet</td></tr>
+                      ) : clients.map((c, i) => (
+                        <tr key={c.bookingId} style={{ backgroundColor: i % 2 ? UM_BRAND.cream : '#fff' }}>
+                          <td className="px-3 py-1.5 font-mono" style={{ color: UM_BRAND.inkSoft }}>{String(i + 1).padStart(2, '0')}</td>
+                          <td className="px-3 py-1.5">
+                            <span className="font-semibold" style={{ color: UM_BRAND.ink }}>{c.name}</span>
+                            {' '}
+                            {c.passportVerified
+                              ? <CheckCircle className="inline h-3 w-3 -mt-0.5" style={{ color: UM_BRAND.emerald700 }} />
+                              : <AlertCircle className="inline h-3 w-3 -mt-0.5" style={{ color: UM_BRAND.gold }} />}
+                          </td>
+                          <td className="px-3 py-1.5 whitespace-nowrap" style={{ color: UM_BRAND.inkSoft }}>
+                            {c.email}{c.phone && c.phone !== '—' ? ` · ${c.phone}` : ''}
+                          </td>
+                          <td className="px-3 py-1.5 font-semibold whitespace-nowrap" style={{ color: UM_BRAND.ink }}>{fmtMoney(c)}</td>
+                          <td className="px-3 py-1.5">
+                            <span
+                              className="px-2 py-0.5 rounded-full font-semibold text-[10px] whitespace-nowrap"
+                              style={
+                                c.status === 'confirmed' ? { backgroundColor: `${UM_BRAND.emerald700}1a`, color: UM_BRAND.emerald700 } :
+                                c.status === 'pending'   ? { backgroundColor: `${UM_BRAND.gold}26`, color: '#9C7E1A' } :
+                                c.status === 'cancelled' ? { backgroundColor: '#fee2e2', color: '#b91c1c' } :
+                                { backgroundColor: '#f3f4f6', color: '#4b5563' }
+                              }
+                            >{c.status}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-7 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1" style={{ borderTop: `2px solid ${UM_BRAND.gold}66`, backgroundColor: UM_BRAND.creamDeep }}>
+              <p className="text-[10px]" style={{ color: UM_BRAND.inkSoft }}>Generated by UmraMarket · {generatedAt.toLocaleString('en-GB')}</p>
+              <p className="text-[10px]" style={{ color: UM_BRAND.inkSoft }}>System-generated · valid for official travel documentation</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -584,10 +1078,9 @@ const AgentDashboard = ({ user, onLogout }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL || ''}/api/auth/me`,
-          { credentials: 'include' }
-        );
+        const API = import.meta.env.VITE_API_URL || '';
+        // API already includes "/api" – do NOT add another "/api"
+        const res = await fetch(`${API}/auth/me`, { credentials: 'include' });
         if (!res.ok) throw new Error('Failed to fetch profile');
         const json = await res.json();
         if (json.success && json.data?.user) setAgentProfile(json.data.user);
@@ -611,6 +1104,7 @@ const AgentDashboard = ({ user, onLogout }) => {
   // ── Clients ─────────────────────────────────────────────────────────────────
   const [clientSearch, setClientSearch] = useState('');
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
+  const [manifest, setManifest] = useState(null); // { packageName, packageType, departure, duration, clients }
   const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients();
 
   // ── Conversations / unread count ─────────────────────────────────────────────
@@ -671,6 +1165,7 @@ const AgentDashboard = ({ user, onLogout }) => {
     { id: 'analytics', icon: BarChart3,     label: 'Analytics' },
     { id: 'documents', icon: FileText,      label: 'Documents' },
     { id: 'messages',  icon: MessageCircle, label: 'Messages', count: unreadCount || null },
+    { id: 'accounting', icon: DollarSign,   label: 'Accounting' }, // <-- NEW
     { id: 'settings',  icon: Settings,      label: 'Settings' },
   ];
 
@@ -1127,6 +1622,7 @@ const AgentDashboard = ({ user, onLogout }) => {
           )}
 
           {activeTab === 'clients' && (() => {
+            // Group clients by package
             const filteredClients = clients.filter(c => {
               const matchSearch = !clientSearch ||
                 c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
@@ -1136,23 +1632,33 @@ const AgentDashboard = ({ user, onLogout }) => {
               return matchSearch && matchStatus;
             });
 
+            // Group by packageName
+            const grouped = filteredClients.reduce((acc, c) => {
+              const key = c.packageName || 'Unknown Package';
+              if (!acc[key]) acc[key] = { packageName: key, packageType: c.packageType, departure: c.availableFrom, duration: c.duration, clients: [] };
+              acc[key].clients.push(c);
+              return acc;
+            }, {});
+            const packageGroups = Object.values(grouped);
+
             return (
               <div className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* Header */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <h2 className="text-xl md:text-2xl font-bold text-gray-900">Client Management</h2>
                     {!clientsLoading && (
                       <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">
-                        {clients.length} client{clients.length !== 1 ? 's' : ''}
+                        {clients.length} client{clients.length !== 1 ? 's' : ''} · {packageGroups.length} package{packageGroups.length !== 1 ? 's' : ''}
                       </span>
                     )}
                   </div>
                   <button onClick={refetchClients} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600">
-                    <RefreshCw className="h-4 w-4" />
-                    Refresh
+                    <RefreshCw className="h-4 w-4" /> Refresh
                   </button>
                 </div>
 
+                {/* Filters */}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="relative flex-1 min-w-[180px] max-w-xs">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -1177,6 +1683,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                   </select>
                 </div>
 
+                {/* States */}
                 {clientsLoading ? (
                   <div className="flex items-center justify-center py-20">
                     <Loader className="h-8 w-8 animate-spin text-emerald-500" />
@@ -1186,11 +1693,9 @@ const AgentDashboard = ({ user, onLogout }) => {
                     <AlertCircle className="h-10 w-10 text-red-400 mb-3" />
                     <p className="text-sm font-medium text-gray-700">Failed to load clients</p>
                     <p className="text-xs text-gray-500 mt-1">{clientsError}</p>
-                    <button onClick={refetchClients} className="mt-4 px-4 py-2 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors">
-                      Retry
-                    </button>
+                    <button onClick={refetchClients} className="mt-4 px-4 py-2 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600">Retry</button>
                   </div>
-                ) : filteredClients.length === 0 ? (
+                ) : packageGroups.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center">
                     <Users className="h-12 w-12 text-gray-200 mb-3" />
                     <p className="text-sm font-medium text-gray-600">
@@ -1201,16 +1706,34 @@ const AgentDashboard = ({ user, onLogout }) => {
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredClients.map(client => (
-                      <ClientCard
-                        key={client.bookingId}
-                        client={client}
-                        onView={handleViewClient}
+                  <div className="space-y-5">
+                    {packageGroups.map(group => (
+                      <PackageGroup
+                        key={group.packageName}
+                        {...group}
                         onMessage={handleMessageClient}
+                        onManifest={(packageName, packageType, departure, duration, clients) =>
+                          setManifest({ packageName, packageType, departure, duration, clients })
+                        }
                       />
                     ))}
                   </div>
+                )}
+
+                {/* Manifest modal */}
+                {manifest && (
+                  <ManifestModal
+                    manifest={manifest}
+                    agent={{
+                      name: displayName,
+                      agencyName: profile?.agencyName,
+                      agentNumber: displayAgent,
+                      email: displayEmail,
+                      phone: profile?.phone,
+                      licenseNumber: profile?.licenseNumber,
+                    }}
+                    onClose={() => setManifest(null)}
+                  />
                 )}
               </div>
             );
@@ -1266,6 +1789,9 @@ const AgentDashboard = ({ user, onLogout }) => {
           {activeTab === 'messages' && (
             <AgentMessagesTab user={user} />
           )}
+
+          {/* NEW: Accounting Tab */}
+          {activeTab === 'accounting' && <AgentAccountingTab />}
 
           {activeTab === 'settings' && (
             <div className="space-y-6">

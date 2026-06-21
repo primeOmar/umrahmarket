@@ -11,7 +11,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { userStore, tokenStore } from '../api';
 import { getItinerary } from './agent/packages/services/packagesApi';
 import AuthModal from './AuthModal';
-import BookingModal from './BookingModal';
+import BookingFlow from './BookingFlow';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GalleryCarousel
@@ -1128,7 +1128,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
       {/* ── Auth gate — shown when guest clicks "Book Now" ── */}
       {/* ── BookingModal — used when standalone (no onBook prop from parent) ── */}
       {bookingPkg && (
-        <BookingModal
+        <BookingFlow
           pkg={bookingPkg}
           user={currentUser || userStore.get()}
           onClose={() => setBookingPkg(null)}

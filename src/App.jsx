@@ -14,6 +14,7 @@ import { refreshToken, userStore, tokenStore } from './api';
 import PaymentCallback from './pages/PaymentCallback';
 import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
 import SuperAdminRegister from './components/SuperAdminRegister';
+import GuidancePage from './components/GuidancePage';
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
@@ -236,6 +237,7 @@ function App() {
               <ClientDashboard user={currentUser} onLogout={handleLogout} packages={packages} />
             </ProtectedClientRoute>
           } />
+          <Route path="/guidance" element={<GuidancePage />} />
 
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
           <Route path="/auth/google/done"     element={<GoogleDone />} />

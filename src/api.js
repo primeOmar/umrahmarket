@@ -66,15 +66,30 @@ const handleSessionExpired = () => {
 // ─── Axios instance ───────────────────────────────────────────────────────────
 const api = axios.create({
   baseURL: BASE_API,
-  headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
 });
 
-// ── Request interceptor: attach bearer token ──────────────────────────────────
+// ── Request interceptor: attach bearer token and manage headers ─────────────
 api.interceptors.request.use((cfg) => {
   const t = tokenStore.get();
-  if (t) cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${t}` };
-  if (import.meta.env.DEV) console.debug('[API]', cfg.method?.toUpperCase(), cfg.url);
+  const headers = { ...(cfg.headers || {}) };
+
+  if (t) headers.Authorization = `Bearer ${t}`;
+
+  if (cfg.data instanceof FormData) {
+    // Let Axios set the multipart boundary header.
+    delete headers['Content-Type'];
+    delete headers['content-type'];
+    if (headers.common) {
+      delete headers.common['Content-Type'];
+      delete headers.common['content-type'];
+    }
+  } else if (cfg.data != null && typeof cfg.data === 'object') {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  cfg.headers = headers;
+  if (import.meta.env.DEV) console.debug('[API]', cfg.method?.toUpperCase(), cfg.url, cfg.headers);
   return cfg;
 });
 
@@ -154,6 +169,9 @@ export const request = async (config) => {
       'Request failed';
     const e = new Error(serverMsg);
     e.response = err.response;
+    e.status   = err.response?.status;
+    e.data     = err.response?.data;
+    e.config   = err.config;
     e.original = err;
     throw e;
   }
@@ -247,12 +265,46 @@ export const uploadAgentDocuments = (files, agentId) => {
     method: 'post',
     url: '/documents',
     data: form,
-    headers: { 'Content-Type': 'multipart/form-data' },
   });
 };
+
+// ─── Passport verification ──────────────────────────────────────────────────
+// Step 1: validate typed details + 6-month rule (no image, server-authoritative)
+export const checkPassport = ({ packageId, passportExpiry }) =>
+  request({
+    method: 'post',
+    url: '/passport/check',
+    data: { packageId, passportExpiry },
+  }).then((r) => r.data);
+
+// Step 2: OCR the photo and confirm it matches the typed details.
+// `details` = { packageId, passportNumber, passportCountry, passportExpiry,
+//               surname, givenNames, dateOfBirth, nationality }
+// `file` = a File/Blob of the passport photo.
+export const verifyPassportImage = (details, file) => {
+  const form = new FormData();
+  Object.entries(details).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') form.append(k, v);
+  });
+  form.append('passport', file, file.name || 'passport.jpg');
+  return request({
+    method: 'post',
+    url: '/passport/verify-image',
+    data: form,
+  }).then((r) => r.data);
+};
+
+// Latest verification status for a (user, package).
+export const getPassportStatus = (packageId) =>
+  request({
+    method: 'get',
+    url: '/passport/status',
+    params: { packageId },
+  }).then((r) => r.data);
 
 export default {
   registerClient, registerAgent, login, googleLogin,
   logout, refreshToken, getMe, requestPasswordReset,
   uploadAgentDocuments, tokenStore, userStore,
+  checkPassport, verifyPassportImage, getPassportStatus,
 };

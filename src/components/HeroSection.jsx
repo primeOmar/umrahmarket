@@ -94,8 +94,16 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   const [rating,              setRating]              = useState('any');
   const [activeFilterGroup,   setActiveFilterGroup]   = useState(null);
 
-  const filterRef    = useRef(null);
-  const dropdownRefs = useRef({});
+  const filterRef          = useRef(null);
+  const dropdownRefs       = useRef({});
+  const groupBtnRefs       = useRef({});
+  const advancedFilterBtnRef = useRef(null);
+
+  // Viewport-relative coordinates for the two flyout panels below. Computed
+  // imperatively (not via CSS `absolute`) so they always render above the
+  // page and are never clipped by the horizontally-scrolling filter bar.
+  const [groupDropdownPos, setGroupDropdownPos] = useState({ top: 0, left: 0 });
+  const [filtersPanelPos,  setFiltersPanelPos]  = useState({ top: 0, left: 0, width: 288 });
 
   // ── Scroll ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -115,7 +123,53 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ── Filter logic ────────────────────────────────────────────────────────────
+  // ── Position the filter-group flyout (Type / Locations / Categories / Months) ──
+  // Uses `position: fixed` + coordinates from getBoundingClientRect so the
+  // panel escapes the `overflow-x-auto` filter bar instead of being clipped
+  // or sandwiched behind the package grid.
+  useEffect(() => {
+    if (!activeFilterGroup) return;
+    const PANEL_WIDTH = 208; // matches w-52
+    const update = () => {
+      const btn = groupBtnRefs.current[activeFilterGroup];
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      setGroupDropdownPos({
+        top:  rect.bottom + 6,
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - PANEL_WIDTH - 8)),
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [activeFilterGroup]);
+
+  // ── Position the "Filters" advanced panel (desktop only — mobile uses the bottom sheet) ──
+  useEffect(() => {
+    if (!showFilters) return;
+    const update = () => {
+      const btn = advancedFilterBtnRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const width = Math.min(320, window.innerWidth - 16);
+      const left  = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+      const top   = Math.min(rect.bottom + 8, window.innerHeight - 60);
+      setFiltersPanelPos({ top, left, width });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [showFilters]);
+
+
   useEffect(() => {
     if (!packages.length) { setFilteredPackages([]); return; }
     setFilterLoading(true);
@@ -327,7 +381,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
               <div key={group.id} className="relative flex-shrink-0">
                 <button
                   onClick={() => setActiveFilterGroup(activeFilterGroup === group.id ? null : group.id)}
-                  data-group={group.id}
+                  ref={el => { groupBtnRefs.current[group.id] = el; }}
                   className={`filter-group-button flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
                     isFilterSelected(group.id, group.options[0]?.id) || group.options.some(o => isFilterSelected(group.id, o.id) && o.id !== 'all' && o.id !== 'all_months')
                       ? 'bg-emerald-600 text-white border-emerald-600'
@@ -345,14 +399,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                   <div
                     ref={el => dropdownRefs.current[group.id] = el}
                     className="fixed bg-white rounded-xl shadow-2xl border border-gray-100 z-[9999] w-52"
-                    style={(() => {
-                      const btn = document.querySelector(`[data-group="${group.id}"]`);
-                      if (btn) {
-                        const rect = btn.getBoundingClientRect();
-                        return { top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - 216)) };
-                      }
-                      return { top: 120, left: 12 };
-                    })()}
+                    style={{ top: groupDropdownPos.top, left: groupDropdownPos.left }}
                   >
                     <div className="overflow-y-auto p-1.5 space-y-0.5" style={{ maxHeight: '260px' }}>
                       {group.options.map((option) => (
@@ -380,6 +427,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
             {/* Advanced filters button */}
             <div className="relative flex-shrink-0" ref={filterRef}>
               <button
+                ref={advancedFilterBtnRef}
                 onClick={() => { setShowFilters(!showFilters); setActiveFilterGroup(null); }}
                 className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
                   showFilters || getActiveFilterCount() > 0
@@ -396,7 +444,10 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                 )}
               </button>
               {showFilters && (
-                <div className="hidden sm:block absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 z-[9999]">
+                <div
+                  className="hidden sm:block fixed bg-white rounded-xl shadow-2xl border border-gray-100 z-[9999] max-h-[80vh] overflow-y-auto"
+                  style={{ top: filtersPanelPos.top, left: filtersPanelPos.left, width: filtersPanelPos.width }}
+                >
                   <AdvancedFilterContent />
                 </div>
               )}

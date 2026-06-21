@@ -17,9 +17,10 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { userStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
-import BookingModal from './BookingModal';
+import BookingFlow from './BookingFlow';
 import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
+import { useFxRate } from '../hooks/useFxRate';
 
 // ==================== TOAST NOTIFICATION SYSTEM ====================
 const Toast = ({ message, type, onClose }) => {
@@ -258,11 +259,18 @@ const BookingCard = ({ booking, darkMode, onView }) => {
   const hotelRating = pkg.makkah_hotel_rating ? `${pkg.makkah_hotel_rating}★ Hotel` : '—';
   const distance = pkg.makkah_hotel_distance ?? 'Makkah & Madinah';
 
-  // amount_paid is KES; show with currency
+  // amount_paid is KES — source of truth for what was actually charged.
+  // payment.amount_usd / fx_rate_used (when present) give the USD equivalent
+  // the client saw at checkout.
   const currency = booking.currency ?? 'KES';
   const totalDisplay = booking.amount_paid
     ? `${currency} ${Number(booking.amount_paid).toLocaleString()}`
     : '—';
+  const usdEquivalent = booking.payment?.amount_usd != null
+    ? Number(booking.payment.amount_usd)
+    : (booking.payment?.fx_rate_used && booking.amount_paid)
+      ? Number(booking.amount_paid) / Number(booking.payment.fx_rate_used)
+      : null;
 
   const dateDisplay = booking.confirmed_at
     ? new Date(booking.confirmed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -323,6 +331,11 @@ const BookingCard = ({ booking, darkMode, onView }) => {
           <div>
             <p className="text-xs text-gray-500 mb-1">Total Paid</p>
             <p className="text-lg font-bold text-emerald-600">{totalDisplay}</p>
+            {usdEquivalent != null && (
+              <p className="text-[11px] text-gray-400">
+                ≈ ${usdEquivalent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              </p>
+            )}
           </div>
           {booking.payment?.result_code && (
             <p className="text-xs text-gray-400 font-mono">#{booking.payment.result_code}</p>
@@ -375,6 +388,10 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
   const imageUrl = pkg.image || (pkg.image_urls?.[0]) ||
     'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
 
+  // Package prices are stored in USD; show live KES conversion as the
+  // headline figure since that's what clients in Kenya actually pay.
+  const { fmtKes, loading: fxLoading } = useFxRate();
+
   return (
     <div className="group cursor-pointer" onClick={() => onView(pkg)}>
       {/* Image block */}
@@ -392,10 +409,11 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
         <div className="absolute bottom-2 left-2">
           <div className="flex items-baseline gap-1">
             <span className="text-sm sm:text-base font-bold text-white leading-none">
-              ${(pkg.price || 0).toLocaleString()}
+              {fxLoading ? `$${(pkg.price || 0).toLocaleString()}` : fmtKes(pkg.price || 0)}
             </span>
             <span className="text-[10px] text-white/75">/ person</span>
           </div>
+          <span className="text-[10px] text-white/65">${(pkg.price || 0).toLocaleString()} USD</span>
           {pkg.originalPrice > pkg.price && (
             <span className="text-[10px] text-white/55 line-through block">
               ${(pkg.originalPrice || 0).toLocaleString()}
@@ -1500,7 +1518,7 @@ const ClientDashboard = ({ user, onLogout }) => {
 
       {/* ── Booking Modal ── */}
       {bookingPkg && (
-        <BookingModal
+        <BookingFlow
           pkg={bookingPkg}
           user={user}
           onClose={() => setBookingPkg(null)}
