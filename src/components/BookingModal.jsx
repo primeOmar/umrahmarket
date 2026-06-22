@@ -670,7 +670,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
                 <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white border-2 border-emerald-200 flex items-center justify-center text-lg">✨</div>
               </div>
               <div>
-                <h3 className="text-2xl font-bold text-gray-900">All done!</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Payment confirmed!</h3>
                 <p className="text-gray-500 mt-1 text-sm">Your Umrah package is booked. A confirmation has been sent to your email.</p>
               </div>
               <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2 text-left">
@@ -680,16 +680,6 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
                     <span className={`font-semibold text-gray-900 ${l === 'Booking ref' ? 'font-mono' : ''}`}>{v}</span>
                   </div>
                 ))}
-              </div>
-              <div className="flex gap-3 w-full pt-1">
-                <button onClick={onClose} className="flex-1 py-3 border-2 border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition">
-                  Close
-                </button>
-                <button onClick={onClose}
-                  className="flex-1 py-3 font-bold text-white rounded-xl transition"
-                  style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
-                  View Bookings
-                </button>
               </div>
             </div>
           )}

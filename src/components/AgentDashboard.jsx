@@ -461,7 +461,7 @@ const HAJJ_REQS = [
 ];
 
 // ── Single client row inside a package group ──────────────────────────────────
-const ClientRow = ({ client, onMessage }) => {
+const ClientRow = ({ client, onMessage, onIdCard }) => {
   const [open, setOpen] = useState(false);
   const [checks, setChecks] = useState({});
   const reqs = client.packageType === 'hajj' ? HAJJ_REQS : UMRAH_REQS;
@@ -550,6 +550,14 @@ const ClientRow = ({ client, onMessage }) => {
                     Expiry: {new Date(client.passportExpiry).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
                   </p>
                 )}
+                {client.passportVerified && (
+                  <button
+                    onClick={() => onIdCard(client)}
+                    className="w-full mt-2.5 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    <CreditCard className="h-3.5 w-3.5" /> View Umrah ID Card
+                  </button>
+                )}
               </div>
 
               {client.notes && (
@@ -598,7 +606,7 @@ const ClientRow = ({ client, onMessage }) => {
 };
 
 // ── Package group with clients list ───────────────────────────────────────────
-const PackageGroup = ({ packageName, packageType, departure, duration, clients, onMessage, onManifest }) => {
+const PackageGroup = ({ packageName, packageType, departure, duration, clients, onMessage, onManifest, onIdCard }) => {
   const [collapsed, setCollapsed] = useState(false);
   const confirmedCount = clients.filter(c => c.status === 'confirmed').length;
 
@@ -649,11 +657,304 @@ const PackageGroup = ({ packageName, packageType, departure, duration, clients, 
             <p className="text-xs text-gray-400 text-center py-6">No clients for this package yet</p>
           ) : (
             clients.map(client => (
-              <ClientRow key={client.bookingId} client={client} onMessage={onMessage} />
+              <ClientRow key={client.bookingId} client={client} onMessage={onMessage} onIdCard={onIdCard} />
             ))
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// ── Umrah ID Card modal ────────────────────────────────────────────────────
+// Agent-facing pilgrim ID: passport details captured during verification +
+// the auto-cropped face photo the backend returns, plus the agency's own
+// contact info so the card is useful if the pilgrim gets lost or needs help
+// on the ground. Preview on screen, downloadable as a wallet/lanyard-sized
+// PDF card.
+const UmrahIdCardModal = ({ client, agent, onClose }) => {
+  const [downloading, setDownloading] = useState(false);
+  if (!client) return null;
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  const cardRef = `UM-ID-${client.bookingId || Date.now().toString(36).toUpperCase()}`;
+
+  const handleDownloadPDF = async () => {
+    setDownloading(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+
+      const E = [6, 78, 59];      // emerald900
+      const G = [201, 162, 39];   // gold
+      const CR = [250, 247, 239]; // cream
+      const INK = [28, 27, 23];
+      const INKS = [107, 100, 86];
+
+      // Standard ID-card size (CR80, like a credit card), landscape.
+      const doc = new jsPDF({ unit: 'pt', format: [243, 153] }); // 3.375in x 2.125in
+      const W = 243, H = 153;
+      const margin = 12;
+
+      // Background
+      doc.setFillColor(...CR);
+      doc.rect(0, 0, W, H, 'F');
+
+      // Header band
+      doc.setFillColor(...E);
+      doc.rect(0, 0, W, 34, 'F');
+      doc.setFillColor(...G);
+      doc.rect(0, 34, W, 2, 'F');
+
+      const loadImg = (src) => new Promise((resolve) => {
+        try {
+          const imgEl = new window.Image();
+          imgEl.crossOrigin = 'anonymous';
+          imgEl.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = imgEl.naturalWidth || 256;
+              canvas.height = imgEl.naturalHeight || 256;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(imgEl, 0, 0);
+              resolve({ dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height });
+            } catch { resolve(null); }
+          };
+          imgEl.onerror = () => resolve(null);
+          imgEl.src = src;
+        } catch { resolve(null); }
+      });
+
+      const [logo, face] = await Promise.all([
+        loadImg(umLogo),
+        client.facePhotoUrl ? loadImg(client.facePhotoUrl) : Promise.resolve(null),
+      ]);
+
+      // Logo, top-left of header
+      if (logo) {
+        const box = 22, ratio = Math.min(box / logo.w, box / logo.h);
+        const w = logo.w * ratio, h = logo.h * ratio;
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(margin, 6, box, box, 4, 4, 'F');
+        doc.addImage(logo.dataUrl, 'PNG', margin + (box - w) / 2, 6 + (box - h) / 2, w, h);
+      }
+      doc.setFont('times', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text('UmraMarket', margin + 28, 17);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...G);
+      doc.text('PILGRIM IDENTIFICATION', margin + 28, 27);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text(client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH', W - margin, 17, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(...G);
+      doc.text(cardRef, W - margin, 27, { align: 'right' });
+
+      // Photo box, left side below header
+      const photoW = 58, photoH = 70, photoX = margin, photoY = 42;
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(photoX, photoY, photoW, photoH, 4, 4, 'F');
+      doc.setDrawColor(...G);
+      doc.setLineWidth(0.75);
+      doc.roundedRect(photoX, photoY, photoW, photoH, 4, 4, 'S');
+      if (face) {
+        // Pre-clip the face image into a canvas matching the photo box size so
+        // the PDF image fits perfectly without overflowing the rounded rect.
+        // Cover-fit + anchor to top so the forehead is never cut off.
+        const SCALE = 3; // render at 3× for print sharpness
+        const boxPxW = photoW * SCALE, boxPxH = photoH * SCALE;
+        const clipped = document.createElement('canvas');
+        clipped.width = boxPxW;
+        clipped.height = boxPxH;
+        const ctx = clipped.getContext('2d');
+
+        // Rounded-rect clip path
+        const r = 4 * SCALE;
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.lineTo(boxPxW - r, 0);
+        ctx.quadraticCurveTo(boxPxW, 0, boxPxW, r);
+        ctx.lineTo(boxPxW, boxPxH - r);
+        ctx.quadraticCurveTo(boxPxW, boxPxH, boxPxW - r, boxPxH);
+        ctx.lineTo(r, boxPxH);
+        ctx.quadraticCurveTo(0, boxPxH, 0, boxPxH - r);
+        ctx.lineTo(0, r);
+        ctx.quadraticCurveTo(0, 0, r, 0);
+        ctx.closePath();
+        ctx.clip();
+
+        // White background (in case of transparent edges)
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, boxPxW, boxPxH);
+
+        // Cover-fit: scale so width fills the box, anchor to top
+        const widthRatio = boxPxW / face.w;
+        const heightRatio = boxPxH / face.h;
+        const fitRatio = Math.max(widthRatio, heightRatio);
+        const dw = face.w * fitRatio;
+        const dh = face.h * fitRatio;
+        const dx = (boxPxW - dw) / 2; // center horizontally
+        const dy = 0;                  // pin to top — face is always in upper portion
+        const faceImg = new window.Image();
+        faceImg.src = face.dataUrl;
+        ctx.drawImage(faceImg, dx, dy, dw, dh);
+
+        doc.addImage(clipped.toDataURL('image/jpeg', 0.95), 'JPEG', photoX, photoY, photoW, photoH);
+      } else {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        doc.setTextColor(...INKS);
+        doc.text('Photo pending', photoX + photoW / 2, photoY + photoH / 2, { align: 'center' });
+      }
+
+      // Details, right of photo
+      const dx = photoX + photoW + 10;
+      const dw = W - margin - dx;
+      let dy = photoY + 6;
+      const row = (label, value) => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5.3);
+        doc.setTextColor(...INKS);
+        doc.text(label.toUpperCase(), dx, dy);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...INK);
+        doc.text(doc.splitTextToSize(String(value || '—'), dw)[0], dx, dy + 9);
+        dy += 17;
+      };
+      row('Name', client.name);
+      row('Passport No.', client.passportNumber);
+      const dobNat = [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null].filter(Boolean).join('  ·  ');
+      row('Nationality / DOB', dobNat || '—');
+      row('Passport Expiry', client.passportExpiry ? fmtDate(client.passportExpiry) : '—');
+
+      // Emergency contact strip — agency/agent details for if the pilgrim is lost
+      const stripY = H - 30;
+      doc.setFillColor(...E);
+      doc.rect(0, stripY, W, 30, 'F');
+      doc.setFillColor(...G);
+      doc.rect(0, stripY, W, 1.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.3);
+      doc.setTextColor(...G);
+      doc.text('IF FOUND, PLEASE CONTACT', margin, stripY + 10);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`${agent?.agencyName || 'Travel Agency'}  ·  ${agent?.phone || agent?.email || '—'}`, margin, stripY + 21);
+      if (agent?.agentName || agent?.name) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text(`Agent: ${agent.agentName || agent.name}`, W - margin, stripY + 21, { align: 'right' });
+      }
+
+      doc.save(`Umrah-ID-${client.name.replace(/\s+/g, '-')}.pdf`);
+    } catch (err) {
+      console.error('[UmrahIdCardModal] PDF generation failed:', err);
+      alert('Could not generate the PDF. Make sure "jspdf" is installed (npm install jspdf).');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ backgroundColor: UM_BRAND.ink }}>
+          <div>
+            <p className="text-sm font-semibold text-white">Umrah ID Card</p>
+            <p className="text-[11px] text-white/40 mt-0.5">{client.name}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+            <X className="h-5 w-5 text-white/70" />
+          </button>
+        </div>
+
+        <div className="p-5" style={{ backgroundColor: UM_BRAND.parchment }}>
+          {/* On-screen card preview, same aspect ratio as the printed PDF */}
+          <div
+            className="mx-auto w-full rounded-xl overflow-hidden shadow-lg relative"
+            style={{ aspectRatio: '243 / 153', backgroundColor: UM_BRAND.cream }}
+          >
+            {/* header */}
+            <div className="absolute top-0 left-0 right-0 px-3 py-2 flex items-center justify-between" style={{ background: `linear-gradient(120deg, ${UM_BRAND.emerald900}, ${UM_BRAND.emerald700})` }}>
+              <div className="flex items-center gap-1.5">
+                <div className="w-5 h-5 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <img src={umLogo} alt="" className="w-full h-full object-contain" />
+                </div>
+                <div className="leading-tight">
+                  <p className="text-[11px] font-bold text-white" style={{ fontFamily: 'Georgia, serif' }}>UmraMarket</p>
+                  <p className="text-[6px] font-bold uppercase tracking-wider" style={{ color: UM_BRAND.goldSoft }}>Pilgrim ID</p>
+                </div>
+              </div>
+              <div className="text-right leading-tight">
+                <p className="text-[8px] font-bold text-white">{client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH'}</p>
+                <p className="text-[6px]" style={{ color: UM_BRAND.goldSoft }}>{cardRef}</p>
+              </div>
+            </div>
+            <div className="absolute top-[26px] left-0 right-0 h-[2px]" style={{ backgroundColor: UM_BRAND.gold }} />
+
+            {/* body */}
+            <div className="absolute top-[30px] left-3 right-3 bottom-[24px] flex gap-2.5">
+              <div className="w-[58px] h-full rounded-lg border-2 flex-shrink-0 overflow-hidden bg-white flex items-start justify-center" style={{ borderColor: UM_BRAND.gold }}>
+                {client.facePhotoUrl ? (
+                  <img
+                    src={client.facePhotoUrl}
+                    alt=""
+                    className="w-full object-cover object-top"
+                    style={{ minHeight: '100%' }}
+                  />
+                ) : (
+                  <span className="text-[6px] text-center px-1 mt-auto mb-auto" style={{ color: UM_BRAND.inkSoft }}>Photo pending</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                {[
+                  ['Name', client.name],
+                  ['Passport No.', client.passportNumber],
+                  ['Nationality / DOB', [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null].filter(Boolean).join('  ·  ') || '—'],
+                  ['Passport Expiry', client.passportExpiry ? fmtDate(client.passportExpiry) : '—'],
+                ].map(([l, v]) => (
+                  <div key={l} className="min-w-0">
+                    <p className="text-[6px] font-bold uppercase tracking-wide" style={{ color: UM_BRAND.inkSoft }}>{l}</p>
+                    <p className="text-[10px] font-bold truncate" style={{ color: UM_BRAND.ink }}>{v}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* emergency contact strip */}
+            <div className="absolute bottom-0 left-0 right-0 px-3 py-1.5" style={{ backgroundColor: UM_BRAND.emerald900, borderTop: `1.5px solid ${UM_BRAND.gold}` }}>
+              <p className="text-[5.5px] font-bold uppercase tracking-wide" style={{ color: UM_BRAND.goldSoft }}>If found, please contact</p>
+              <p className="text-[8px] font-bold text-white truncate">{agent?.agencyName || 'Travel Agency'} · {agent?.phone || agent?.email || '—'}</p>
+            </div>
+          </div>
+
+          {!client.facePhotoUrl && (
+            <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl p-2.5 text-xs">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              No ID photo yet — this is added automatically once the client completes passport verification.
+            </div>
+          )}
+
+          <button
+            onClick={handleDownloadPDF}
+            disabled={downloading}
+            className="w-full mt-4 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm shadow-md hover:shadow-lg hover:brightness-105 transition-all disabled:opacity-60"
+            style={{ background: `linear-gradient(135deg, ${UM_BRAND.gold}, ${UM_BRAND.goldSoft})`, color: UM_BRAND.ink }}
+          >
+            {downloading ? <Loader className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {downloading ? 'Preparing…' : 'Download ID card (PDF)'}
+          </button>
+          <p className="text-[11px] text-gray-400 text-center mt-2">Wallet-sized card · print and laminate, or share digitally.</p>
+        </div>
+      </div>
     </div>
   );
 };
@@ -1105,6 +1406,7 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [clientSearch, setClientSearch] = useState('');
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
   const [manifest, setManifest] = useState(null); // { packageName, packageType, departure, duration, clients }
+  const [idCardClient, setIdCardClient] = useState(null); // client object for the Umrah ID Card modal
   const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients();
 
   // ── Conversations / unread count ─────────────────────────────────────────────
@@ -1715,6 +2017,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                         onManifest={(packageName, packageType, departure, duration, clients) =>
                           setManifest({ packageName, packageType, departure, duration, clients })
                         }
+                        onIdCard={setIdCardClient}
                       />
                     ))}
                   </div>
@@ -1733,6 +2036,22 @@ const AgentDashboard = ({ user, onLogout }) => {
                       licenseNumber: profile?.licenseNumber,
                     }}
                     onClose={() => setManifest(null)}
+                  />
+                )}
+
+                {/* Umrah ID Card modal */}
+                {idCardClient && (
+                  <UmrahIdCardModal
+                    client={idCardClient}
+                    agent={{
+                      name: displayName,
+                      agentName: displayName,
+                      agencyName: profile?.agencyName,
+                      agentNumber: displayAgent,
+                      email: displayEmail,
+                      phone: profile?.phone,
+                    }}
+                    onClose={() => setIdCardClient(null)}
                   />
                 )}
               </div>

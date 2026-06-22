@@ -1205,10 +1205,11 @@ const ClientDashboard = ({ user, onLogout }) => {
   }, []);
 
   const handleBookingSuccess = useCallback((_newBooking) => {
+    // Keep BookingFlow mounted — FacePhotoModal renders next inside it.
+    // onClose() (setBookingPkg(null)) is called by BookingFlow after face photo.
     refreshBookings();
-    setBookingPkg(null);
-    setActiveTab('bookings');
     showToast('Package booked successfully! 🎉', 'success');
+    setActiveTab('bookings');
   }, [showToast, refreshBookings]);
 
   const handleLogout = () => {

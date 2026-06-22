@@ -1,13 +1,3 @@
-// PassportVerificationModal.jsx
-// Shown BEFORE the payment modal. The user enters their passport details, we
-// enforce the 6-month validity rule, then they upload / capture a photo which
-// the backend OCRs (Tesseract MRZ) to confirm it matches what they typed.
-//
-// Usage:
-//   <PassportVerificationModal
-//      pkg={pkg} user={user}
-//      onClose={() => ...}
-//      onVerified={(result) => /* open BookingModal (payment) */} />
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X, ShieldCheck, AlertCircle, AlertTriangle, CheckCircle2, Loader2,
@@ -221,7 +211,7 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
             <span className="p-2 rounded-xl bg-emerald-50"><ShieldCheck className="h-5 w-5 text-emerald-600" /></span>
             <div>
               <p className="font-bold text-gray-900 leading-tight">Verify your passport</p>
-              <p className="text-xs text-gray-500">Required before payment</p>
+              <p className="text-xs text-gray-500">Step 1 of 3 · Required before payment</p>
             </div>
           </div>
           <button onClick={() => { stopCamera(); onClose(); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors" aria-label="Close">
@@ -305,7 +295,7 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
                 <ChevronLeft className="h-4 w-4" /> Back to details
               </button>
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-800">
-                Place the photo page flat, fill the frame, avoid glare. We read the bottom 2 lines (the machine-readable zone).
+                Place the <strong>data page</strong> flat in good light. Fill the frame. We read the two machine-readable lines at the bottom.
               </div>
 
               {cameraErr && (
@@ -319,6 +309,37 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
                 <div className="space-y-3">
                   <div className="relative rounded-xl overflow-hidden bg-black aspect-[3/2]">
                     <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+                    {/* Passport document frame guide overlay */}
+                    <svg
+                      className="absolute inset-0 w-full h-full pointer-events-none"
+                      viewBox="0 0 100 67"
+                      preserveAspectRatio="none"
+                    >
+                      {/* Dark scrim outside the guide rect */}
+                      <defs>
+                        <mask id="docMask">
+                          <rect width="100" height="67" fill="white" />
+                          <rect x="8" y="8" width="84" height="51" rx="2" fill="black" />
+                        </mask>
+                      </defs>
+                      <rect width="100" height="67" fill="rgba(0,0,0,0.5)" mask="url(#docMask)" />
+                      {/* Guide rect border */}
+                      <rect x="8" y="8" width="84" height="51" rx="2"
+                        fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="0.6" strokeDasharray="3 2" />
+                      {/* Corner ticks */}
+                      {[
+                        [8, 8], [92, 8], [8, 59], [92, 59]
+                      ].map(([x, y], i) => (
+                        <circle key={i} cx={x} cy={y} r="1.5" fill="rgba(255,255,255,0.9)" />
+                      ))}
+                      {/* MRZ zone indicator */}
+                      <rect x="8" y="50" width="84" height="9" rx="0"
+                        fill="rgba(16,185,129,0.18)" />
+                      <text x="50" y="56" textAnchor="middle" fontSize="3.5"
+                        fill="rgba(255,255,255,0.7)" fontFamily="system-ui,sans-serif">
+                        Machine-readable zone
+                      </text>
+                    </svg>
                   </div>
                   <div className="flex gap-3">
                     <button className="flex-1 py-3 rounded-xl font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200" onClick={stopCamera}>Cancel</button>
