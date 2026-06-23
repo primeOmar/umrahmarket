@@ -681,6 +681,13 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
                   </div>
                 ))}
               </div>
+              <button
+      onClick={onClose}
+      className="w-full py-4 rounded-2xl font-bold text-white text-base shadow-md hover:brightness-110 transition-all"
+      style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}
+    >
+      Continue →
+    </button>
             </div>
           )}
 

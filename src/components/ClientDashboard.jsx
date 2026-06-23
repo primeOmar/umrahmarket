@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { userStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
 import BookingFlow from './BookingFlow';
+import FacePhotoModal from './FacePhotoModal';
 import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
@@ -232,7 +233,7 @@ const StatCard = ({ icon: Icon, label, value, change, color, darkMode, loading }
 );
 
 // ==================== BOOKING CARD COMPONENT ====================
-const BookingCard = ({ booking, darkMode, onView }) => {
+const BookingCard = ({ booking, darkMode, onView, onAddPhoto }) => {
   const getStatusColor = (status) => {
     switch(status?.toLowerCase()) {
       case 'confirmed': return 'bg-emerald-100 text-emerald-700';
@@ -348,6 +349,17 @@ const BookingCard = ({ booking, darkMode, onView }) => {
         >
           View Details
         </button>
+
+        {/* Face-photo nudge — only shown when caller signals this booking needs one */}
+        {onAddPhoto && (
+          <button
+            onClick={() => onAddPhoto(booking)}
+            className="w-full mt-2 py-2.5 flex items-center justify-center gap-2 rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-700 text-sm font-semibold hover:bg-amber-100 transition-colors"
+          >
+            <Camera className="h-4 w-4" />
+            Add Umrah ID Photo
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1082,6 +1094,8 @@ const ClientDashboard = ({ user, onLogout }) => {
         const active = raw.filter(b => ['confirmed', 'pending'].includes(b.status?.toLowerCase())).length;
         const past   = raw.filter(b => b.status?.toLowerCase() === 'completed').length;
         setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past }));
+        // Check which bookings still need a face photo for the Umrah ID card
+        checkFacePhotoStatus();
       } catch (err) {
         console.error('[fetchBookings]', err.message);
         showToast('Could not load bookings', 'error');
@@ -1190,6 +1204,52 @@ const ClientDashboard = ({ user, onLogout }) => {
 
   // ── Booking modal state ──────────────────────────────────────────────────
   const [bookingPkg, setBookingPkg] = useState(null);
+  // ── Face-photo modal state (standalone — for returning users) ────────────
+  // { bookingId, packageId } of the booking whose Umrah ID photo is missing.
+  const [facePhotoBooking, setFacePhotoBooking] = useState(null);
+
+  const [bookingsMissingPhoto, setBookingsMissingPhoto] = useState(new Set());
+
+  // Tracks whether we've already shown the auto-popup this session so it
+  // never fires more than once per login, even if bookings refresh.
+  const autoPhotoPromptShown = React.useRef(false);
+
+  const checkFacePhotoStatus = useCallback(async () => {
+    try {
+      const res = await request({ method: 'get', url: '/passport/face-photo-status' });
+      const missing = res?.data?.bookingsMissingPhoto ?? [];
+      setBookingsMissingPhoto(new Set(missing.map((m) => m.bookingId)));
+    } catch (err) {
+      console.warn('[checkFacePhotoStatus]', err.message);
+      // Non-critical — silently ignore
+    }
+  }, []);
+
+  // ── Auto face-photo prompt ────────────────────────────────────────────────
+  // Fires once per session when the dashboard first loads and detects that the
+  // user has at least one confirmed/pending booking with no Umrah ID photo yet.
+  // Uses a ref flag so repeated booking refreshes never re-trigger the modal.
+  useEffect(() => {
+    // Wait until bookings have loaded and the missing-photo set is populated.
+    if (loading.bookings) return;
+    if (bookingsMissingPhoto.size === 0) return;
+    if (autoPhotoPromptShown.current) return;
+
+    // Find the first active booking that still needs a photo.
+    const target = bookings.find(
+      (b) =>
+        ['confirmed', 'pending'].includes(b.status?.toLowerCase()) &&
+        bookingsMissingPhoto.has(b.id)
+    );
+    if (!target) return;
+
+    autoPhotoPromptShown.current = true;
+    setFacePhotoBooking({
+      bookingId: target.id,
+      packageId: target.package_id ?? target.package?.id,
+      pkg:       target.package ?? { id: target.package_id, title: target.package?.name ?? 'Umrah Package' },
+    });
+  }, [loading.bookings, bookingsMissingPhoto, bookings]);
 
   const refreshBookings = useCallback(async () => {
     try {
@@ -1208,9 +1268,10 @@ const ClientDashboard = ({ user, onLogout }) => {
     // Keep BookingFlow mounted — FacePhotoModal renders next inside it.
     // onClose() (setBookingPkg(null)) is called by BookingFlow after face photo.
     refreshBookings();
+    checkFacePhotoStatus();
     showToast('Package booked successfully! 🎉', 'success');
     setActiveTab('bookings');
-  }, [showToast, refreshBookings]);
+  }, [showToast, refreshBookings, checkFacePhotoStatus]);
 
   const handleLogout = () => {
     localStorage.removeItem('userData');
@@ -1251,7 +1312,17 @@ const ClientDashboard = ({ user, onLogout }) => {
                   <div className="text-center py-8"><p className="text-gray-500">No bookings yet</p><button onClick={() => setActiveTab('packages')} className="mt-2 text-emerald-600 text-sm font-medium">Explore packages →</button></div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {bookings.slice(0, 2).map(booking => <BookingCard key={booking.id} booking={booking} darkMode={darkMode} onView={handleViewBooking} />)}
+                    {bookings.slice(0, 2).map(booking => (
+                      <BookingCard
+                        key={booking.id}
+                        booking={booking}
+                        darkMode={darkMode}
+                        onView={handleViewBooking}
+                        onAddPhoto={bookingsMissingPhoto.has(booking.id)
+                          ? (b) => setFacePhotoBooking({ bookingId: b.id, packageId: b.package_id ?? b.package?.id, pkg: b.package ?? { id: b.package_id, title: b.package?.name ?? 'Umrah Package' } })
+                          : undefined}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
@@ -1306,7 +1377,17 @@ const ClientDashboard = ({ user, onLogout }) => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {bookings.map(booking => <BookingCard key={booking.id} booking={booking} darkMode={darkMode} onView={handleViewBooking} />)}
+                {bookings.map(booking => (
+                  <BookingCard
+                    key={booking.id}
+                    booking={booking}
+                    darkMode={darkMode}
+                    onView={handleViewBooking}
+                    onAddPhoto={bookingsMissingPhoto.has(booking.id)
+                      ? (b) => setFacePhotoBooking({ bookingId: b.id, packageId: b.package_id ?? b.package?.id, pkg: b.package ?? { id: b.package_id, title: b.package?.name ?? 'Umrah Package' } })
+                      : undefined}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -1524,6 +1605,26 @@ const ClientDashboard = ({ user, onLogout }) => {
           user={user}
           onClose={() => setBookingPkg(null)}
           onSuccess={handleBookingSuccess}
+        />
+      )}
+
+      {/* ── Standalone Face-Photo Modal ─────────────────────────────────────
+           Shown when a returning user opens "My Bookings" and one or more
+           confirmed/pending bookings still has no Umrah ID photo on file.
+           Triggered by the "Add Umrah ID Photo" button on BookingCard.
+      ── */}
+      {facePhotoBooking && (
+        <FacePhotoModal
+          pkg={facePhotoBooking.pkg}
+          onDone={() => {
+            setFacePhotoBooking(null);
+            // Remove this booking from the missing-set so the nudge disappears
+            setBookingsMissingPhoto(prev => {
+              const next = new Set(prev);
+              next.delete(facePhotoBooking.bookingId);
+              return next;
+            });
+          }}
         />
       )}
     </div>

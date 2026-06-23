@@ -1132,7 +1132,13 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
           pkg={bookingPkg}
           user={currentUser || userStore.get()}
           onClose={() => setBookingPkg(null)}
-          onSuccess={() => { setBookingPkg(null); navigate('/client/dashboard'); }}
+          onSuccess={() => {
+            // Signal the dashboard to open on the My Bookings tab.
+            // BookingFlow will close itself after the face-photo step — don't
+            // call setBookingPkg(null) here or we'd unmount it too early.
+            sessionStorage.setItem('booking_just_confirmed', '1');
+            navigate('/client/dashboard');
+          }}
         />
       )}
 
