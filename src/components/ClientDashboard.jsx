@@ -1094,8 +1094,36 @@ const ClientDashboard = ({ user, onLogout }) => {
         const active = raw.filter(b => ['confirmed', 'pending'].includes(b.status?.toLowerCase())).length;
         const past   = raw.filter(b => b.status?.toLowerCase() === 'completed').length;
         setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past }));
-        // Check which bookings still need a face photo for the Umrah ID card
-        checkFacePhotoStatus();
+
+        // Await face-photo check so we have the missing set before loading.bookings
+        // is set to false — this prevents the auto-popup useEffect from running
+        // against an empty set due to a race condition.
+        try {
+          const fpRes = await request({ method: 'get', url: '/passport/face-photo-status' });
+          const missing = fpRes?.data?.bookingsMissingPhoto ?? [];
+          const missingIds = new Set(missing.map((m) => m.bookingId));
+          setBookingsMissingPhoto(missingIds);
+
+          // Auto-popup: if this is the first load and any active booking needs a
+          // photo, open FacePhotoModal immediately without waiting for a button click.
+          if (!autoPhotoPromptShown.current && missingIds.size > 0) {
+            const target = raw.find(
+              (b) =>
+                ['confirmed', 'pending'].includes(b.status?.toLowerCase()) &&
+                missingIds.has(b.id)
+            );
+            if (target) {
+              autoPhotoPromptShown.current = true;
+              setFacePhotoBooking({
+                bookingId: target.id,
+                packageId: target.package_id ?? target.package?.id,
+                pkg:       target.package ?? { id: target.package_id, title: target.package?.name ?? 'Umrah Package' },
+              });
+            }
+          }
+        } catch (fpErr) {
+          console.warn('[fetchBookings] face-photo-status check failed:', fpErr.message);
+        }
       } catch (err) {
         console.error('[fetchBookings]', err.message);
         showToast('Could not load bookings', 'error');
@@ -1225,31 +1253,7 @@ const ClientDashboard = ({ user, onLogout }) => {
     }
   }, []);
 
-  // ── Auto face-photo prompt ────────────────────────────────────────────────
-  // Fires once per session when the dashboard first loads and detects that the
-  // user has at least one confirmed/pending booking with no Umrah ID photo yet.
-  // Uses a ref flag so repeated booking refreshes never re-trigger the modal.
-  useEffect(() => {
-    // Wait until bookings have loaded and the missing-photo set is populated.
-    if (loading.bookings) return;
-    if (bookingsMissingPhoto.size === 0) return;
-    if (autoPhotoPromptShown.current) return;
 
-    // Find the first active booking that still needs a photo.
-    const target = bookings.find(
-      (b) =>
-        ['confirmed', 'pending'].includes(b.status?.toLowerCase()) &&
-        bookingsMissingPhoto.has(b.id)
-    );
-    if (!target) return;
-
-    autoPhotoPromptShown.current = true;
-    setFacePhotoBooking({
-      bookingId: target.id,
-      packageId: target.package_id ?? target.package?.id,
-      pkg:       target.package ?? { id: target.package_id, title: target.package?.name ?? 'Umrah Package' },
-    });
-  }, [loading.bookings, bookingsMissingPhoto, bookings]);
 
   const refreshBookings = useCallback(async () => {
     try {
