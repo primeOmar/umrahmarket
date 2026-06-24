@@ -255,6 +255,46 @@ export const requestPasswordReset = (email) =>
   request({ method: 'post', url: '/auth/password-reset/request', data: { email } });
 
 // ─── Uploads ──────────────────────────────────────────────────────────────────
+// NOTE: DocumentsTab.jsx previously called these endpoints with raw fetch()
+// + credentials:'include' (cookie auth), but this backend authenticates via
+// Bearer token (see the request-interceptor above) — cookies alone produced
+// "Access token required" 401s on every call. Routing through request()
+// fixes that automatically, since the interceptor attaches
+// `Authorization: Bearer ${tokenStore.get()}` to every request made through it.
+
+// GET /api/documents — existing doc metadata for the current agent.
+// agentId is optional; the backend can also derive it from the auth token.
+export const getAgentDocuments = (agentId) =>
+  request({
+    method: 'get',
+    url: '/documents',
+    params: agentId ? { agentId } : undefined,
+  }).then((r) => r.data);
+
+// POST /api/documents — uploads ONE document type per call (matches
+// DocumentsTab's per-card upload flow). `file` is a single File for most
+// types; for 'office_photo' pass an array of Files (multiple allowed).
+export const uploadAgentDocument = (key, file, agentId) => {
+  const form = new FormData();
+  if (agentId) form.append('agentId', agentId);
+  if (key === 'office_photo') {
+    const files = Array.isArray(file) ? file : [file];
+    files.forEach(f => form.append(key, f));
+  } else {
+    form.append(key, file);
+  }
+  return request({ method: 'post', url: '/documents', data: form }).then((r) => r.data);
+};
+
+// PATCH /api/documents/office-location — saves the agency's Google Maps
+// link alongside the office photo.
+export const saveOfficeMapsUrl = (mapsUrl) =>
+  request({
+    method: 'patch',
+    url: '/documents/office-location',
+    data: { mapsUrl },
+  }).then((r) => r.data);
+
 export const uploadAgentDocuments = (files, agentId) => {
   const form = new FormData();
   if (files.incorporation) form.append('incorporation', files.incorporation);
@@ -325,7 +365,8 @@ export const requestDocumentReview = () =>
 export default {
   registerClient, registerAgent, login, googleLogin,
   logout, refreshToken, getMe, requestPasswordReset,
-  uploadAgentDocuments, tokenStore, userStore,
+  uploadAgentDocuments, getAgentDocuments, uploadAgentDocument, saveOfficeMapsUrl,
+  tokenStore, userStore,
   checkPassport, verifyPassportImage, getPassportStatus,
   getAgentVerificationStatus, requestDocumentReview,
 };

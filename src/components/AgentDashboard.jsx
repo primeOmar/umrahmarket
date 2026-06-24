@@ -21,7 +21,7 @@ import DocumentsTab from './agent/documents/DocumentsTab';
 import AccountingTab from './AccountingTab';
 import AgentAccountingTab from './AgentAccountingTab';
 import { useBookingNotifications } from '../hooks/useBookingNotifications';
-import { getAgentVerificationStatus, requestDocumentReview } from '../api';
+import { getAgentVerificationStatus, requestDocumentReview, getMe } from '../api';
 import umLogo from '../assets/umramarket.png';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
@@ -1477,12 +1477,9 @@ const VERIFICATION_DOC_LABELS = {
   office_photo:  'Office Photo (optional)',
 };
 // MUST match REQUIRED_DOC_KEYS in superadmin_routes.js (backend) exactly.
-// director_id is intentionally excluded — no upload form in this app
-// collects one yet, so treating it as required would make this modal show
-// "still missing a required document" for an agent the backend has
-// already fully approved. Move it back to required once an actual
-// director_id upload field exists in DocumentsTab / registration.
-const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin'];
+// director_id is required: DocumentsTab.jsx confirms a real "Director /
+// Manager ID" upload card exists, so an agent can and must provide it.
+const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin', 'director_id'];
 
 const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGoToDocuments, onClose }) => {
   const items = status?.items || {};
@@ -1603,12 +1600,18 @@ const AgentDashboard = ({ user, onLogout }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const API = import.meta.env.VITE_API_URL || '';
-        // API already includes "/api" – do NOT add another "/api"
-        const res = await fetch(`${API}/auth/me`, { credentials: 'include' });
-        if (!res.ok) throw new Error('Failed to fetch profile');
-        const json = await res.json();
-        if (json.success && json.data?.user) setAgentProfile(json.data.user);
+        // BUG FIX: this previously called fetch(`${API}/auth/me`) directly,
+        // assuming VITE_API_URL already includes "/api". On this deployment
+        // VITE_API_URL is the bare Render origin with no "/api" segment, so
+        // that request 404'd every time (see api.js's BASE_API, which
+        // explicitly appends "/api" when missing — this call skipped that
+        // safety net entirely). It also relied only on cookies
+        // (credentials: 'include') with no Authorization header, while the
+        // rest of this app sends a Bearer token via tokenStore. Using the
+        // shared getMe() helper from ../api fixes both: correct base URL,
+        // and the same auth header every other working request uses.
+        const res = await getMe();
+        if (res?.data?.success && res.data?.data?.user) setAgentProfile(res.data.data.user);
       } catch (err) {
         console.error('[AgentDashboard] profile fetch failed:', err.message);
       } finally {

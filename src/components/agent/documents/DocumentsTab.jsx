@@ -3,30 +3,29 @@ import {
   FileText, Upload, CheckCircle, AlertCircle, Clock,
   RefreshCw, Eye, X, Loader, CloudUpload, File, Camera, MapPin, Info, Link, ExternalLink, Save, Images, ChevronLeft, ChevronRight, Plus
 } from 'lucide-react';
+import { getAgentDocuments, uploadAgentDocument, saveOfficeMapsUrl } from '../../../api';
 
 /**
  * DocumentsTab — Agent document upload/update UI
  *
  * Backend: POST /api/documents  (document_routes.js)
- *   Fields: incorporation | tourism | krapin  (multipart/form-data)
- *   Auth:   requireAuth cookie (credentials: 'include')
+ *   Fields: incorporation | tourism | krapin | director_id | office_photo (multipart/form-data)
+ *   Auth:   Bearer token via api.js's request() wrapper (see getAgentDocuments /
+ *           uploadAgentDocument / saveOfficeMapsUrl in ../../../api). This was
+ *           previously plain fetch() with credentials:'include' (cookies),
+ *           which this backend doesn't authenticate with — every request came
+ *           back 401 "Access token required" until switched to the shared
+ *           token-aware request layer.
  *
  * Storage: Supabase bucket "agent-documents"
  *   Paths returned are stored in agentProfile / fetched from
  *   /api/auth/me so we can derive whether a doc is already uploaded.
  *
  * Usage in AgentDashboard:
- *   Replace the {activeTab === 'documents' && ( … )} block with:
- *
  *   {activeTab === 'documents' && (
- *     <DocumentsTab agentId={profile?.id} authToken={null} />
+ *     <DocumentsTab agentId={profile?.id} />
  *   )}
- *
- *   `authToken` is optional — if you use cookie auth (credentials:'include')
- *   just omit it. If you use Bearer tokens pass it in.
  */
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
 
 const ACCEPTED = 'image/jpeg,image/png,image/webp,application/pdf';
 const MAX_MB   = 5;
@@ -630,11 +629,13 @@ const DocumentsTab = ({ agentId }) => {
     setLoadingDocs(true);
     setGlobalError('');
     try {
-      const res = await fetch(`${API_BASE}/api/documents${agentId ? `?agentId=${agentId}` : ''}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
-      const json = await res.json();
+      // BUG FIX: this previously called fetch(`${API_BASE}/api/documents...`)
+      // directly with only credentials:'include' (cookies). This backend
+      // authenticates via Bearer token (see api.js's request interceptor),
+      // not cookies, so every call here came back 401 "Access token
+      // required." getAgentDocuments() goes through the shared request()
+      // wrapper, which attaches the token automatically.
+      const json = await getAgentDocuments(agentId);
       // Expected shape: { success: true, data: { incorporation: { path, publicUrl, uploadedAt, status }, … } }
       if (json.success && json.data) {
         setDocs(json.data);
@@ -702,24 +703,14 @@ const DocumentsTab = ({ agentId }) => {
     setSuccessMsg('');
 
     try {
-      const formData = new FormData();
-      if (agentId) formData.append('agentId', agentId);
-      if (isOfficePhoto) {
-        files.forEach(f => formData.append(key, f));
-      } else {
-        formData.append(key, files[0]);
-      }
+      // BUG FIX: was fetch(`${API_BASE}/api/documents`, { credentials:
+      // 'include', body: formData }) — no Authorization header, so the
+      // backend's requireAuth middleware rejected it with "Access token
+      // required" even though the request itself was otherwise correct.
+      const json = await uploadAgentDocument(key, isOfficePhoto ? files : files[0], agentId);
 
-      const res = await fetch(`${API_BASE}/api/documents`, {
-        method:      'POST',
-        credentials: 'include',
-        body:        formData,
-      });
-
-      const json = await res.json().catch(() => ({}));
-
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || `Upload failed (${res.status})`);
+      if (!json.success) {
+        throw new Error(json.error || 'Upload failed');
       }
 
       // Optimistically update local doc state
@@ -748,14 +739,10 @@ const DocumentsTab = ({ agentId }) => {
 
   // ── Save Google Maps URL ────────────────────────────────────────────────────
   const handleSaveMapsUrl = async (url) => {
-    const res = await fetch(`${API_BASE}/api/documents/office-location`, {
-      method: 'PATCH',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mapsUrl: url }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.success) throw new Error(json.error || 'Save failed');
+    // BUG FIX: same missing-Bearer-token issue as fetchDocs/handleUpload —
+    // this previously used a cookie-only fetch() PATCH.
+    const json = await saveOfficeMapsUrl(url);
+    if (!json.success) throw new Error(json.error || 'Save failed');
     // Reflect saved URL in local docs state
     setDocs(prev => ({
       ...prev,
