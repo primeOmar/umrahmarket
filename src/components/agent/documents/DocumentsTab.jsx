@@ -752,10 +752,22 @@ const DocumentsTab = ({ agentId }) => {
 
   // ─── render ─────────────────────────────────────────────────────────────────
 
-  const enrichedDocs = DOC_TYPES.map(dt => ({
-    ...dt,
-    ...(docs[dt.key] || { status: 'none' }),
-  }));
+  // Normalise backend status vocabulary → frontend vocabulary here so every
+  // downstream consumer (statusBadge, statusIcon, doc.status comparisons)
+  // stays unchanged.
+  //   'approved' (superadmin_routes / agent_documents_routes) → 'verified'
+  //   'pending'  (per-item status col default)                → 'uploaded'
+  //              (pending means uploaded but not yet reviewed)
+  const normaliseStatus = (s) => {
+    if (s === 'approved') return 'verified';
+    if (s === 'pending')  return 'uploaded';
+    return s; // 'uploaded' | 'verified' | 'rejected' | 'none' pass through
+  };
+
+  const enrichedDocs = DOC_TYPES.map(dt => {
+    const raw = docs[dt.key] || { status: 'none' };
+    return { ...dt, ...raw, status: normaliseStatus(raw.status) };
+  });
 
   return (
     <div className="space-y-6">

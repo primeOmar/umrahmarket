@@ -355,14 +355,7 @@ export const getPassportStatus = (packageId) =>
 // and the individual approve/pending/rejected status of each — not just one
 // flat bundle status.
 export const getAgentVerificationStatus = () =>
-  request({
-    method: 'get',
-    url: '/agent-documents/status',
-    // Force a real network hit — never accept a 304 / cached response.
-    // The value changes when a superadmin approves documents and the agent
-    // must see that immediately without a page reload.
-    headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
-  }).then((r) => r.data);
+  request({ method: 'get', url: '/agent-documents/status' }).then((r) => r.data);
 
 // "Fast-track" button: only valid once all required documents are uploaded.
 // Does not re-upload anything — just flags the bundle for priority review.

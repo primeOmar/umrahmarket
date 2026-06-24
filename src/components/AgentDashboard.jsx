@@ -714,8 +714,11 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
       const INK  = [28,  27,  23];
       const INKS = [107, 100, 86];
 
-      // CR80 landscape (3.375 × 2.125 in at 72 dpi = 243 × 153 pt)
-      const doc = new jsPDF({ unit: 'pt', format: [243, 153] });
+      // CR80 landscape (3.375 × 2.125 in at 72 dpi = 243 × 153 pt).
+      // orientation:'landscape' is required — without it jsPDF re-interprets
+      // [243,153] as portrait [153×243], squishing all content into the top
+      // 63% of a taller page and leaving a blank white strip below.
+      const doc = new jsPDF({ unit: 'pt', format: [243, 153], orientation: 'landscape' });
       const W = 243, H = 153;
       const M = 11; // margin
 
@@ -734,25 +737,48 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
       doc.setFillColor(...G);
       doc.rect(0, 34, W, 1.5, 'F');
 
-      // Helper: load image → { dataUrl, w, h } or null
-      const loadImg = (src) =>
-        new Promise((resolve) => {
-          try {
+      // Helper: load image → { dataUrl, w, h } or null.
+      //
+      // Strategy: fetch() the URL as a blob first, convert to an object-URL,
+      // then draw onto canvas. This avoids the crossOrigin = 'anonymous' +
+      // canvas-taint problem that causes R2 presigned/public URLs to silently
+      // fail (img.onerror fires) because the R2 bucket's CORS policy doesn't
+      // echo back Access-Control-Allow-Origin for every origin.
+      //
+      // fetch() itself doesn't taint the canvas — only the crossOrigin img
+      // attribute does. The blob → object URL path sidesteps that entirely.
+      const loadImg = async (src) => {
+        try {
+          // For data: URIs (e.g. the bundled logo) skip the fetch and go
+          // straight to the Image path — no network, no CORS.
+          const isData = src.startsWith('data:');
+          let objectUrl = src;
+
+          if (!isData) {
+            const resp = await fetch(src, { cache: 'no-store' });
+            if (!resp.ok) return null;
+            const blob = await resp.blob();
+            objectUrl = URL.createObjectURL(blob);
+          }
+
+          return await new Promise((resolve) => {
             const img = new window.Image();
-            img.crossOrigin = 'anonymous';
             img.onload = () => {
               try {
                 const c = document.createElement('canvas');
-                c.width = img.naturalWidth || 256;
+                c.width  = img.naturalWidth  || 256;
                 c.height = img.naturalHeight || 256;
                 c.getContext('2d').drawImage(img, 0, 0);
-                resolve({ dataUrl: c.toDataURL('image/png'), w: c.width, h: c.height });
+                const dataUrl = c.toDataURL('image/png');
+                if (!isData) URL.revokeObjectURL(objectUrl);
+                resolve({ dataUrl, w: c.width, h: c.height });
               } catch { resolve(null); }
             };
-            img.onerror = () => resolve(null);
-            img.src = src;
-          } catch { resolve(null); }
-        });
+            img.onerror = () => { if (!isData) URL.revokeObjectURL(objectUrl); resolve(null); };
+            img.src = objectUrl;
+          });
+        } catch { return null; }
+      };
 
       const [logo, face] = await Promise.all([
         loadImg(umLogo),
@@ -788,7 +814,14 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
       doc.text(cardRef, W - M, 26, { align: 'right' });
 
       // ── Photo box ──
-      const photoX = M, photoY = 42, photoW = 62, photoH = 78;
+      // Matches preview exactly: left-flush to body, 30% of card width,
+      // full body height (header=34pt + gold line=1.5pt, footer starts at H-28).
+      const bodyTop  = 34 + 1.5;           // 35.5pt — just below gold accent line
+      const bodyBot  = H - 28;             // 125pt  — top of footer
+      const photoX = M;
+      const photoY = bodyTop;              // flush to body top, no gap
+      const photoW = Math.round(W * 0.30); // 73pt ≈ 30% of card width
+      const photoH = bodyBot - bodyTop;    // 89.5pt — full body height
 
       // Gold border rect
       doc.setFillColor(255, 255, 255);
@@ -846,9 +879,9 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
       }
 
       // ── Details, right of photo ──
-      const detX = photoX + photoW + 10;
+      const detX = photoX + photoW + 8;
       const detW = W - M - detX;
-      let detY = photoY + 5;
+      let detY = photoY + 6;
 
       const row = (label, value) => {
         doc.setFont('helvetica', 'bold');
