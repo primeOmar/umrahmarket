@@ -1482,6 +1482,13 @@ const VERIFICATION_DOC_LABELS = {
 const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin', 'director_id'];
 
 const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGoToDocuments, onClose }) => {
+  // status is null only when the status fetch never resolved into real
+  // data (still in flight on first render, or genuinely never called) —
+  // distinct from a real response where the agent simply hasn't uploaded
+  // anything yet. Rendering these identically (both showing an empty
+  // checklist) was actively misleading during past debugging — it looked
+  // exactly like "nothing uploaded" when it actually meant "we don't know."
+  const statusUnknown = status == null;
   const items = status?.items || {};
   const hasUploadedAllRequired = VERIFICATION_REQUIRED_KEYS.every(k => items[k]?.uploaded);
   const anyRejected = VERIFICATION_REQUIRED_KEYS.some(k => items[k]?.status === 'rejected');
@@ -1504,14 +1511,25 @@ const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGo
         </div>
 
         <div className="p-5 space-y-4">
-          <p className="text-sm text-gray-600">
-            {anyRejected
-              ? 'One or more of your documents was not approved. Fix the issue and re-upload to continue.'
-              : hasUploadedAllRequired
-                ? "You've uploaded everything — your documents are still being reviewed. You'll be able to post packages as soon as they're approved."
-                : 'Your agency needs to be verified before you can post packages. Upload the documents below to get started.'}
-          </p>
+          {statusUnknown ? (
+            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <AlertCircle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-700">
+                We couldn't confirm your verification status just now. This may be a temporary
+                connection issue — try again, and if it keeps happening, contact support.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600">
+              {anyRejected
+                ? 'One or more of your documents was not approved. Fix the issue and re-upload to continue.'
+                : hasUploadedAllRequired
+                  ? "You've uploaded everything — your documents are still being reviewed. You'll be able to post packages as soon as they're approved."
+                  : 'Your agency needs to be verified before you can post packages. Upload the documents below to get started.'}
+            </p>
+          )}
 
+          {!statusUnknown && (
           <div className="space-y-2">
             {Object.keys(VERIFICATION_DOC_LABELS).map(key => {
               const item = items[key] || { uploaded: false, status: 'pending' };
@@ -1538,8 +1556,9 @@ const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGo
               );
             })}
           </div>
+          )}
 
-          {items && VERIFICATION_REQUIRED_KEYS.some(k => items[k]?.status === 'rejected' && items[k]?.notes) && (
+          {!statusUnknown && items && VERIFICATION_REQUIRED_KEYS.some(k => items[k]?.status === 'rejected' && items[k]?.notes) && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-1">
               {VERIFICATION_REQUIRED_KEYS.filter(k => items[k]?.status === 'rejected' && items[k]?.notes).map(k => (
                 <p key={k} className="text-xs text-red-700">
@@ -1556,12 +1575,21 @@ const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGo
           )}
 
           <div className="flex gap-3 pt-1">
-            <button
-              onClick={onGoToDocuments}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition-colors"
-            >
-              {hasUploadedAllRequired ? 'View documents' : 'Upload documents'}
-            </button>
+            {statusUnknown ? (
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                Close and try again
+              </button>
+            ) : (
+              <button
+                onClick={onGoToDocuments}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                {hasUploadedAllRequired ? 'View documents' : 'Upload documents'}
+              </button>
+            )}
             {hasUploadedAllRequired && !anyRejected && (
               <button
                 onClick={onRequestReview}
@@ -1666,6 +1694,11 @@ const AgentDashboard = ({ user, onLogout }) => {
     prevTabRef.current = activeTab;
   }, [activeTab]);
 
+  // Derived for the informational banners only (Packages/Documents tab
+  // hints) — these can tolerate being one fetch stale since they're just
+  // hints, not the actual gate. The real gate (handleAttemptCreatePackage
+  // below) always re-fetches fresh status at the moment of the attempt,
+  // so it never relies on this possibly-stale value.
   const isAgentApproved = verificationStatus?.isApproved === true;
 
   // Every "create package" entry point should call THIS instead of setting
@@ -1674,12 +1707,47 @@ const AgentDashboard = ({ user, onLogout }) => {
   // in packages.route.js) enforces this independently too — this is the
   // UX layer that explains *why* and routes them to the fix, not the only
   // line of defense.
-  const handleAttemptCreatePackage = () => {
-    if (verificationLoading) return; // status still loading — avoid a flash of the wrong modal
-    if (isAgentApproved) {
-      setShowCreatePackage(true);
-    } else {
+  //
+  // BUG FIX: this previously trusted whatever `verificationStatus` was
+  // already in React state, which was only fetched once on mount (or when
+  // leaving the Documents tab). If an admin approved the agent while their
+  // dashboard tab was already open, isAgentApproved stayed stuck at false
+  // forever — the data in the database was correct the whole time, but
+  // nothing ever told the open tab to ask again. Re-fetching fresh status
+  // at the moment of the actual attempt closes that gap: the gate can
+  // never be more than one request stale, and an agent who was just
+  // approved doesn't need to log out/in or reload to find out.
+  const [checkingApproval, setCheckingApproval] = useState(false);
+  // BUG FIX: this previously started with `if (checkingApproval) return;`
+  // as a double-click guard. If checkingApproval ever got stuck `true` —
+  // a hung request, a state update that fired after the component
+  // re-rendered, or simply two effects racing — every future click would
+  // silently return here before the function body ever ran: no network
+  // request, no console error, nothing. That matches exactly what was
+  // reported (zero network activity, zero console errors, gate modal
+  // rendering against stale/initial `null` state). The buttons already
+  // have `disabled={checkingApproval}` to prevent double-clicks at the UI
+  // layer, which is the correct/safe place for that guard — the handler
+  // itself doesn't need a second, more fragile copy of the same check.
+  const handleAttemptCreatePackage = async () => {
+    console.log('[AgentDashboard] New Package clicked — checking approval status…');
+    setCheckingApproval(true);
+    try {
+      const data = await getAgentVerificationStatus();
+      setVerificationStatus(data);
+      setVerificationLoading(false);
+      if (data?.isApproved === true) {
+        setShowCreatePackage(true);
+      } else {
+        setShowVerificationGate(true);
+      }
+    } catch (err) {
+      console.error('[AgentDashboard] approval check failed:', err.message);
+      // Fail safe: if we can't confirm approval right now, don't silently
+      // let an unverified (or unknown) agent through — show the gate.
       setShowVerificationGate(true);
+    } finally {
+      setCheckingApproval(false);
     }
   };
 
@@ -2005,18 +2073,20 @@ const AgentDashboard = ({ user, onLogout }) => {
               {/* Quick Actions */}
               <button
                 onClick={handleAttemptCreatePackage}
-                className="hidden sm:flex items-center space-x-2 px-3 md:px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all"
+                disabled={checkingApproval}
+                className="hidden sm:flex items-center space-x-2 px-3 md:px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all disabled:opacity-70"
               >
-                <Plus className="h-4 w-4" />
+                {checkingApproval ? <Loader className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                 <span className="text-sm font-medium hidden md:inline">New Package</span>
               </button>
 
               {/* Mobile: New Package icon-only */}
               <button
                 onClick={handleAttemptCreatePackage}
-                className="sm:hidden p-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg"
+                disabled={checkingApproval}
+                className="sm:hidden p-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg disabled:opacity-70"
               >
-                <Plus className="h-4 w-4" />
+                {checkingApproval ? <Loader className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               </button>
 
               <button
