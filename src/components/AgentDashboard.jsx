@@ -1476,7 +1476,13 @@ const VERIFICATION_DOC_LABELS = {
   director_id:   'Director ID',
   office_photo:  'Office Photo (optional)',
 };
-const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin', 'director_id'];
+// MUST match REQUIRED_DOC_KEYS in superadmin_routes.js (backend) exactly.
+// director_id is intentionally excluded — no upload form in this app
+// collects one yet, so treating it as required would make this modal show
+// "still missing a required document" for an agent the backend has
+// already fully approved. Move it back to required once an actual
+// director_id upload field exists in DocumentsTab / registration.
+const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin'];
 
 const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGoToDocuments, onClose }) => {
   const items = status?.items || {};

@@ -106,13 +106,20 @@ const saJson = async (res) => {
 // ─── Document item definitions ───────────────────────────────────────────────
 // Drives the per-document review cards in the document modal. `urlField`
 // matches the field name the backend returns in GET /superadmin/documents
-// (see superadmin_routes.js normalized response). office_photo is the only
-// non-required item — an agent can be fully verified without one.
+// (see superadmin_routes.js normalized response).
+//
+// `required` MUST match REQUIRED_DOC_KEYS in superadmin_routes.js exactly.
+// director_id is NOT required: no upload form in the app (registration,
+// AgentDashboard, DocumentsTab) collects one yet. Marking it required here
+// previously showed admins a "Required" tag on a document agents could
+// never actually submit — and meant an agent could never reach 'approved'
+// no matter what the admin did. Move it to required once a real upload
+// field exists for it.
 const DOCUMENT_ITEM_DEFS = [
   { key: 'incorporation', label: 'Incorporation Certificate', urlField: 'incorporationDoc', required: true },
   { key: 'tourism',       label: 'Tourism License',           urlField: 'tourismDoc',        required: true },
   { key: 'krapin',        label: 'KRA PIN Certificate',        urlField: 'kraPin',            required: true },
-  { key: 'director_id',   label: 'Director ID',                urlField: 'directorIdDoc',     required: true },
+  { key: 'director_id',   label: 'Director ID',                urlField: 'directorIdDoc',     required: false },
   { key: 'office_photo',  label: 'Office Photo',               urlField: 'officePhoto',       required: false },
 ];
 
