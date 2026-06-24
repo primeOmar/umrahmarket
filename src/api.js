@@ -260,6 +260,13 @@ export const uploadAgentDocuments = (files, agentId) => {
   if (files.incorporation) form.append('incorporation', files.incorporation);
   if (files.tourism)       form.append('tourism',       files.tourism);
   if (files.krapin)        form.append('krapin',        files.krapin);
+  if (files.directorId)    form.append('director_id',   files.directorId);
+  // office_photo supports multiple files — append each under the same field
+  // name so the backend's multer config (expecting an array) picks them all up.
+  if (files.officePhotos) {
+    const photos = Array.isArray(files.officePhotos) ? files.officePhotos : [files.officePhotos];
+    photos.forEach(photo => form.append('office_photo', photo));
+  }
   if (agentId)             form.append('agentId',       agentId);
   return request({
     method: 'post',
@@ -302,9 +309,23 @@ export const getPassportStatus = (packageId) =>
     params: { packageId },
   }).then((r) => r.data);
 
+// ─── Agent document verification (per-item, agent-facing) ───────────────────
+// Drives the AgentDashboard "you're not verified yet" gate. Tells the
+// frontend exactly which of the 5 document types are uploaded vs missing,
+// and the individual approve/pending/rejected status of each — not just one
+// flat bundle status.
+export const getAgentVerificationStatus = () =>
+  request({ method: 'get', url: '/agent-documents/status' }).then((r) => r.data);
+
+// "Fast-track" button: only valid once all required documents are uploaded.
+// Does not re-upload anything — just flags the bundle for priority review.
+export const requestDocumentReview = () =>
+  request({ method: 'post', url: '/agent-documents/request-review' }).then((r) => r.data);
+
 export default {
   registerClient, registerAgent, login, googleLogin,
   logout, refreshToken, getMe, requestPasswordReset,
   uploadAgentDocuments, tokenStore, userStore,
   checkPassport, verifyPassportImage, getPassportStatus,
+  getAgentVerificationStatus, requestDocumentReview,
 };

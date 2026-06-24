@@ -103,6 +103,19 @@ const saJson = async (res) => {
 // ─── Per-item "viewed" helpers ────────────────────────────────────────────────
 // Each category stores a JSON array of IDs in localStorage so badge counts
 // only clear when the admin has individually opened every pending item.
+// ─── Document item definitions ───────────────────────────────────────────────
+// Drives the per-document review cards in the document modal. `urlField`
+// matches the field name the backend returns in GET /superadmin/documents
+// (see superadmin_routes.js normalized response). office_photo is the only
+// non-required item — an agent can be fully verified without one.
+const DOCUMENT_ITEM_DEFS = [
+  { key: 'incorporation', label: 'Incorporation Certificate', urlField: 'incorporationDoc', required: true },
+  { key: 'tourism',       label: 'Tourism License',           urlField: 'tourismDoc',        required: true },
+  { key: 'krapin',        label: 'KRA PIN Certificate',        urlField: 'kraPin',            required: true },
+  { key: 'director_id',   label: 'Director ID',                urlField: 'directorIdDoc',     required: true },
+  { key: 'office_photo',  label: 'Office Photo',               urlField: 'officePhoto',       required: false },
+];
+
 const VIEWED_KEY = (category) => `superadmin_viewed_ids_${category}`;
 
 const loadViewedIds = (category) => {
@@ -170,6 +183,13 @@ export const SuperAdminDashboard = () => {
   // Forms
   const [closeReason,       setCloseReason]       = useState('');
   const [verificationNotes, setVerificationNotes] = useState('');
+  // Per-document note drafts, keyed by doc type ('incorporation', 'tourism', …).
+  // Each document is reviewed independently now, so each needs its own
+  // notes field rather than one shared textarea for the whole bundle.
+  const [itemNotes, setItemNotes] = useState({});
+  // Tracks which single doc-type button is mid-request, e.g. 'incorporation',
+  // so only that row shows a spinner instead of disabling the whole modal.
+  const [itemActionLoading, setItemActionLoading] = useState(null);
   const [filterStatus,      setFilterStatus]      = useState('all');
   const [actionLoading,     setActionLoading]     = useState(false);
 
@@ -397,6 +417,46 @@ export const SuperAdminDashboard = () => {
       toast.error(e.message || 'Failed to verify document');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Approves/rejects ONE document type (e.g. just "tourism") within the
+  // bundle, independent of the others. The backend recomputes the overall
+  // bundle status (and the agent's ability to post packages) after each
+  // call — see recomputeOverallStatus in superadmin_routes.js.
+  const handleVerifyDocumentItem = async (docType, status) => {
+    if (!selectedDocument) return;
+    setItemActionLoading(docType);
+    try {
+      const notes = itemNotes[docType] || '';
+      const res = await saJson(
+        await saApi.post(`/superadmin/documents/${selectedDocument.id}/verify-item`, { docType, status, notes })
+      );
+
+      // Refresh the full documents list so other tabs (Agents, badge
+      // counts) reflect the new overall status immediately, not just
+      // this modal.
+      const docsData = await saJson(await saApi.get('/superadmin/documents'));
+      const refreshedDocs = Array.isArray(docsData?.data) ? docsData.data : [];
+      setDocuments(refreshedDocs);
+      const refreshed = refreshedDocs.find((doc) => doc.id === selectedDocument.id);
+      if (refreshed) setSelectedDocument(refreshed);
+
+      setItemNotes(prev => ({ ...prev, [docType]: '' }));
+
+      const overall = res?.data?.overallStatus;
+      const label = docType.replace('_', ' ');
+      if (overall === 'approved') {
+        toast.success(`${label} approved — agent is now fully verified and can post packages.`);
+      } else if (status === 'rejected') {
+        toast.error(`${label} marked not genuine.`);
+      } else {
+        toast.success(`${label} approved.`);
+      }
+    } catch (e) {
+      toast.error(e.message || 'Failed to verify document');
+    } finally {
+      setItemActionLoading(null);
     }
   };
 
@@ -691,7 +751,7 @@ export const SuperAdminDashboard = () => {
       )}
 
       {showDocumentModal && (
-        <Modal title="Verify Agent Documents" onClose={() => { setShowDocumentModal(false); setVerificationNotes(''); }}>
+        <Modal title="Verify Agent Documents" onClose={() => { setShowDocumentModal(false); setVerificationNotes(''); setItemNotes({}); }}>
           <div className="space-y-4">
             <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
               <div className="flex items-start justify-between gap-4">
@@ -701,102 +761,117 @@ export const SuperAdminDashboard = () => {
                   {selectedDocument?.agentEmail && <p className="text-sm text-gray-500">{selectedDocument.agentEmail}</p>}
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-gray-600">Status</p>
+                  <p className="text-sm text-gray-600">Overall status</p>
                   <StatusBadge status={selectedDocument?.status || 'pending'} />
                 </div>
               </div>
-              <p className="text-sm text-gray-500 mt-3">Review the uploaded documents and confirm whether the agent is genuine.</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {selectedDocument?.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
-              {selectedDocument?.tourismDoc && <Badge color="green">Tourism</Badge>}
-              {selectedDocument?.kraPin && <Badge color="purple">KRA PIN</Badge>}
-              {selectedDocument?.directorIdDoc && <Badge color="purple">Director ID</Badge>}
-            </div>
-
-            {selectedDocument?.status !== 'pending' && (
-              <div className="rounded-2xl bg-white border border-gray-200 p-4 mt-3">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="text-sm font-medium text-gray-700">Review history</p>
-                  <span className="text-xs text-slate-500">{selectedDocument?.reviewedAt ? format(new Date(selectedDocument.reviewedAt), 'MMM d, yyyy HH:mm') : 'No review date'}</span>
+              <p className="text-sm text-gray-500 mt-3">
+                Each document is checked individually. The agent is confirmed genuine — and can post packages —
+                only once every required document below is approved.
+              </p>
+              {selectedDocument?.reviewRequestedAt && (
+                <div className="mt-3 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-3 py-2 text-xs">
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                  Agent requested a priority review on {format(new Date(selectedDocument.reviewRequestedAt), 'MMM d, yyyy HH:mm')}.
                 </div>
-                <p className="text-sm text-gray-500 mt-1">Reviewed by {selectedDocument?.reviewerName || 'superadmin'}.</p>
-                {selectedDocument?.reviewNotes && (
-                  <p className="text-sm text-gray-700 mt-3 whitespace-pre-wrap">{selectedDocument.reviewNotes}</p>
-                )}
-              </div>
-            )}
+              )}
+            </div>
 
-            {(selectedDocument?.incorporationDoc || selectedDocument?.tourismDoc || selectedDocument?.kraPin || selectedDocument?.directorIdDoc || selectedDocument?.officePhoto) ? (
-              <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Document links</p>
-                {selectedDocument?.incorporationDoc && (
-                  <a href={selectedDocument.incorporationDoc} target="_blank" rel="noreferrer"
-                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                    <FileText className="h-3.5 w-3.5" /> View Incorporation Certificate
-                  </a>
-                )}
-                {selectedDocument?.tourismDoc && (
-                  <a href={selectedDocument.tourismDoc} target="_blank" rel="noreferrer"
-                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                    <FileText className="h-3.5 w-3.5" /> View Tourism License
-                  </a>
-                )}
-                {selectedDocument?.kraPin && (
-                  <a href={selectedDocument.kraPin} target="_blank" rel="noreferrer"
-                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                    <FileText className="h-3.5 w-3.5" /> View KRA PIN Certificate
-                  </a>
-                )}
-                {selectedDocument?.directorIdDoc && (
-                  <a href={selectedDocument.directorIdDoc} target="_blank" rel="noreferrer"
-                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                    <FileText className="h-3.5 w-3.5" /> View Director ID
-                  </a>
-                )}
-                {selectedDocument?.officePhoto && (
-                  <div className="mt-2">
-                    <p className="text-xs font-medium text-gray-500 mb-2">Office Photos</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {(Array.isArray(selectedDocument.officePhoto) ? selectedDocument.officePhoto : [selectedDocument.officePhoto]).map((photo, idx) => (
-                        <a key={idx} href={photo.publicUrl || photo} target="_blank" rel="noreferrer"
-                           className="text-sm text-blue-600 hover:underline truncate break-words">
-                          Photo {idx + 1}
-                        </a>
-                      ))}
+            {/* ── Per-document review cards ── */}
+            <div className="space-y-3">
+              {DOCUMENT_ITEM_DEFS.map(({ key, label, urlField, required }) => {
+                const url = selectedDocument?.[urlField];
+                const item = selectedDocument?.items?.[key] || { status: 'pending', notes: null, reviewedAt: null };
+                const isOfficePhoto = key === 'office_photo';
+                const photos = isOfficePhoto
+                  ? (Array.isArray(url) ? url : (url ? [url] : []))
+                  : null;
+                const isUploaded = isOfficePhoto ? photos.length > 0 : !!url;
+                const isLoading = itemActionLoading === key;
+
+                return (
+                  <div key={key} className="bg-white rounded-2xl border border-gray-200 p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        <span className="font-medium text-gray-900 text-sm">{label}</span>
+                        {required
+                          ? <span className="text-[10px] uppercase tracking-wide text-gray-400">Required</span>
+                          : <span className="text-[10px] uppercase tracking-wide text-gray-400">Optional</span>}
+                      </div>
+                      <StatusBadge status={isUploaded ? item.status : 'pending'} />
                     </div>
+
+                    {!isUploaded ? (
+                      <p className="text-sm text-gray-400 mt-2">Not uploaded yet.</p>
+                    ) : (
+                      <>
+                        {/* Link(s) to the actual file(s) */}
+                        <div className="mt-2">
+                          {isOfficePhoto ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {photos.map((photo, idx) => (
+                                <a key={idx} href={photo.publicUrl || photo} target="_blank" rel="noreferrer"
+                                   className="text-sm text-blue-600 hover:underline truncate break-words">
+                                  Photo {idx + 1}
+                                </a>
+                              ))}
+                            </div>
+                          ) : (
+                            <a href={url} target="_blank" rel="noreferrer"
+                               className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
+                              <FileText className="h-3.5 w-3.5" /> View document
+                            </a>
+                          )}
+                        </div>
+
+                        {/* Prior review note for this specific document, if any */}
+                        {item.status !== 'pending' && item.notes && (
+                          <p className="text-xs text-gray-500 mt-2 whitespace-pre-wrap bg-gray-50 rounded-lg px-3 py-2">
+                            {item.notes}
+                          </p>
+                        )}
+
+                        {/* Note field + approve/reject — only meaningful once uploaded */}
+                        <textarea
+                          value={itemNotes[key] || ''}
+                          onChange={e => setItemNotes(prev => ({ ...prev, [key]: e.target.value }))}
+                          rows={2}
+                          placeholder={`Notes about this ${label.toLowerCase()}…`}
+                          className="w-full mt-3 px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        />
+
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => handleVerifyDocumentItem(key, 'rejected')}
+                            disabled={isLoading || item.status === 'rejected'}
+                            className="flex-1 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-medium hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            {isLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                            Not genuine
+                          </button>
+                          <button
+                            onClick={() => handleVerifyDocumentItem(key, 'approved')}
+                            disabled={isLoading || item.status === 'approved'}
+                            className="flex-1 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-medium hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            {isLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                            Approve
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="bg-gray-50 rounded-2xl p-4 text-sm text-gray-500">No document links available for this agent.</div>
-            )}
+                );
+              })}
+            </div>
 
-            <label className="block text-sm font-medium text-gray-700">Verification notes</label>
-            <textarea
-              value={verificationNotes}
-              onChange={e => setVerificationNotes(e.target.value)}
-              rows={3}
-              placeholder="Notes about agent verification, document authenticity, or concerns…"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
-
-            <div className="flex gap-3 mt-4">
-              <button onClick={() => { setShowDocumentModal(false); setVerificationNotes(''); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <div className="flex gap-3 mt-2">
               <button
-                onClick={() => handleVerifyDocument('rejected')}
-                disabled={actionLoading}
-                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={() => { setShowDocumentModal(false); setVerificationNotes(''); setItemNotes({}); }}
+                className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
               >
-                {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Mark as Not Genuine
-              </button>
-              <button
-                onClick={() => handleVerifyDocument('approved')}
-                disabled={actionLoading}
-                className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {actionLoading && <Loader className="h-4 w-4 animate-spin" />} Approve as Genuine
+                Close
               </button>
             </div>
           </div>
@@ -1199,32 +1274,49 @@ const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onRefreshDocum
     )}
 
     <div className="grid grid-cols-1 gap-3">
-      {documents.map(doc => (
-        <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-900">{doc.agentName}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Submitted {doc.submittedAt ? format(new Date(doc.submittedAt), 'MMM d, yyyy') : '—'}
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {doc.incorporationDoc && <Badge color="blue">Incorporation</Badge>}
-                {doc.tourismDoc       && <Badge color="green">Tourism</Badge>}
-                {doc.kraPin          && <Badge color="purple">KRA PIN</Badge>}
+      {documents.map(doc => {
+        const requiredKeys = DOCUMENT_ITEM_DEFS.filter(d => d.required).map(d => d.key);
+        const approvedCount = requiredKeys.filter(k => doc.items?.[k]?.status === 'approved').length;
+        return (
+          <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-gray-900">{doc.agentName}</p>
+                  {doc.reviewRequestedAt && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                      <AlertTriangle className="h-3 w-3" /> Review requested
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Submitted {doc.submittedAt ? format(new Date(doc.submittedAt), 'MMM d, yyyy') : '—'} · {approvedCount}/{requiredKeys.length} required docs approved
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {DOCUMENT_ITEM_DEFS.map(({ key, label, urlField }) => {
+                    const uploaded = key === 'office_photo'
+                      ? (Array.isArray(doc[urlField]) ? doc[urlField].length > 0 : !!doc[urlField])
+                      : !!doc[urlField];
+                    if (!uploaded) return null;
+                    const itemStatus = doc.items?.[key]?.status || 'pending';
+                    const color = itemStatus === 'approved' ? 'green' : itemStatus === 'rejected' ? 'red' : 'blue';
+                    return <Badge key={key} color={color}>{label}</Badge>;
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <StatusBadge status={doc.status} />
+                <button
+                  onClick={() => onSelectDocument(doc)}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Verify
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <StatusBadge status={doc.status} />
-              <button
-                onClick={() => onSelectDocument(doc)}
-                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition-colors"
-              >
-                Verify
-              </button>
-            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       {documents.length === 0 && !error && (
         <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
           <p className="text-sm text-gray-400">No documents found</p>

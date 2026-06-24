@@ -21,6 +21,7 @@ import DocumentsTab from './agent/documents/DocumentsTab';
 import AccountingTab from './AccountingTab';
 import AgentAccountingTab from './AgentAccountingTab';
 import { useBookingNotifications } from '../hooks/useBookingNotifications';
+import { getAgentVerificationStatus, requestDocumentReview } from '../api';
 import umLogo from '../assets/umramarket.png';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
@@ -666,311 +667,410 @@ const PackageGroup = ({ packageName, packageType, departure, duration, clients, 
   );
 };
 
-// ── Umrah ID Card modal ────────────────────────────────────────────────────
-// Agent-facing pilgrim ID: passport details captured during verification +
-// the auto-cropped face photo the backend returns, plus the agency's own
-// contact info so the card is useful if the pilgrim gets lost or needs help
-// on the ground. Preview on screen, downloadable as a wallet/lanyard-sized
-// PDF card.
+// ── Brand tokens — shared by ID card and Manifest modal ─────────────────────
+const UM_BRAND = {
+  emerald900: '#064E3B',
+  emerald700: '#0B6B4F',
+  gold:       '#C9A227',
+  goldSoft:   '#E6CB6B',
+  cream:      '#FAF7EF',
+  creamDeep:  '#F3EFE0',
+  parchment:  '#EFEBDD',
+  ink:        '#1C1B17',
+  inkSoft:    '#6B6456',
+};
+
+// ── Umrah ID Card modal ───────────────────────────────────────────────────────
+// World-class pilgrim ID — correct photo framing, CR80 wallet card format.
+//
+// PHOTO RULES (fixes the "trimmed badly" bug):
+//  • Screen preview: 72×96px portrait slot, object-cover + object-center so
+//    the face is never clipped to just the top of the head.
+//  • PDF: the cover-fit renders onto an offscreen canvas at 3× for print
+//    sharpness. Vertical anchor is centred (dy = (boxH - dh) / 2) rather than
+//    pinned to the top, so a full-face shot isn't decapitated.
+//  • A thin gold border + subtle inner shadow frame the photo slot.
+//
 const UmrahIdCardModal = ({ client, agent, onClose }) => {
   const [downloading, setDownloading] = useState(false);
   if (!client) return null;
 
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-  const cardRef = `UM-ID-${client.bookingId || Date.now().toString(36).toUpperCase()}`;
+  const fmtDate = (d) =>
+    d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  const cardRef = `UM-ID-${(client.bookingId || Date.now().toString(36)).slice(0, 16).toUpperCase()}`;
 
+  // ── PDF generation ─────────────────────────────────────────────────────────
   const handleDownloadPDF = async () => {
     setDownloading(true);
     try {
       const { jsPDF } = await import('jspdf');
 
-      const E = [6, 78, 59];      // emerald900
-      const G = [201, 162, 39];   // gold
-      const CR = [250, 247, 239]; // cream
-      const INK = [28, 27, 23];
+      // Colour palettes as [R,G,B]
+      const E  = [6,   78,  59];   // emerald900
+      const E7 = [11,  107, 79];   // emerald700
+      const G  = [201, 162, 39];   // gold
+      const GS = [230, 203, 107];  // goldSoft
+      const CR = [250, 247, 239];  // cream
+      const INK  = [28,  27,  23];
       const INKS = [107, 100, 86];
 
-      // Standard ID-card size (CR80, like a credit card), landscape.
-      const doc = new jsPDF({ unit: 'pt', format: [243, 153] }); // 3.375in x 2.125in
+      // CR80 landscape (3.375 × 2.125 in at 72 dpi = 243 × 153 pt)
+      const doc = new jsPDF({ unit: 'pt', format: [243, 153] });
       const W = 243, H = 153;
-      const margin = 12;
+      const M = 11; // margin
 
-      // Background
+      // ── Background ──
       doc.setFillColor(...CR);
       doc.rect(0, 0, W, H, 'F');
 
-      // Header band
+      // Subtle gradient-feel: lighter cream strip across the middle body
+      doc.setFillColor(252, 250, 244);
+      doc.rect(0, 36, W, H - 36 - 28, 'F');
+
+      // ── Header band ──
       doc.setFillColor(...E);
       doc.rect(0, 0, W, 34, 'F');
+      // Gold accent line
       doc.setFillColor(...G);
-      doc.rect(0, 34, W, 2, 'F');
+      doc.rect(0, 34, W, 1.5, 'F');
 
-      const loadImg = (src) => new Promise((resolve) => {
-        try {
-          const imgEl = new window.Image();
-          imgEl.crossOrigin = 'anonymous';
-          imgEl.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = imgEl.naturalWidth || 256;
-              canvas.height = imgEl.naturalHeight || 256;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(imgEl, 0, 0);
-              resolve({ dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height });
-            } catch { resolve(null); }
-          };
-          imgEl.onerror = () => resolve(null);
-          imgEl.src = src;
-        } catch { resolve(null); }
-      });
+      // Helper: load image → { dataUrl, w, h } or null
+      const loadImg = (src) =>
+        new Promise((resolve) => {
+          try {
+            const img = new window.Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              try {
+                const c = document.createElement('canvas');
+                c.width = img.naturalWidth || 256;
+                c.height = img.naturalHeight || 256;
+                c.getContext('2d').drawImage(img, 0, 0);
+                resolve({ dataUrl: c.toDataURL('image/png'), w: c.width, h: c.height });
+              } catch { resolve(null); }
+            };
+            img.onerror = () => resolve(null);
+            img.src = src;
+          } catch { resolve(null); }
+        });
 
       const [logo, face] = await Promise.all([
         loadImg(umLogo),
         client.facePhotoUrl ? loadImg(client.facePhotoUrl) : Promise.resolve(null),
       ]);
 
-      // Logo, top-left of header
+      // ── Logo + branding ──
       if (logo) {
         const box = 22, ratio = Math.min(box / logo.w, box / logo.h);
-        const w = logo.w * ratio, h = logo.h * ratio;
+        const lw = logo.w * ratio, lh = logo.h * ratio;
         doc.setFillColor(255, 255, 255);
-        doc.roundedRect(margin, 6, box, box, 4, 4, 'F');
-        doc.addImage(logo.dataUrl, 'PNG', margin + (box - w) / 2, 6 + (box - h) / 2, w, h);
+        doc.roundedRect(M, 6, box, box, 3, 3, 'F');
+        doc.addImage(logo.dataUrl, 'PNG', M + (box - lw) / 2, 6 + (box - lh) / 2, lw, lh);
       }
       doc.setFont('times', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);
-      doc.text('UmraMarket', margin + 28, 17);
+      doc.text('UmraMarket', M + 28, 16);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
-      doc.setTextColor(...G);
-      doc.text('PILGRIM IDENTIFICATION', margin + 28, 27);
+      doc.setFontSize(6);
+      doc.setTextColor(...GS);
+      doc.text('PILGRIM IDENTIFICATION', M + 28, 25);
 
+      // Package type badge (top right)
+      const pkgLabel = client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH';
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
+      doc.setFontSize(8);
       doc.setTextColor(255, 255, 255);
-      doc.text(client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH', W - margin, 17, { align: 'right' });
+      doc.text(pkgLabel, W - M, 16, { align: 'right' });
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(5.5);
-      doc.setTextColor(...G);
-      doc.text(cardRef, W - margin, 27, { align: 'right' });
+      doc.setTextColor(...GS);
+      doc.text(cardRef, W - M, 26, { align: 'right' });
 
-      // Photo box, left side below header
-      const photoW = 58, photoH = 70, photoX = margin, photoY = 42;
+      // ── Photo box ──
+      const photoX = M, photoY = 42, photoW = 62, photoH = 78;
+
+      // Gold border rect
       doc.setFillColor(255, 255, 255);
       doc.roundedRect(photoX, photoY, photoW, photoH, 4, 4, 'F');
       doc.setDrawColor(...G);
-      doc.setLineWidth(0.75);
+      doc.setLineWidth(1);
       doc.roundedRect(photoX, photoY, photoW, photoH, 4, 4, 'S');
+
       if (face) {
-        // Pre-clip the face image into a canvas matching the photo box size so
-        // the PDF image fits perfectly without overflowing the rounded rect.
-        // Cover-fit + anchor to top so the forehead is never cut off.
-        const SCALE = 3; // render at 3× for print sharpness
-        const boxPxW = photoW * SCALE, boxPxH = photoH * SCALE;
-        const clipped = document.createElement('canvas');
-        clipped.width = boxPxW;
-        clipped.height = boxPxH;
-        const ctx = clipped.getContext('2d');
+        // Render at 3× for print-quality sharpness
+        const SCALE = 3;
+        const bpxW = photoW * SCALE;
+        const bpxH = photoH * SCALE;
+        const clip = document.createElement('canvas');
+        clip.width  = bpxW;
+        clip.height = bpxH;
+        const ctx = clip.getContext('2d');
 
         // Rounded-rect clip path
         const r = 4 * SCALE;
         ctx.beginPath();
         ctx.moveTo(r, 0);
-        ctx.lineTo(boxPxW - r, 0);
-        ctx.quadraticCurveTo(boxPxW, 0, boxPxW, r);
-        ctx.lineTo(boxPxW, boxPxH - r);
-        ctx.quadraticCurveTo(boxPxW, boxPxH, boxPxW - r, boxPxH);
-        ctx.lineTo(r, boxPxH);
-        ctx.quadraticCurveTo(0, boxPxH, 0, boxPxH - r);
-        ctx.lineTo(0, r);
-        ctx.quadraticCurveTo(0, 0, r, 0);
+        ctx.lineTo(bpxW - r, 0); ctx.quadraticCurveTo(bpxW, 0, bpxW, r);
+        ctx.lineTo(bpxW, bpxH - r); ctx.quadraticCurveTo(bpxW, bpxH, bpxW - r, bpxH);
+        ctx.lineTo(r, bpxH); ctx.quadraticCurveTo(0, bpxH, 0, bpxH - r);
+        ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
         ctx.closePath();
         ctx.clip();
 
-        // White background (in case of transparent edges)
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, boxPxW, boxPxH);
+        ctx.fillRect(0, 0, bpxW, bpxH);
 
-        // Cover-fit: scale so width fills the box, anchor to top
-        const widthRatio = boxPxW / face.w;
-        const heightRatio = boxPxH / face.h;
-        const fitRatio = Math.max(widthRatio, heightRatio);
+        // ── COVER-FIT centred — the key fix ──────────────────────────────────
+        // Previously dy = 0 (pinned to top) which decapitated tall portraits.
+        // Now we centre both axes so the face is always fully visible.
+        const fitRatio = Math.max(bpxW / face.w, bpxH / face.h);
         const dw = face.w * fitRatio;
         const dh = face.h * fitRatio;
-        const dx = (boxPxW - dw) / 2; // center horizontally
-        const dy = 0;                  // pin to top — face is always in upper portion
-        const faceImg = new window.Image();
-        faceImg.src = face.dataUrl;
-        ctx.drawImage(faceImg, dx, dy, dw, dh);
+        const dx = (bpxW - dw) / 2;   // centre horizontally
+        const dy = (bpxH - dh) / 2;   // centre vertically  ← was 0
+        // ─────────────────────────────────────────────────────────────────────
 
-        doc.addImage(clipped.toDataURL('image/jpeg', 0.95), 'JPEG', photoX, photoY, photoW, photoH);
+        const fi = new window.Image();
+        fi.src = face.dataUrl;
+        ctx.drawImage(fi, dx, dy, dw, dh);
+
+        doc.addImage(clip.toDataURL('image/jpeg', 0.97), 'JPEG', photoX, photoY, photoW, photoH);
       } else {
+        // Placeholder
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6);
+        doc.setFontSize(5.5);
         doc.setTextColor(...INKS);
-        doc.text('Photo pending', photoX + photoW / 2, photoY + photoH / 2, { align: 'center' });
+        doc.text('Photo', photoX + photoW / 2, photoY + photoH / 2 - 3, { align: 'center' });
+        doc.text('pending', photoX + photoW / 2, photoY + photoH / 2 + 4, { align: 'center' });
       }
 
-      // Details, right of photo
-      const dx = photoX + photoW + 10;
-      const dw = W - margin - dx;
-      let dy = photoY + 6;
+      // ── Details, right of photo ──
+      const detX = photoX + photoW + 10;
+      const detW = W - M - detX;
+      let detY = photoY + 5;
+
       const row = (label, value) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5.3);
+        doc.setFontSize(5);
         doc.setTextColor(...INKS);
-        doc.text(label.toUpperCase(), dx, dy);
+        doc.text(label.toUpperCase(), detX, detY);
+        detY += 7;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
+        doc.setFontSize(8.5);
         doc.setTextColor(...INK);
-        doc.text(doc.splitTextToSize(String(value || '—'), dw)[0], dx, dy + 9);
-        dy += 17;
+        const lines = doc.splitTextToSize(String(value || '—'), detW);
+        doc.text(lines[0], detX, detY);
+        detY += 13;
       };
-      row('Name', client.name);
-      row('Passport No.', client.passportNumber);
-      const dobNat = [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null].filter(Boolean).join('  ·  ');
-      row('Nationality / DOB', dobNat || '—');
+
+      row('Name',            client.name);
+      row('Passport No.',    client.passportNumber);
+      row('Nationality / DOB',
+        [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null]
+          .filter(Boolean).join('  ·  ') || '—');
       row('Passport Expiry', client.passportExpiry ? fmtDate(client.passportExpiry) : '—');
 
-      // Emergency contact strip — agency/agent details for if the pilgrim is lost
-      const stripY = H - 30;
+      // ── Footer strip ──
+      const footY = H - 28;
       doc.setFillColor(...E);
-      doc.rect(0, stripY, W, 30, 'F');
+      doc.rect(0, footY, W, 28, 'F');
       doc.setFillColor(...G);
-      doc.rect(0, stripY, W, 1.5, 'F');
+      doc.rect(0, footY, W, 1.5, 'F');
+
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(5.3);
-      doc.setTextColor(...G);
-      doc.text('IF FOUND, PLEASE CONTACT', margin, stripY + 10);
+      doc.setFontSize(5);
+      doc.setTextColor(...GS);
+      doc.text('IF FOUND, PLEASE CONTACT', M, footY + 9);
+
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(255, 255, 255);
-      doc.text(`${agent?.agencyName || 'Travel Agency'}  ·  ${agent?.phone || agent?.email || '—'}`, margin, stripY + 21);
+      const agencyLine = `${agent?.agencyName || 'Travel Agency'}  ·  ${agent?.phone || agent?.email || '—'}`;
+      doc.text(agencyLine, M, footY + 20);
+
       if (agent?.agentName || agent?.name) {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(5.5);
-        doc.setTextColor(255, 255, 255);
-        doc.text(`Agent: ${agent.agentName || agent.name}`, W - margin, stripY + 21, { align: 'right' });
+        doc.setTextColor(200, 220, 210);
+        doc.text(`Agent: ${agent.agentName || agent.name}`, W - M, footY + 20, { align: 'right' });
       }
 
       doc.save(`Umrah-ID-${client.name.replace(/\s+/g, '-')}.pdf`);
     } catch (err) {
       console.error('[UmrahIdCardModal] PDF generation failed:', err);
-      alert('Could not generate the PDF. Make sure "jspdf" is installed (npm install jspdf).');
+      alert('Could not generate the PDF. Make sure "jspdf" is installed.');
     } finally {
       setDownloading(false);
     }
   };
 
+  // ── On-screen card preview ────────────────────────────────────────────────
+  // Proportions match the PDF exactly (243:153 ≈ 8:5).
+  // Photo slot: 72px wide, full height of the body area, object-cover
+  // object-center so the face is centred — not cropped to the top.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3.5" style={{ backgroundColor: UM_BRAND.ink }}>
+
+        {/* Modal header */}
+        <div
+          className="flex items-center justify-between px-5 py-3.5"
+          style={{ backgroundColor: UM_BRAND.emerald900 }}
+        >
           <div>
-            <p className="text-sm font-semibold text-white">Umrah ID Card</p>
-            <p className="text-[11px] text-white/40 mt-0.5">{client.name}</p>
+            <p className="text-sm font-bold text-white tracking-wide">Umrah ID Card</p>
+            <p className="text-[11px] mt-0.5" style={{ color: UM_BRAND.goldSoft }}>{client.name}</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 transition-colors">
             <X className="h-5 w-5 text-white/70" />
           </button>
         </div>
 
-        <div className="p-5" style={{ backgroundColor: UM_BRAND.parchment }}>
-          {/* On-screen card preview, same aspect ratio as the printed PDF */}
+        {/* Card preview */}
+        <div className="p-5" style={{ background: `linear-gradient(160deg, ${UM_BRAND.parchment}, ${UM_BRAND.creamDeep})` }}>
           <div
-            className="mx-auto w-full rounded-xl overflow-hidden shadow-lg relative"
-            style={{ aspectRatio: '243 / 153', backgroundColor: UM_BRAND.cream }}
+            className="mx-auto w-full rounded-xl overflow-hidden shadow-xl"
+            style={{ aspectRatio: '243 / 153', backgroundColor: UM_BRAND.cream, position: 'relative' }}
           >
-            {/* header */}
-            <div className="absolute top-0 left-0 right-0 px-3 py-2 flex items-center justify-between" style={{ background: `linear-gradient(120deg, ${UM_BRAND.emerald900}, ${UM_BRAND.emerald700})` }}>
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+            {/* ── Header band ── */}
+            <div
+              className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2"
+              style={{
+                height: '22%',
+                background: `linear-gradient(120deg, ${UM_BRAND.emerald900} 0%, ${UM_BRAND.emerald700} 100%)`,
+              }}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="w-5 h-5 rounded bg-white flex-shrink-0 flex items-center justify-center overflow-hidden">
                   <img src={umLogo} alt="" className="w-full h-full object-contain" />
                 </div>
-                <div className="leading-tight">
-                  <p className="text-[11px] font-bold text-white" style={{ fontFamily: 'Georgia, serif' }}>UmraMarket</p>
+                <div className="leading-tight min-w-0">
+                  <p className="text-[11px] font-bold text-white truncate" style={{ fontFamily: 'Georgia,serif' }}>UmraMarket</p>
                   <p className="text-[6px] font-bold uppercase tracking-wider" style={{ color: UM_BRAND.goldSoft }}>Pilgrim ID</p>
                 </div>
               </div>
-              <div className="text-right leading-tight">
-                <p className="text-[8px] font-bold text-white">{client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH'}</p>
+              <div className="text-right leading-tight flex-shrink-0 ml-2">
+                <p className="text-[9px] font-bold text-white">{client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH'}</p>
                 <p className="text-[6px]" style={{ color: UM_BRAND.goldSoft }}>{cardRef}</p>
               </div>
             </div>
-            <div className="absolute top-[26px] left-0 right-0 h-[2px]" style={{ backgroundColor: UM_BRAND.gold }} />
 
-            {/* body */}
-            <div className="absolute top-[30px] left-3 right-3 bottom-[24px] flex gap-2.5">
-              <div className="w-[58px] h-full rounded-lg border-2 flex-shrink-0 overflow-hidden bg-white flex items-start justify-center" style={{ borderColor: UM_BRAND.gold }}>
+            {/* Gold accent line */}
+            <div
+              className="absolute left-0 right-0"
+              style={{ top: '22%', height: '1.5px', backgroundColor: UM_BRAND.gold }}
+            />
+
+            {/* ── Body ── */}
+            <div
+              className="absolute left-0 right-0 flex gap-2.5 px-3"
+              style={{ top: 'calc(22% + 2px)', bottom: '18%' }}
+            >
+              {/* Photo slot — object-center centres the face, no top-crop */}
+              <div
+                className="flex-shrink-0 rounded-lg overflow-hidden bg-white"
+                style={{
+                  width: '30%',
+                  border: `2px solid ${UM_BRAND.gold}`,
+                  boxShadow: `inset 0 0 0 1px rgba(201,162,39,0.15)`,
+                }}
+              >
                 {client.facePhotoUrl ? (
                   <img
                     src={client.facePhotoUrl}
-                    alt=""
-                    className="w-full object-cover object-top"
-                    style={{ minHeight: '100%' }}
+                    alt={client.name}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      objectPosition: 'center center',  // ← was "top" — this was the bug
+                      display: 'block',
+                    }}
                   />
                 ) : (
-                  <span className="text-[6px] text-center px-1 mt-auto mb-auto" style={{ color: UM_BRAND.inkSoft }}>Photo pending</span>
+                  <div className="w-full h-full flex items-center justify-center">
+                    <span className="text-[6px] text-center px-1" style={{ color: UM_BRAND.inkSoft }}>Photo{'\n'}pending</span>
+                  </div>
                 )}
               </div>
-              <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+
+              {/* Details */}
+              <div className="flex-1 min-w-0 flex flex-col justify-center gap-[5px] py-1">
                 {[
-                  ['Name', client.name],
-                  ['Passport No.', client.passportNumber],
-                  ['Nationality / DOB', [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null].filter(Boolean).join('  ·  ') || '—'],
+                  ['Name',            client.name],
+                  ['Passport No.',    client.passportNumber],
+                  ['Nationality / DOB',
+                    [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null]
+                      .filter(Boolean).join(' · ') || '—'],
                   ['Passport Expiry', client.passportExpiry ? fmtDate(client.passportExpiry) : '—'],
-                ].map(([l, v]) => (
-                  <div key={l} className="min-w-0">
-                    <p className="text-[6px] font-bold uppercase tracking-wide" style={{ color: UM_BRAND.inkSoft }}>{l}</p>
-                    <p className="text-[10px] font-bold truncate" style={{ color: UM_BRAND.ink }}>{v}</p>
+                ].map(([label, value]) => (
+                  <div key={label} className="min-w-0">
+                    <p
+                      className="text-[6px] font-bold uppercase tracking-wide leading-none mb-0.5"
+                      style={{ color: UM_BRAND.inkSoft }}
+                    >{label}</p>
+                    <p
+                      className="text-[10px] font-bold truncate leading-tight"
+                      style={{ color: UM_BRAND.ink }}
+                    >{value || '—'}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* emergency contact strip */}
-            <div className="absolute bottom-0 left-0 right-0 px-3 py-1.5" style={{ backgroundColor: UM_BRAND.emerald900, borderTop: `1.5px solid ${UM_BRAND.gold}` }}>
-              <p className="text-[5.5px] font-bold uppercase tracking-wide" style={{ color: UM_BRAND.goldSoft }}>If found, please contact</p>
-              <p className="text-[8px] font-bold text-white truncate">{agent?.agencyName || 'Travel Agency'} · {agent?.phone || agent?.email || '—'}</p>
+            {/* ── Footer strip ── */}
+            <div
+              className="absolute bottom-0 left-0 right-0 px-3 flex flex-col justify-center"
+              style={{
+                height: '18%',
+                backgroundColor: UM_BRAND.emerald900,
+                borderTop: `1.5px solid ${UM_BRAND.gold}`,
+              }}
+            >
+              <p
+                className="text-[5.5px] font-bold uppercase tracking-wide leading-none mb-0.5"
+                style={{ color: UM_BRAND.goldSoft }}
+              >If found, please contact</p>
+              <p className="text-[8px] font-bold text-white truncate leading-tight">
+                {agent?.agencyName || 'Travel Agency'} · {agent?.phone || agent?.email || '—'}
+              </p>
             </div>
           </div>
 
+          {/* Missing-photo warning */}
           {!client.facePhotoUrl && (
             <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl p-2.5 text-xs">
-              <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-              No ID photo yet — this is added automatically once the client completes passport verification.
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-500" />
+              No ID photo yet — the client needs to complete the face photo step in their dashboard.
             </div>
           )}
 
+          {/* Download button */}
           <button
             onClick={handleDownloadPDF}
             disabled={downloading}
             className="w-full mt-4 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm shadow-md hover:shadow-lg hover:brightness-105 transition-all disabled:opacity-60"
-            style={{ background: `linear-gradient(135deg, ${UM_BRAND.gold}, ${UM_BRAND.goldSoft})`, color: UM_BRAND.ink }}
+            style={{
+              background: `linear-gradient(135deg, ${UM_BRAND.gold}, ${UM_BRAND.goldSoft})`,
+              color: UM_BRAND.ink,
+            }}
           >
-            {downloading ? <Loader className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {downloading
+              ? <Loader className="h-4 w-4 animate-spin" />
+              : <Download className="h-4 w-4" />}
             {downloading ? 'Preparing…' : 'Download ID card (PDF)'}
           </button>
-          <p className="text-[11px] text-gray-400 text-center mt-2">Wallet-sized card · print and laminate, or share digitally.</p>
+          <p className="text-[11px] text-gray-400 text-center mt-2">
+            Wallet-sized card · print and laminate, or share digitally.
+          </p>
         </div>
       </div>
     </div>
   );
-};
-
-// ── Manifest modal ────────────────────────────────────────────────────────────
-// Brand tokens — UmraMarket (emerald & gold)
-const UM_BRAND = {
-  emerald900: '#064E3B',
-  emerald700: '#0B6B4F',
-  gold: '#C9A227',
-  goldSoft: '#E6CB6B',
-  cream: '#FAF7EF',
-  creamDeep: '#F3EFE0',
-  parchment: '#EFEBDD',
-  ink: '#1C1B17',
-  inkSoft: '#6B6456',
 };
 
 const ManifestModal = ({ manifest, agent, onClose }) => {
@@ -1362,12 +1462,130 @@ const ManifestModal = ({ manifest, agent, onClose }) => {
   );
 };
 
+// ── Verification gate modal ───────────────────────────────────────────────────
+// Shown instead of CreatePackageModal whenever an agent who isn't fully
+// approved tries to create a package. Explains exactly which documents are
+// missing/pending/rejected, and gives the right next action:
+//   - nothing uploaded yet        → "Go to Documents" (upload)
+//   - everything uploaded, waiting → "Request priority review" + "View documents"
+//   - something rejected          → "Go to Documents" (fix + re-upload)
+const VERIFICATION_DOC_LABELS = {
+  incorporation: 'Incorporation Certificate',
+  tourism:       'Tourism License',
+  krapin:        'KRA PIN Certificate',
+  director_id:   'Director ID',
+  office_photo:  'Office Photo (optional)',
+};
+const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin', 'director_id'];
+
+const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGoToDocuments, onClose }) => {
+  const items = status?.items || {};
+  const hasUploadedAllRequired = VERIFICATION_REQUIRED_KEYS.every(k => items[k]?.uploaded);
+  const anyRejected = VERIFICATION_REQUIRED_KEYS.some(k => items[k]?.status === 'rejected');
+  const reviewRequested = !!status?.reviewRequested;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4" style={{ backgroundColor: UM_BRAND.emerald900 }}>
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-white" />
+            <p className="text-sm font-bold text-white tracking-wide">Verification required</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+            <X className="h-4 w-4 text-white/70" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">
+            {anyRejected
+              ? 'One or more of your documents was not approved. Fix the issue and re-upload to continue.'
+              : hasUploadedAllRequired
+                ? "You've uploaded everything — your documents are still being reviewed. You'll be able to post packages as soon as they're approved."
+                : 'Your agency needs to be verified before you can post packages. Upload the documents below to get started.'}
+          </p>
+
+          <div className="space-y-2">
+            {Object.keys(VERIFICATION_DOC_LABELS).map(key => {
+              const item = items[key] || { uploaded: false, status: 'pending' };
+              const required = VERIFICATION_REQUIRED_KEYS.includes(key);
+              const dotColor = !item.uploaded ? 'bg-gray-300'
+                : item.status === 'approved' ? 'bg-green-500'
+                : item.status === 'rejected' ? 'bg-red-500'
+                : 'bg-amber-400';
+              const label = !item.uploaded ? 'Not uploaded'
+                : item.status === 'approved' ? 'Approved'
+                : item.status === 'rejected' ? 'Rejected'
+                : 'Pending review';
+              return (
+                <div key={key} className="flex items-center justify-between gap-3 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 ${dotColor}`} />
+                    <span className="text-gray-800 truncate">{VERIFICATION_DOC_LABELS[key]}</span>
+                    {!required && <span className="text-[10px] text-gray-400 flex-shrink-0">optional</span>}
+                  </div>
+                  <span className={`text-xs flex-shrink-0 ${
+                    item.status === 'approved' ? 'text-green-600' : item.status === 'rejected' ? 'text-red-600' : 'text-gray-500'
+                  }`}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {items && VERIFICATION_REQUIRED_KEYS.some(k => items[k]?.status === 'rejected' && items[k]?.notes) && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-1">
+              {VERIFICATION_REQUIRED_KEYS.filter(k => items[k]?.status === 'rejected' && items[k]?.notes).map(k => (
+                <p key={k} className="text-xs text-red-700">
+                  <span className="font-semibold">{VERIFICATION_DOC_LABELS[k]}:</span> {items[k].notes}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {reviewRequested && !anyRejected && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              You already requested a priority review. Our team has been notified.
+            </p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={onGoToDocuments}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition-colors"
+            >
+              {hasUploadedAllRequired ? 'View documents' : 'Upload documents'}
+            </button>
+            {hasUploadedAllRequired && !anyRejected && (
+              <button
+                onClick={onRequestReview}
+                disabled={requestingReview || reviewRequested}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-60 transition-all"
+                style={{ background: `linear-gradient(135deg, ${UM_BRAND.emerald700}, ${UM_BRAND.emerald900})` }}
+              >
+                {requestingReview && <Loader className="h-4 w-4 animate-spin" />}
+                {reviewRequested ? 'Review requested' : 'Request priority review'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ==================== MAIN DASHBOARD COMPONENT ====================
 const AgentDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCreatePackage, setShowCreatePackage] = useState(false);
+  // Shown instead of CreatePackageModal when the agent isn't fully verified
+  // yet — explains why and routes them to either upload docs or request review.
+  const [showVerificationGate, setShowVerificationGate] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [sidebarHovered, setSidebarHovered] = useState(false); // desktop hover expand
   const [searchQuery, setSearchQuery] = useState('');
@@ -1401,6 +1619,77 @@ const AgentDashboard = ({ user, onLogout }) => {
   const displayAgent = profile?.agentNumber || user?.agentNumber || '';
   const avatarLetter = displayName.charAt(0).toUpperCase();
   // ────────────────────────────────────────────────────────────────
+
+  // ── Document verification status ─────────────────────────────────────────
+  // Drives the "can this agent post packages" gate. Mirrors what the
+  // superadmin sees per-document (see SuperAdminDashboard's DocumentsTab) —
+  // an agent is only "genuine" once every required document is approved.
+  const [verificationStatus, setVerificationStatus] = useState(null);
+  const [verificationLoading, setVerificationLoading] = useState(true);
+  const [requestingReview, setRequestingReview] = useState(false);
+
+  const refreshVerificationStatus = async () => {
+    try {
+      const data = await getAgentVerificationStatus();
+      setVerificationStatus(data);
+    } catch (err) {
+      console.error('[AgentDashboard] verification status fetch failed:', err.message);
+      // Fail safe: if we can't confirm approval, treat as not-approved
+      // rather than silently letting an unverified agent post a package.
+      setVerificationStatus({ isApproved: false, hasUploadedDocuments: false, items: {} });
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  useEffect(() => { refreshVerificationStatus(); }, []);
+
+  // DocumentsTab (./agent/documents/DocumentsTab) handles its own uploads
+  // and isn't available here to hook a completion callback into directly.
+  // Re-checking verification status whenever the agent navigates away from
+  // that tab is a reasonable proxy for "they may have just uploaded
+  // something" so the gate doesn't stay stale after a successful upload.
+  const prevTabRef = useRef(activeTab);
+  useEffect(() => {
+    if (prevTabRef.current === 'documents' && activeTab !== 'documents') {
+      refreshVerificationStatus();
+    }
+    prevTabRef.current = activeTab;
+  }, [activeTab]);
+
+  const isAgentApproved = verificationStatus?.isApproved === true;
+
+  // Every "create package" entry point should call THIS instead of setting
+  // showCreatePackage directly, so the gate is enforced no matter which
+  // button the agent clicked. The backend (requireApprovedAgent middleware
+  // in packages.route.js) enforces this independently too — this is the
+  // UX layer that explains *why* and routes them to the fix, not the only
+  // line of defense.
+  const handleAttemptCreatePackage = () => {
+    if (verificationLoading) return; // status still loading — avoid a flash of the wrong modal
+    if (isAgentApproved) {
+      setShowCreatePackage(true);
+    } else {
+      setShowVerificationGate(true);
+    }
+  };
+
+  const handleRequestReview = async () => {
+    setRequestingReview(true);
+    try {
+      const res = await requestDocumentReview();
+      // This file has no toast library wired in (unlike SuperAdminDashboard,
+      // which uses react-hot-toast) — alert() matches the existing pattern
+      // used for PDF-generation feedback elsewhere in this component.
+      alert(res?.message || 'Review requested. Our team will prioritize your documents shortly.');
+      await refreshVerificationStatus();
+    } catch (err) {
+      alert(err?.message || 'Failed to request review. Please try again.');
+      console.error('[AgentDashboard] request review failed:', err?.message);
+    } finally {
+      setRequestingReview(false);
+    }
+  };
 
   // ── Clients ─────────────────────────────────────────────────────────────────
   const [clientSearch, setClientSearch] = useState('');
@@ -1550,6 +1839,18 @@ const AgentDashboard = ({ user, onLogout }) => {
         onSave={handleSavePackage}
       />
 
+      {/* Verification gate — shown instead of CreatePackageModal when the
+          agent isn't fully approved yet. */}
+      {showVerificationGate && (
+        <VerificationGateModal
+          status={verificationStatus}
+          requestingReview={requestingReview}
+          onRequestReview={handleRequestReview}
+          onGoToDocuments={() => { setShowVerificationGate(false); setActiveTab('documents'); }}
+          onClose={() => setShowVerificationGate(false)}
+        />
+      )}
+
       {/* Mobile overlay backdrop */}
       {sidebarOpen && (
         <div
@@ -1694,7 +1995,7 @@ const AgentDashboard = ({ user, onLogout }) => {
             <div className="flex items-center space-x-2 md:space-x-4 flex-shrink-0">
               {/* Quick Actions */}
               <button
-                onClick={() => setShowCreatePackage(true)}
+                onClick={handleAttemptCreatePackage}
                 className="hidden sm:flex items-center space-x-2 px-3 md:px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all"
               >
                 <Plus className="h-4 w-4" />
@@ -1703,7 +2004,7 @@ const AgentDashboard = ({ user, onLogout }) => {
 
               {/* Mobile: New Package icon-only */}
               <button
-                onClick={() => setShowCreatePackage(true)}
+                onClick={handleAttemptCreatePackage}
                 className="sm:hidden p-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg"
               >
                 <Plus className="h-4 w-4" />
@@ -2059,12 +2360,50 @@ const AgentDashboard = ({ user, onLogout }) => {
           })()}
 
           {activeTab === 'packages' && (
-            <PackagesTab
-              onCreatePackage={() => setShowCreatePackage(true)}
-              onEditPackage={handleEditPackage}
-              onDuplicatePackage={handleDuplicatePackage}
-              onDeletePackage={handleDeletePackage}
-            />
+            <div className="space-y-4">
+              {!verificationLoading && !isAgentApproved && (
+                <div
+                  className="flex items-start gap-3 rounded-2xl p-4 border"
+                  style={{
+                    backgroundColor: verificationStatus?.anyRejected ? '#FEF2F2' : `${UM_BRAND.gold}14`,
+                    borderColor: verificationStatus?.anyRejected ? '#FECACA' : `${UM_BRAND.gold}55`,
+                  }}
+                >
+                  <Shield
+                    className="h-5 w-5 flex-shrink-0 mt-0.5"
+                    style={{ color: verificationStatus?.anyRejected ? '#DC2626' : UM_BRAND.gold }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {verificationStatus?.anyRejected
+                        ? 'Action needed: a document was not approved'
+                        : verificationStatus?.hasUploadedAllRequired
+                          ? 'Your documents are under review'
+                          : 'Verify your agency to start posting packages'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {verificationStatus?.anyRejected
+                        ? 'Review the feedback in Documents and re-upload to continue.'
+                        : verificationStatus?.hasUploadedAllRequired
+                          ? "You'll be able to post packages as soon as our team approves your documents."
+                          : 'Upload your incorporation certificate, tourism license, KRA PIN, and director ID.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('documents')}
+                    className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    {verificationStatus?.hasUploadedAllRequired ? 'View documents' : 'Upload now'}
+                  </button>
+                </div>
+              )}
+              <PackagesTab
+                onCreatePackage={handleAttemptCreatePackage}
+                onEditPackage={handleEditPackage}
+                onDuplicatePackage={handleDuplicatePackage}
+                onDeletePackage={handleDeletePackage}
+              />
+            </div>
           )}
 
           {activeTab === 'analytics' && (
@@ -2102,7 +2441,33 @@ const AgentDashboard = ({ user, onLogout }) => {
           )}
 
           {activeTab === 'documents' && (
-            <DocumentsTab agentId={profile?.id} />
+            <div className="space-y-4">
+              {!verificationLoading && !isAgentApproved && verificationStatus?.hasUploadedAllRequired && !verificationStatus?.anyRejected && (
+                <div
+                  className="flex items-center justify-between gap-4 rounded-2xl p-4 border flex-wrap"
+                  style={{ backgroundColor: `${UM_BRAND.emerald700}0F`, borderColor: `${UM_BRAND.emerald700}33` }}
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">All required documents uploaded</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {verificationStatus?.reviewRequested
+                        ? 'Priority review already requested — our team has been notified.'
+                        : 'Waiting on review? Request a priority check instead of waiting in the queue.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleRequestReview}
+                    disabled={requestingReview || verificationStatus?.reviewRequested}
+                    className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold text-white flex items-center gap-2 disabled:opacity-60 transition-all"
+                    style={{ background: `linear-gradient(135deg, ${UM_BRAND.emerald700}, ${UM_BRAND.emerald900})` }}
+                  >
+                    {requestingReview && <Loader className="h-4 w-4 animate-spin" />}
+                    {verificationStatus?.reviewRequested ? 'Review requested' : 'Request priority review'}
+                  </button>
+                </div>
+              )}
+              <DocumentsTab agentId={profile?.id} />
+            </div>
           )}
 
           {activeTab === 'messages' && (
