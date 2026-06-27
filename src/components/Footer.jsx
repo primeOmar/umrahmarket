@@ -31,7 +31,7 @@ const Footer = () => {
               </div>
             </div>
             <p className="text-gray-400 mb-6">
-              Connecting pilgrims with verified Umrah agencies worldwide. 
+              Connecting pilgrims with verified Umrah agencies East Africa. 
               We ensure transparent pricing, verified services, and memorable spiritual journeys.
             </p>
             <div className="flex space-x-4">
