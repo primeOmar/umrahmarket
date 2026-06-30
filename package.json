@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@azure/ai-form-recognizer": "^5.1.0",
-    "@supabase/supabase-js": "^2.104.1",
+    "@supabase/supabase-js": "^2.108.2",
     "axios": "^1.13.5",
     "date-fns": "^4.1.0",
     "jspdf": "^4.2.1",

@@ -458,12 +458,12 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
 
             {/* Package count + clear — always visible on right */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-xs text-gray-500 whitespace-nowrap">
+              {/* <span className="text-xs text-gray-500 whitespace-nowrap">
                 {filterLoading
                   ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin text-emerald-500" />…</span>
                   : <><span className="font-semibold text-emerald-700">{filteredPackages.length}</span> found</>
                 }
-              </span>
+              </span> */}
               {getActiveFilterCount() > 0 && (
                 <button onClick={clearAllFilters} className="flex items-center gap-1 px-2 py-1 rounded-full text-xs text-red-500 hover:bg-red-50 transition-all whitespace-nowrap">
                   <X className="h-3 w-3" /> Clear
