@@ -297,6 +297,103 @@ export const TagInput = ({ placeholder, items, onChange, color = "gold" }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RadioPillGroup — single-select allowlisted pills (replaces <select> for
+// short, known option sets so the agent taps instead of opening a dropdown)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RADIO_PILL_COLORS = {
+  green: {
+    on:  { background: "linear-gradient(135deg,#0D3D2B,#1a6b4a)", color: "#fff", borderColor: "transparent" },
+    off: { background: "#F5FAF5", color: "#4a7c5f", borderColor: "#C8DFC8" },
+  },
+  gold: {
+    on:  { background: "linear-gradient(135deg,#C9A84C,#a8882f)", color: "#fff", borderColor: "transparent" },
+    off: { background: "#F5FAF5", color: "#6b5a1a", borderColor: "#e0cc8a" },
+  },
+};
+
+/**
+ * options: [{ value, label, icon? }]
+ * `value` is compared with strict equality — parent state must only ever be
+ * set to one of the option values, so no free-text sanitisation is needed
+ * here (mirrors the <Sel> allowlist pattern above).
+ */
+export const RadioPillGroup = ({ options, value, onChange, color = "green", size = "md" }) => {
+  const c = RADIO_PILL_COLORS[color] || RADIO_PILL_COLORS.green;
+  const pad = size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2.5 text-sm";
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`inline-flex items-center gap-1.5 rounded-xl font-semibold border transition-all ${pad}`}
+            style={{ ...(active ? c.on : c.off), borderWidth: "1px", borderStyle: "solid" }}
+          >
+            {opt.icon && <span className="leading-none">{opt.icon}</span>}
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PresetChips — quick-tap presets for numeric/short fields, with a small
+// custom input as fallback. Lets an agent tap "14" instead of typing it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const PresetChips = ({
+  options,              // array of primitives OR [{ label, value }]
+  value,
+  onChange,
+  suffix = "",
+  color = "gold",
+  sanitize = "number",
+  maxLen,
+  inputType = "number",
+  customPlaceholder = "Custom",
+}) => {
+  const c = RADIO_PILL_COLORS[color] || RADIO_PILL_COLORS.gold;
+  const norm = (v) => String(v ?? "");
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {options.map((opt) => {
+          const optValue = typeof opt === "object" ? opt.value : opt;
+          const optLabel = typeof opt === "object" ? opt.label : opt;
+          const active = norm(value) === norm(optValue);
+          return (
+            <button
+              key={optValue}
+              type="button"
+              onClick={() => onChange(String(optValue))}
+              className="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
+              style={{ ...(active ? c.on : c.off), borderWidth: "1px", borderStyle: "solid" }}
+            >
+              {optLabel}{suffix}
+            </button>
+          );
+        })}
+      </div>
+      <InputEl
+        type={inputType}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={customPlaceholder}
+        sanitize={sanitize}
+        maxLen={maxLen}
+        className="max-w-[140px]"
+      />
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HotelBlock
 // ─────────────────────────────────────────────────────────────────────────────
 

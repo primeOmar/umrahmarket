@@ -1,13 +1,25 @@
 import React, { useState, useRef, useEffect } from "react";
-import { X, Upload, Trash2, Loader2, CheckCircle2, MapPin, Building2, Check, TrendingUp } from "lucide-react";
-import { createPackage } from "../services/packagesApi";
+import {
+  X, Upload, Trash2, Loader2, CheckCircle2, MapPin, Building2, Check, TrendingUp,
+  Sparkles, RefreshCw, ChevronDown, ChevronUp, Plus, CalendarClock,
+} from "lucide-react";
+import { createPackage, saveItinerary } from "../services/packagesApi";
 import {
   Field, sanitizeText, sanitizeNumber, sanitizeDate,
-  InputEl, TextareaEl, Sel, Stars, HotelBlock,
+  InputEl, TextareaEl, Stars, HotelBlock,
+  RadioPillGroup, PresetChips,
 } from "./Packageformcomponents";
 import toast from "./Toast";
 
-const STEPS = ["Basic Info", "Hotels", "Pricing", "Details & Images"];
+const STEPS = ["Basic Info", "Hotels", "Pricing", "Itinerary", "Highlights & Photos"];
+
+// Server (itinerary.controller.js) caps at 60 days and sanitises to the same
+// limits — these mirror that so the agent sees accurate feedback client-side
+// rather than a silent truncation after save.
+const ITINERARY_MAX_DAYS       = 60;
+const ITINERARY_TITLE_MAXLEN   = 120;
+const ITINERARY_ACT_MAXLEN     = 200;
+const ITINERARY_MAX_ACTIVITIES = 12;
 
 const HIGHLIGHT_OPTIONS = [
   "Guided Ziyarat (historical site visits)",
@@ -87,6 +99,89 @@ const EMPTY = {
   highlights: [], inclusions: [], exclusions: [],
 };
 
+// ── Quick-start templates ───────────────────────────────────────────────────
+// One tap fills the most common combinations so the agent only has to type
+// the package name and price. Purely a UX shortcut — every value is still
+// editable afterwards and still passes through the same sanitisation.
+const PACKAGE_TEMPLATES = [
+  {
+    id: "umrah_economy",
+    label: "Umrah · Economy 7N",
+    icon: "🕋",
+    data: {
+      type: "umrah", location: "makkah", duration: "7",
+      min_group_size: "15", max_group_size: "40",
+      highlights: ["Shared transfers", "Expert Umrah guide", "Daily breakfast"],
+      inclusions: ["Return flights", "Saudi visa processing", "Makkah hotel", "Madinah hotel", "Shared transfers", "Daily breakfast"],
+      exclusions: ["Personal expenses", "Tips & gratuities", "Optional tours"],
+    },
+  },
+  {
+    id: "umrah_premium",
+    label: "Umrah · Premium 14N",
+    icon: "🌙",
+    data: {
+      type: "umrah", location: "makkah", duration: "14",
+      min_group_size: "10", max_group_size: "25",
+      highlights: ["Private transfers", "Premium hotel (near Haram)", "Haramain high-speed train", "5L Zamzam water"],
+      inclusions: ["Return flights", "Saudi visa processing", "Makkah hotel", "Madinah hotel", "Private transfers", "Full board (all meals)", "Guided Ziyarat tours", "Umrah kit"],
+      exclusions: ["Personal expenses", "Optional tours", "Excess baggage fees"],
+    },
+  },
+  {
+    id: "hajj_gold",
+    label: "Hajj · Gold 21N",
+    icon: "☪️",
+    data: {
+      type: "hajj", location: "makkah", duration: "21",
+      min_group_size: "20", max_group_size: "60",
+      highlights: ["Luxury accommodation", "24/7 support", "Spiritual guidance sessions", "Medical insurance"],
+      inclusions: ["Return flights", "Saudi visa processing", "Hajj permit assistance", "Makkah hotel", "Madinah hotel", "Full board (all meals)", "Group guide", "24/7 customer support", "Medical insurance"],
+      exclusions: ["Personal expenses", "Personal shopping", "International calls"],
+    },
+  },
+  { id: "blank", label: "Start blank", icon: "✍️", data: null },
+];
+
+// ── Default itinerary generator ─────────────────────────────────────────────
+// Produces a sensible day-by-day skeleton from the trip length so the agent
+// never has to build one from scratch — everything stays fully editable.
+const ITINERARY_MIDDLE_TEMPLATES = [
+  { title: "Ziyarat & Historical Sites", activities: ["Guided tour of historical Islamic sites", "Free time for personal Ibadah"] },
+  { title: "Free Day for Worship", activities: ["Perform Umrah rites at your own pace", "Rest and reflection near the Haram"] },
+  { title: "Madinah Ziyarat", activities: ["Visit Quba Mosque", "Visit Uhud Mountain & battlefield", "Visit Qiblatain Mosque"] },
+  { title: "Shopping & Leisure", activities: ["Free time near the Haram for shopping", "Optional group excursion"] },
+];
+
+function buildDefaultItinerary(duration, location) {
+  const days = Math.min(ITINERARY_MAX_DAYS, Math.max(1, parseInt(duration, 10) || 7));
+  const arrivalCity = location === "madinah" ? "Madinah" : "Jeddah, then transfer to Makkah";
+  const out = [];
+  for (let i = 1; i <= days; i++) {
+    if (i === 1) {
+      out.push({
+        day: 1,
+        title: "Arrival & Check-in",
+        activities: [
+          `Arrival at ${arrivalCity} airport`,
+          "Transfer to hotel & check-in",
+          "Rest and group orientation briefing",
+        ],
+      });
+    } else if (i === days && days > 1) {
+      out.push({
+        day: i,
+        title: "Departure",
+        activities: ["Check-out from hotel", "Transfer to airport", "Departure flight home"],
+      });
+    } else {
+      const tmpl = ITINERARY_MIDDLE_TEMPLATES[(i - 2) % ITINERARY_MIDDLE_TEMPLATES.length];
+      out.push({ day: i, title: tmpl.title, activities: [...tmpl.activities] });
+    }
+  }
+  return out;
+}
+
 function sanitizeFormPayload(form) {
   return {
     ...form,
@@ -119,6 +214,24 @@ function sanitizeFormPayload(form) {
     inclusions: form.inclusions.map((t) => sanitizeText(t, 80)).filter(Boolean),
     exclusions: form.exclusions.map((t) => sanitizeText(t, 80)).filter(Boolean),
   };
+}
+
+// Mirrors itinerary.controller.js's own sanitisation (strip tags, cap
+// lengths/counts) so the payload that reaches the server is already clean —
+// defense in depth, since the server re-sanitises regardless.
+function sanitizeItineraryPayload(days) {
+  if (!Array.isArray(days)) return [];
+  return days
+    .slice(0, ITINERARY_MAX_DAYS)
+    .map((d, i) => ({
+      day: i + 1,
+      title: sanitizeText(d.title, ITINERARY_TITLE_MAXLEN),
+      activities: (Array.isArray(d.activities) ? d.activities : [])
+        .slice(0, ITINERARY_MAX_ACTIVITIES)
+        .map((a) => sanitizeText(a, ITINERARY_ACT_MAXLEN))
+        .filter(Boolean),
+    }))
+    .filter((d) => d.title || d.activities.length > 0);
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -234,6 +347,76 @@ const PriceBreakdown = ({ price }) => {
   );
 };
 
+// ── Itinerary day editor (used inside Step 3) ──────────────────────────────
+
+const ItineraryDayCard = ({ day, collapsed, onToggle, onUpdateTitle, onUpdateActivity, onAddActivity, onRemoveActivity, onRemoveDay, canRemove }) => (
+  <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #C8DFC8", background: "#F8FCF8" }}>
+    <div
+      className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+      style={{ background: "#F0F8F0" }}
+      onClick={onToggle}
+    >
+      <div
+        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ background: "linear-gradient(135deg,#0D3D2B,#1a6b4a)", color: "#fff" }}
+      >
+        {day.day}
+      </div>
+      <input
+        type="text"
+        value={day.title}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onUpdateTitle(sanitizeText(e.target.value, ITINERARY_TITLE_MAXLEN))}
+        placeholder={`Day ${day.day} title`}
+        className="flex-1 bg-transparent text-sm font-semibold focus:outline-none placeholder-gray-400 min-w-0"
+        style={{ color: "#0D3D2B" }}
+      />
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {canRemove && (
+          <button type="button" onClick={(e) => { e.stopPropagation(); onRemoveDay(); }} className="p-1 rounded-lg hover:bg-red-50 transition-colors">
+            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+          </button>
+        )}
+        {collapsed ? <ChevronDown className="h-4 w-4" style={{ color: "#7aaa8a" }} /> : <ChevronUp className="h-4 w-4" style={{ color: "#7aaa8a" }} />}
+      </div>
+    </div>
+    {!collapsed && (
+      <div className="px-4 pb-3 pt-2 space-y-2">
+        {day.activities.map((act, actIdx) => (
+          <div key={actIdx} className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#C9A84C" }} />
+            <input
+              type="text"
+              value={act}
+              onChange={(e) => onUpdateActivity(actIdx, e.target.value)}
+              placeholder="e.g. Transfer to hotel, Perform Tawaf…"
+              className="flex-1 text-sm px-3 py-2 rounded-xl focus:outline-none transition-all"
+              style={{ background: "#EEF5EE", border: "1px solid #C8DFC8", color: "#0D3D2B" }}
+              onFocus={(e) => { e.target.style.borderColor = "#C9A84C"; e.target.style.boxShadow = "0 0 0 3px rgba(201,168,76,0.15)"; }}
+              onBlur={(e) => { e.target.style.borderColor = "#C8DFC8"; e.target.style.boxShadow = "none"; }}
+            />
+            {day.activities.length > 1 && (
+              <button type="button" onClick={() => onRemoveActivity(actIdx)} className="p-1 rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
+                <X className="h-3.5 w-3.5 text-red-400" />
+              </button>
+            )}
+          </div>
+        ))}
+        {day.activities.length < ITINERARY_MAX_ACTIVITIES && (
+          <button
+            type="button"
+            onClick={onAddActivity}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors mt-1"
+            style={{ color: "#1a6b4a", background: "rgba(13,61,43,0.06)" }}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add activity
+          </button>
+        )}
+      </div>
+    )}
+  </div>
+);
+
 // ── main modal ───────────────────────────────────────────────────────────────
 
 const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
@@ -243,6 +426,10 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
   const [previews, setPrev] = useState([]);
   const [drag, setDrag]     = useState(false);
   const [status, setStatus] = useState("idle");
+  const [itinerary, setItinerary]           = useState([]);
+  const [itineraryTouched, setItinTouched]  = useState(false); // becomes true once agent enters the step, so auto-regeneration only happens once
+  const [collapsedDays, setCollapsedDays]   = useState({});
+  const [activeTemplate, setActiveTemplate] = useState(null);
   const fileRef             = useRef(null);
 
   // Auto-calculate duration from hotel dates
@@ -256,12 +443,71 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
     form.madinah_check_in_date, form.madinah_check_out_date,
   ]); // eslint-disable-line
 
+  // Seed a default itinerary the first time the agent reaches that step, so
+  // it's never blank — but never overwrite edits they've already made.
+  useEffect(() => {
+    if (step === 3 && !itineraryTouched) {
+      const defaults = buildDefaultItinerary(form.duration, form.location);
+      setItinerary(defaults);
+      setCollapsedDays(
+        defaults.reduce((acc, d, i) => ({ ...acc, [i]: i !== 0 && i !== defaults.length - 1 }), {})
+      );
+      setItinTouched(true);
+    }
+  }, [step]); // eslint-disable-line
+
   if (!isOpen) return null;
 
   const set    = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const isLast = step === STEPS.length - 1;
   const busy   = status === "loading";
   const ok     = status === "success";
+
+  // ── quick-start template ────────────────────────────────────────────────
+
+  const applyTemplate = (tmpl) => {
+    setActiveTemplate(tmpl.id);
+    if (tmpl.data) setForm((p) => ({ ...p, ...tmpl.data }));
+  };
+
+  // ── itinerary helpers ────────────────────────────────────────────────────
+
+  const regenerateItinerary = () => {
+    const defaults = buildDefaultItinerary(form.duration, form.location);
+    setItinerary(defaults);
+    setCollapsedDays(
+      defaults.reduce((acc, d, i) => ({ ...acc, [i]: i !== 0 && i !== defaults.length - 1 }), {})
+    );
+  };
+
+  const updateDayTitle = (dayIdx, title) =>
+    setItinerary((prev) => prev.map((d, i) => (i === dayIdx ? { ...d, title } : d)));
+
+  const updateActivity = (dayIdx, actIdx, value) =>
+    setItinerary((prev) =>
+      prev.map((d, i) =>
+        i !== dayIdx ? d : { ...d, activities: d.activities.map((a, j) => (j === actIdx ? sanitizeText(value, ITINERARY_ACT_MAXLEN) : a)) }
+      )
+    );
+
+  const addActivity = (dayIdx) =>
+    setItinerary((prev) => prev.map((d, i) => (i !== dayIdx ? d : { ...d, activities: [...d.activities, ""] })));
+
+  const removeActivity = (dayIdx, actIdx) =>
+    setItinerary((prev) =>
+      prev.map((d, i) => (i !== dayIdx ? d : { ...d, activities: d.activities.filter((_, j) => j !== actIdx) }))
+    );
+
+  const addDay = () => {
+    if (itinerary.length >= ITINERARY_MAX_DAYS) return;
+    setItinerary((prev) => [...prev, { day: prev.length + 1, title: "", activities: [""] }]);
+  };
+
+  const removeDay = (dayIdx) =>
+    setItinerary((prev) => prev.filter((_, i) => i !== dayIdx).map((d, i) => ({ ...d, day: i + 1 })));
+
+  const toggleDayCollapse = (dayIdx) =>
+    setCollapsedDays((prev) => ({ ...prev, [dayIdx]: !prev[dayIdx] }));
 
   // ── image helpers ─────────────────────────────────────────────────────────
 
@@ -299,21 +545,47 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
   };
 
   // ── submit ────────────────────────────────────────────────────────────────
+  // Two calls against two endpoints that already exist and already sanitise
+  // independently server-side (createpackages.controller.js and
+  // itinerary.controller.js). No backend changes needed: create the package
+  // first to get its id, then attach the itinerary to that id. If the
+  // itinerary save fails after a successful package creation, the package is
+  // still kept — the agent can add/edit the itinerary later from the
+  // packages list, so a transient error here never loses their work.
 
   const submit = async () => {
     setStatus("loading");
     try {
       const cleanForm = sanitizeFormPayload(form);
       const result    = await createPackage(cleanForm, images);
+      const newPkg    = result.package;
+
+      const cleanItinerary = sanitizeItineraryPayload(itinerary);
+      if (newPkg?.id && cleanItinerary.length > 0) {
+        try {
+          await saveItinerary(newPkg.id, cleanItinerary);
+        } catch (itinErr) {
+          console.error("[CreatePackageModal] itinerary save failed:", itinErr);
+          toast.warning(
+            "Package created, itinerary not saved",
+            "You can add the itinerary from the package list."
+          );
+        }
+      }
+
       setStatus("success");
       toast.success("Package created!", "Your package has been saved successfully.");
-      onSave?.(result.package);
+      onSave?.(newPkg);
       setTimeout(() => {
         setStatus("idle");
         setForm(EMPTY);
         setStep(0);
         setImages([]);
         setPrev([]);
+        setItinerary([]);
+        setItinTouched(false);
+        setCollapsedDays({});
+        setActiveTemplate(null);
         onClose?.();
       }, 1500);
     } catch (e) {
@@ -370,6 +642,27 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
           {/* STEP 0 — Basic Info */}
           {step === 0 && (
             <>
+              <Field label="Quick Start" hint="tap a template to prefill, still fully editable">
+                <div className="flex flex-wrap gap-2">
+                  {PACKAGE_TEMPLATES.map((tmpl) => (
+                    <button
+                      key={tmpl.id}
+                      type="button"
+                      onClick={() => applyTemplate(tmpl)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold border transition-all"
+                      style={
+                        activeTemplate === tmpl.id
+                          ? { background: "linear-gradient(135deg,#0D3D2B,#1a6b4a)", color: "#fff", borderColor: "transparent" }
+                          : { background: "#F5FAF5", color: "#4a7c5f", borderColor: "#C8DFC8" }
+                      }
+                    >
+                      <span>{tmpl.icon}</span>
+                      {tmpl.label}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+
               <Field label="Package Name" required>
                 <InputEl
                   value={form.name}
@@ -379,22 +672,32 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                   maxLen={120}
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <Field label="Type" required>
-                  <Sel value={form.type} onChange={(e) => set("type", e.target.value)}>
-                    <option value="umrah">🕋  Umrah</option>
-                    <option value="hajj">☪️  Hajj</option>
-                  </Sel>
+                  <RadioPillGroup
+                    color="green"
+                    value={form.type}
+                    onChange={(v) => set("type", v)}
+                    options={[
+                      { value: "umrah", label: "Umrah", icon: "🕋" },
+                      { value: "hajj",  label: "Hajj",  icon: "☪️" },
+                    ]}
+                  />
                 </Field>
                 <Field label="Primary Location" required>
-                  <Sel value={form.location} onChange={(e) => set("location", e.target.value)}>
-                    <option value="makkah">Makkah</option>
-                    <option value="madinah">Madinah</option>
-                    <option value="jeddah">Jeddah</option>
-                  </Sel>
+                  <RadioPillGroup
+                    color="gold"
+                    value={form.location}
+                    onChange={(v) => set("location", v)}
+                    options={[
+                      { value: "makkah",  label: "Makkah" },
+                      { value: "madinah", label: "Madinah" },
+                      { value: "jeddah",  label: "Jeddah" },
+                    ]}
+                  />
                 </Field>
               </div>
-              <Field label="Description">
+              <Field label="Description" hint="optional">
                 <TextareaEl
                   rows={3}
                   value={form.description}
@@ -467,11 +770,13 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                   </div>
                 </Field>
                 <Field label="Discount %" hint="0–100">
-                  <InputEl
-                    type="number" min="0" max="100"
+                  <PresetChips
+                    color="gold"
                     value={form.discount}
-                    onChange={(e) => set("discount", e.target.value)}
-                    placeholder="0" sanitize="number"
+                    onChange={(v) => set("discount", v)}
+                    options={[0, 5, 10, 15, 20, 25]}
+                    suffix="%"
+                    customPlaceholder="0"
                   />
                 </Field>
               </div>
@@ -479,22 +784,15 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
               <PriceBreakdown price={form.price} />
 
               {/* Duration (read-only if auto-calculated, editable fallback) */}
-              <Field label="Trip Duration (nights)" hint={form.duration ? "auto-calculated from hotel dates" : "enter manually if no hotel dates set"}>
-                <div className="relative">
-                  <InputEl
-                    type="number" min="1"
-                    value={form.duration}
-                    onChange={(e) => set("duration", e.target.value)}
-                    placeholder="e.g. 14"
-                    sanitize="number"
-                    style={form.duration ? { background: "rgba(201,168,76,0.07)", border: "1px solid rgba(201,168,76,0.4)" } : undefined}
-                  />
-                  {form.duration && (
-                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold" style={{ color: "#C9A84C" }}>
-                      🌙 {form.duration}n
-                    </span>
-                  )}
-                </div>
+              <Field label="Trip Duration (nights)" hint={calcDurationNights(form) ? "auto-calculated from hotel dates" : "tap a preset or enter manually"}>
+                <PresetChips
+                  color="gold"
+                  value={form.duration}
+                  onChange={(v) => set("duration", v)}
+                  options={[7, 10, 14, 21, 30]}
+                  suffix="n"
+                  customPlaceholder="e.g. 14"
+                />
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
@@ -510,19 +808,92 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Min Group Size">
-                  <InputEl type="number" min="1" value={form.min_group_size}
-                    onChange={(e) => set("min_group_size", e.target.value)} sanitize="number" />
+                  <PresetChips
+                    color="green"
+                    value={form.min_group_size}
+                    onChange={(v) => set("min_group_size", v)}
+                    options={[1, 5, 10, 15, 20]}
+                    customPlaceholder="1"
+                  />
                 </Field>
                 <Field label="Max Group Size">
-                  <InputEl type="number" min="1" value={form.max_group_size}
-                    onChange={(e) => set("max_group_size", e.target.value)} sanitize="number" />
+                  <PresetChips
+                    color="green"
+                    value={form.max_group_size}
+                    onChange={(v) => set("max_group_size", v)}
+                    options={[20, 30, 40, 50, 100]}
+                    customPlaceholder="50"
+                  />
                 </Field>
               </div>
             </>
           )}
 
-          {/* STEP 3 — Details & Images */}
+          {/* STEP 3 — Itinerary (pre-filled default, fully editable) */}
           {step === 3 && (
+            <>
+              <div
+                className="flex items-start gap-3 rounded-2xl px-4 py-3"
+                style={{ background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.3)" }}
+              >
+                <Sparkles className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "#C9A84C" }} />
+                <div className="flex-1">
+                  <p className="text-sm font-bold" style={{ color: "#0D3D2B" }}>
+                    Pre-filled from your trip length
+                  </p>
+                  <p className="text-xs" style={{ color: "#7aaa8a" }}>
+                    Edit any day below, or regenerate if you change the duration.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={regenerateItinerary}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+                  style={{ color: "#8a6a1a", background: "rgba(201,168,76,0.15)" }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Regenerate
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {itinerary.map((day, dayIdx) => (
+                  <ItineraryDayCard
+                    key={dayIdx}
+                    day={day}
+                    collapsed={!!collapsedDays[dayIdx]}
+                    onToggle={() => toggleDayCollapse(dayIdx)}
+                    onUpdateTitle={(title) => updateDayTitle(dayIdx, title)}
+                    onUpdateActivity={(actIdx, value) => updateActivity(dayIdx, actIdx, value)}
+                    onAddActivity={() => addActivity(dayIdx)}
+                    onRemoveActivity={(actIdx) => removeActivity(dayIdx, actIdx)}
+                    onRemoveDay={() => removeDay(dayIdx)}
+                    canRemove={itinerary.length > 1}
+                  />
+                ))}
+              </div>
+
+              {itinerary.length < ITINERARY_MAX_DAYS && (
+                <button
+                  type="button"
+                  onClick={addDay}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed text-sm font-semibold transition-all"
+                  style={{ borderColor: "#C8DFC8", color: "#4a7c5f" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#C9A84C"; e.currentTarget.style.color = "#C9A84C"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#C8DFC8"; e.currentTarget.style.color = "#4a7c5f"; }}
+                >
+                  <Plus className="h-4 w-4" /> Add Day {itinerary.length + 1}
+                </button>
+              )}
+
+              <div className="flex items-center gap-2 text-xs" style={{ color: "#7aaa8a" }}>
+                <CalendarClock className="h-3.5 w-3.5 flex-shrink-0" />
+                Saved automatically when you create the package — clients see this on the package page.
+              </div>
+            </>
+          )}
+
+          {/* STEP 4 — Details & Images */}
+          {step === 4 && (
             <>
               {/* Highlights */}
               <Field label="Highlights" hint="tap to select">
