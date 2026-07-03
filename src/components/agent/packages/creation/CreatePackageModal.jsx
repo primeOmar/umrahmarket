@@ -314,8 +314,8 @@ const OptionGrid = ({ options, selected, onChange, color }) => {
 const PriceBreakdown = ({ price }) => {
   const amt = parseFloat(price) || 0;
   if (!amt) return null;
-  const fee = amt * 0.05;
-  const receives = amt * 0.95;
+  const fee = amt * 0.08;
+  const receives = amt * 0.92;
   const fmt = (n) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
     <div
@@ -333,7 +333,7 @@ const PriceBreakdown = ({ price }) => {
         <span className="font-semibold" style={{ color: "#0D3D2B" }}>${fmt(amt)}</span>
       </div>
       <div className="flex justify-between text-sm">
-        <span style={{ color: "#7aaa8a" }}>Platform fee (5%)</span>
+        <span style={{ color: "#7aaa8a" }}>Platform fee (8%)</span>
         <span className="font-semibold" style={{ color: "#dc2626" }}>−${fmt(fee)}</span>
       </div>
       <div
