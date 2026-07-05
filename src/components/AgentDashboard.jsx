@@ -9,7 +9,7 @@ import {
   BookOpen, Headphones, Image, Video, Camera, Lock,
   Printer, Share2, Copy, Check, RefreshCw,
   Send, Paperclip, Smile, ChevronUp, Info, CheckCheck,
-  Loader, Circle, ArrowLeft, DollarSign
+  Loader, Circle, ArrowLeft, DollarSign, MapPin
 } from 'lucide-react';
 import { format, isToday, isYesterday, formatDistanceToNow } from 'date-fns';
 import CreatePackageModal from './agent/packages/creation/CreatePackageModal';
@@ -20,6 +20,7 @@ import { getAgentPackages } from './agent/packages/services/packagesApi';
 import DocumentsTab from './agent/documents/DocumentsTab';
 import AccountingTab from './AccountingTab';
 import AgentAccountingTab from './AgentAccountingTab';
+import OfficeLocationModal from './OfficeLocationModal';
 import { useBookingNotifications } from '../hooks/useBookingNotifications';
 import { getAgentVerificationStatus, requestDocumentReview, getMe } from '../api';
 import umLogo from '../assets/umramarket.png';
@@ -1507,12 +1508,13 @@ const VERIFICATION_DOC_LABELS = {
   tourism:       'Tourism License',
   krapin:        'KRA PIN Certificate',
   director_id:   'Director ID',
-  office_photo:  'Office Photo (optional)',
+  office_photo:  'Office Photo & Location',
 };
 // MUST match REQUIRED_DOC_KEYS in superadmin_routes.js (backend) exactly.
 // director_id is required: DocumentsTab.jsx confirms a real "Director /
 // Manager ID" upload card exists, so an agent can and must provide it.
-const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin', 'director_id'];
+// office_photo is now required: includes office photos and Google Maps location pin.
+const VERIFICATION_REQUIRED_KEYS = ['incorporation', 'tourism', 'krapin', 'director_id', 'office_photo'];
 
 const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGoToDocuments, onClose }) => {
   // status is null only when the status fetch never resolved into real
@@ -1650,9 +1652,11 @@ const AgentDashboard = ({ user, onLogout }) => {
   // Shown instead of CreatePackageModal when the agent isn't fully verified
   // yet — explains why and routes them to either upload docs or request review.
   const [showVerificationGate, setShowVerificationGate] = useState(false);
+  const [showOfficeLocation, setShowOfficeLocation] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [sidebarHovered, setSidebarHovered] = useState(false); // desktop hover expand
   const [searchQuery, setSearchQuery] = useState('');
+  const [officeLocationData, setOfficeLocationData] = useState(null); // { mapsUrl, photos }
 
   // ── Live agent profile fetched from DB ──────────────────────────
   const [agentProfile, setAgentProfile] = useState(null);
@@ -1912,6 +1916,26 @@ const AgentDashboard = ({ user, onLogout }) => {
     setSidebarOpen(false); // always close mobile drawer
   };
 
+  // Handle opening office location modal with fetched data
+  const handleViewOfficeLocation = async () => {
+    try {
+      // Fetch agent documents to get office location and photos
+      const { getAgentDocuments } = await import('../api');
+      const docsRes = await getAgentDocuments();
+      if (docsRes?.success && docsRes?.data) {
+        const officeData = docsRes.data.office_photo;
+        setOfficeLocationData({
+          mapsUrl: officeData?.mapsUrl || null,
+          photos: officeData?.photos || [],
+        });
+      }
+      setShowOfficeLocation(true);
+    } catch (err) {
+      console.error('[AgentDashboard] Failed to fetch office location:', err.message);
+      alert('Could not load office location. Please try again.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
 
@@ -1958,6 +1982,16 @@ const AgentDashboard = ({ user, onLogout }) => {
           onRequestReview={handleRequestReview}
           onGoToDocuments={() => { setShowVerificationGate(false); setActiveTab('documents'); }}
           onClose={() => setShowVerificationGate(false)}
+        />
+      )}
+
+      {/* Office Location Modal */}
+      {showOfficeLocation && (
+        <OfficeLocationModal
+          agent={profile}
+          mapsUrl={officeLocationData?.mapsUrl}
+          officePhotos={officeLocationData?.photos}
+          onClose={() => setShowOfficeLocation(false)}
         />
       )}
 
@@ -2243,6 +2277,18 @@ const AgentDashboard = ({ user, onLogout }) => {
         <main className="p-4 md:p-8 pb-24 lg:pb-8">
           {activeTab === 'overview' && (
             <div className="space-y-6 md:space-y-8">
+              {/* Overview Header with Office Location Button */}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard Overview</h2>
+                <button
+                  onClick={handleViewOfficeLocation}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all text-sm font-medium"
+                >
+                  <MapPin className="h-4 w-4" />
+                  <span>View Office Location</span>
+                </button>
+              </div>
+
               {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {stats.map((stat, index) => (

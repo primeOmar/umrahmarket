@@ -59,8 +59,8 @@ const DOC_TYPES = [
   },
   {
     key:         'office_photo',
-    label:       'Office Photo',
-    description: 'Clear photo of your physical office entrance or interior confirming presence & location. Include your street-visible signage if possible.',
+    label:       'Office Photo & Location',
+    description: 'Clear photos of your physical office and Google Maps location pin for verification',
     icon:        '🏬',
   },
 ];

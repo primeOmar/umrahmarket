@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, MessageCircle, FileText, Package, Settings,
   LogOut, Search, Menu, X, Shield, Activity, TrendingUp, Briefcase,
   Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
-  Eye, EyeOff, Lock, BookOpen
+  Eye, EyeOff, Lock, MapPin, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -148,6 +148,38 @@ export const SuperAdminDashboard = () => {
   const [sidebarOpen, setSidebarOpen]       = useState(false);
   const [sidebarHovered, setSidebarHovered] = useState(false);
   const [loading, setLoading]   = useState(true);
+
+  const resolveOfficeLocationUrl = (doc) => {
+    if (!doc) return null;
+    const candidates = [
+      doc?.mapsUrl,
+      doc?.officePhoto?.mapsUrl,
+      doc?.office_photo?.mapsUrl,
+      doc?.officePhotoUrl,
+      doc?.officeLocationUrl,
+      doc?.items?.office_photo?.mapsUrl,
+      doc?.items?.office_photo?.url,
+      doc?.office_photo?.[0]?.mapsUrl,
+    ];
+    return candidates.find(Boolean) || null;
+  };
+
+  const getMapsEmbedUrl = (url) => {
+    if (!url) return null;
+    if (url.includes('embed?pb=')) return url;
+    if (url.includes('maps.app.goo.gl')) {
+      return `https://www.google.com/maps/embed?pb=${encodeURIComponent(url)}`;
+    }
+    if (url.includes('google.com/maps')) {
+      const qMatch = url.match(/[?&]q=([^&]+)/);
+      if (qMatch) {
+        const coords = qMatch[1];
+        return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3024.2219901290355!2d${coords}!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0:0x0!2z${encodeURIComponent(coords)}`;
+      }
+      return url.replace(/\/maps\//, '/maps/embed/');
+    }
+    return `https://www.google.com/maps/embed?pb=${encodeURIComponent(url)}`;
+  };
   const [activeTab, setActiveTab] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -461,6 +493,19 @@ export const SuperAdminDashboard = () => {
       toast.error(e.message || 'Failed to verify document');
     } finally {
       setItemActionLoading(null);
+    }
+  };
+
+  // Fetch a server-generated signed URL for a specific document and open it.
+  const fetchAndOpenSignedUrl = async (docId, docType) => {
+    try {
+      const res = await saJson(await saApi.get(`/superadmin/documents/${docId}/signed-url?docType=${docType}`));
+      const url = res?.data?.url || res?.data?.url;
+      if (!url) throw new Error('No signed URL returned');
+      window.open(url, '_blank');
+    } catch (e) {
+      console.error('Failed to fetch signed URL', e);
+      toast.error(e.message || 'Failed to open document');
     }
   };
 
@@ -789,10 +834,12 @@ const navItems = [
                 const url = selectedDocument?.[urlField];
                 const item = selectedDocument?.items?.[key] || { status: 'pending', notes: null, reviewedAt: null };
                 const isOfficePhoto = key === 'office_photo';
+                const officeLocationUrl = isOfficePhoto ? resolveOfficeLocationUrl(selectedDocument) : null;
                 const photos = isOfficePhoto
                   ? (Array.isArray(url) ? url : (url ? [url] : []))
                   : null;
-                const isUploaded = isOfficePhoto ? photos.length > 0 : !!url;
+                const isUploaded = isOfficePhoto ? (photos.length > 0 || !!officeLocationUrl) : !!url;
+                const mapsEmbedUrl = isOfficePhoto ? getMapsEmbedUrl(officeLocationUrl) : null;
                 const isLoading = itemActionLoading === key;
 
                 return (
@@ -815,19 +862,57 @@ const navItems = [
                         {/* Link(s) to the actual file(s) */}
                         <div className="mt-2">
                           {isOfficePhoto ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {photos.map((photo, idx) => (
-                                <a key={idx} href={photo.publicUrl || photo} target="_blank" rel="noreferrer"
-                                   className="text-sm text-blue-600 hover:underline truncate break-words">
-                                  Photo {idx + 1}
-                                </a>
-                              ))}
+                            <div className="space-y-3">
+                              {photos.length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {photos.map((photo, idx) => (
+                                    <a key={idx} href={photo.publicUrl || photo} target="_blank" rel="noreferrer"
+                                       className="text-sm text-blue-600 hover:underline truncate break-words">
+                                      Photo {idx + 1}
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                              {officeLocationUrl && (
+                                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
+                                    <MapPin className="h-3.5 w-3.5" /> Google Maps pin
+                                  </div>
+                                  <div className="mt-2 overflow-hidden rounded-lg border border-emerald-100 bg-white">
+                                    <iframe
+                                      src={mapsEmbedUrl || officeLocationUrl}
+                                      width="100%"
+                                      height="180"
+                                      style={{ border: 0, display: 'block' }}
+                                      loading="lazy"
+                                      referrerPolicy="no-referrer-when-downgrade"
+                                      title={`Office location ${label}`}
+                                    />
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <a href={officeLocationUrl} target="_blank" rel="noreferrer"
+                                       className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 hover:underline">
+                                      <ExternalLink className="h-3.5 w-3.5" /> Open in Google Maps
+                                    </a>
+                                  </div>
+                                  <p className="mt-2 text-[11px] text-emerald-700 break-all">{officeLocationUrl}</p>
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <a href={url} target="_blank" rel="noreferrer"
-                               className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
-                              <FileText className="h-3.5 w-3.5" /> View document
-                            </a>
+                            <div className="inline-flex items-center gap-3">
+                              <a href={url} target="_blank" rel="noreferrer"
+                                 className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
+                                <FileText className="h-3.5 w-3.5" /> View document
+                              </a>
+                              <button
+                                onClick={() => fetchAndOpenSignedUrl(selectedDocument.id, key)}
+                                className="text-sm text-blue-600 hover:underline"
+                                title="Open via server-signed URL"
+                              >
+                                Open (signed)
+                              </button>
+                            </div>
                           )}
                         </div>
 
