@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { AccountingTab } from './AccountingTab';
-import ResourcesTab from './Resorces/ResourcesTab';
+import ResourcesTab from './resources/ResourcesTab';
 // ─── API base (no trailing /api duplication) ──────────────────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 const BASE_API = _base.endsWith('/api') ? _base : `${_base}/api`;
