@@ -1,21 +1,10 @@
 import React, { useState } from 'react';
 import {
-  Shield, Users, Globe, Award, CheckCircle, Star,
-  Building2, MapPin, Calendar, TrendingUp, Lock,
+  Shield, Award, CheckCircle, Star,
+  Building2, TrendingUp, Lock,
   FileCheck, Handshake, ChevronRight, Quote, Phone,
   Mail, ArrowRight, BadgeCheck, Landmark, ClipboardCheck
 } from 'lucide-react';
-
-// ─── Stat counter card ──────────────────────────────────────────────────────
-const StatCard = ({ value, label, icon: Icon, accent }) => (
-  <div className="flex flex-col items-center text-center p-6 bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300">
-    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${accent}`}>
-      <Icon className="h-6 w-6 text-white" />
-    </div>
-    <span className="text-3xl font-bold text-gray-900">{value}</span>
-    <span className="text-sm text-gray-500 mt-1">{label}</span>
-  </div>
-);
 
 // ─── Trust badge ────────────────────────────────────────────────────────────
 const TrustBadge = ({ title, body, icon: Icon }) => (
@@ -119,7 +108,7 @@ const ExperiencesPage = () => {
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-emerald-200 text-xs font-medium mb-6">
               <Shield className="h-3.5 w-3.5" />
-              Verified & Trusted Since 2020
+              Verified & Trusted
             </div>
             <h1 className="text-3xl sm:text-5xl font-bold text-white leading-tight">
               The marketplace built<br />
@@ -128,31 +117,7 @@ const ExperiencesPage = () => {
             <p className="mt-4 text-base sm:text-lg text-emerald-100/80 max-w-xl leading-relaxed">
               Umrah Market was founded to solve a single problem: pilgrims paying for promises that were never kept. We built a transparent, agent-verified platform so the journey to the Haram begins with trust.
             </p>
-            <div className="flex flex-wrap gap-3 mt-8">
-              <div className="flex items-center gap-2 text-white text-sm font-medium">
-                <CheckCircle className="h-4 w-4 text-emerald-400" />
-                200+ verified agents
-              </div>
-              <div className="flex items-center gap-2 text-white text-sm font-medium">
-                <CheckCircle className="h-4 w-4 text-emerald-400" />
-                15,000+ pilgrims served
-              </div>
-              <div className="flex items-center gap-2 text-white text-sm font-medium">
-                <CheckCircle className="h-4 w-4 text-emerald-400" />
-                Operating in 12 countries
-              </div>
-            </div>
           </div>
-        </div>
-      </section>
-
-      {/* ── STATS ROW ───────────────────────────────────────────────────────── */}
-      <section className="container mx-auto px-4 sm:px-6 -mt-8 relative z-10 pb-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <StatCard value="200+"  label="Verified Agents"    icon={Users}       accent="bg-gradient-to-br from-emerald-500 to-teal-500" />
-          <StatCard value="15K+"  label="Pilgrims Served"    icon={Globe}       accent="bg-gradient-to-br from-teal-500 to-cyan-500" />
-          <StatCard value="5 yrs" label="In Operation"       icon={Calendar}    accent="bg-gradient-to-br from-amber-500 to-orange-400" />
-          <StatCard value="12"    label="Countries Covered"  icon={MapPin}      accent="bg-gradient-to-br from-rose-500 to-pink-500" />
         </div>
       </section>
 
@@ -212,21 +177,21 @@ const ExperiencesPage = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2 rounded-2xl overflow-hidden aspect-[16/7] bg-gray-100">
                   <img
-                    src="https://images.unsplash.com/photo-1591604466107-ec97de577aff?auto=format&fit=crop&w=1200&q=80"
-                    alt="Masjid al-Haram aerial view, Makkah"
+                    src="https://images.unsplash.com/photo-1713302752681-0b14c1034707?auto=format&fit=crop&w=1200&q=80"
+                    alt="Masjid al-Haram skyline, Makkah"
                     className="w-full h-full object-cover"
                   />
                 </div>
                 <div className="rounded-2xl overflow-hidden aspect-square bg-gray-100">
                   <img
-                    src="https://images.unsplash.com/photo-1519817650390-64a93db51149?auto=format&fit=crop&w=600&q=80"
-                    alt="Pilgrims performing Tawaf around the Kaaba"
+                    src="https://images.unsplash.com/photo-1565330770968-0240c0046ce3?auto=format&fit=crop&w=600&q=80"
+                    alt="Masjid al-Haram and the Zamzam Tower, Makkah"
                     className="w-full h-full object-cover"
                   />
                 </div>
                 <div className="rounded-2xl overflow-hidden aspect-square bg-gray-100">
                   <img
-                    src="https://images.unsplash.com/photo-1542816417-0983c9c9ad53?auto=format&fit=crop&w=600&q=80"
+                    src="https://images.unsplash.com/photo-1692977579997-948328cdb7d2?auto=format&fit=crop&w=600&q=80"
                     alt="Masjid an-Nabawi, Madinah"
                     className="w-full h-full object-cover"
                   />
@@ -297,8 +262,8 @@ const ExperiencesPage = () => {
             {/* Photo: verification team / document review */}
             <div className="rounded-2xl overflow-hidden relative">
               <img
-                src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=1400&q=80"
-                alt="Masjid al-Haram and surrounding Makkah cityscape"
+                src="https://images.unsplash.com/photo-1513072064285-240f87fa81e8?auto=format&fit=crop&w=1400&q=80"
+                alt="The Kaaba, Masjid al-Haram, Makkah"
                 className="w-full h-56 sm:h-72 object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-r from-emerald-900/70 to-transparent flex items-center">
@@ -352,8 +317,8 @@ const ExperiencesPage = () => {
               <div className="grid sm:grid-cols-2 gap-4 mb-8">
                 <div className="rounded-2xl overflow-hidden bg-gray-100 relative">
                   <img
-                    src="https://images.unsplash.com/photo-1604594849809-dfedbc827105?auto=format&fit=crop&w=800&q=80"
-                    alt="Kaaba and Masjid al-Haram, Makkah"
+                    src="https://images.unsplash.com/photo-1724191078796-8a997b989f43?auto=format&fit=crop&w=800&q=80"
+                    alt="The Green Dome, the Prophet's Mosque, Madinah"
                     className="w-full h-44 object-cover"
                   />
                   <div className="absolute inset-0 bg-emerald-900/40 flex items-end p-4">
@@ -365,8 +330,8 @@ const ExperiencesPage = () => {
                 </div>
                 <div className="rounded-2xl overflow-hidden bg-gray-100 relative">
                   <img
-                    src="https://images.unsplash.com/photo-1548625149-720523080cfe?auto=format&fit=crop&w=800&q=80"
-                    alt="Masjid an-Nabawi green dome, Madinah"
+                    src="https://images.unsplash.com/photo-1742465294457-3c405ef99c23?auto=format&fit=crop&w=800&q=80"
+                    alt="The Prophet's Mosque at dusk, Madinah"
                     className="w-full h-44 object-cover"
                   />
                   <div className="absolute inset-0 bg-emerald-900/40 flex items-end p-4">
@@ -421,8 +386,8 @@ const ExperiencesPage = () => {
             {/* Media mentions */}
             <div className="rounded-2xl overflow-hidden relative">
               <img
-                src="https://images.unsplash.com/photo-1570167457603-94de37f0f0ad?auto=format&fit=crop&w=1400&q=80"
-                alt="Masjid al-Haram illuminated at night, Makkah"
+                src="https://images.unsplash.com/photo-1565330770968-0240c0046ce3?auto=format&fit=crop&w=1400&q=80"
+                alt="Masjid al-Haram and the Zamzam Tower, Makkah"
                 className="w-full h-48 object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-r from-gray-900/80 to-transparent flex items-center">
@@ -466,8 +431,8 @@ const ExperiencesPage = () => {
 
               <div className="rounded-2xl overflow-hidden">
                 <img
-                  src="https://images.unsplash.com/photo-1518183214770-9cffbec72538?auto=format&fit=crop&w=800&q=80"
-                  alt="Pilgrims at Masjid al-Haram, Makkah"
+                  src="https://images.unsplash.com/photo-1513072064285-240f87fa81e8?auto=format&fit=crop&w=800&q=80"
+                  alt="The Kaaba, Masjid al-Haram, Makkah"
                   className="w-full h-72 object-cover"
                 />
               </div>

@@ -1916,25 +1916,8 @@ const AgentDashboard = ({ user, onLogout }) => {
     setSidebarOpen(false); // always close mobile drawer
   };
 
-  // Handle opening office location modal with fetched data
-  const handleViewOfficeLocation = async () => {
-    try {
-      // Fetch agent documents to get office location and photos
-      const { getAgentDocuments } = await import('../api');
-      const docsRes = await getAgentDocuments();
-      if (docsRes?.success && docsRes?.data) {
-        const officeData = docsRes.data.office_photo;
-        setOfficeLocationData({
-          mapsUrl: officeData?.mapsUrl || null,
-          photos: officeData?.photos || [],
-        });
-      }
-      setShowOfficeLocation(true);
-    } catch (err) {
-      console.error('[AgentDashboard] Failed to fetch office location:', err.message);
-      alert('Could not load office location. Please try again.');
-    }
-  };
+  // Office location modal removed from agent dashboard UI — agents
+  // set their Maps URL via DocumentsTab; no local preview button required.
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1985,7 +1968,7 @@ const AgentDashboard = ({ user, onLogout }) => {
         />
       )}
 
-      {/* Office Location Modal */}
+          {/* Office Location Modal (removed) */}
       {showOfficeLocation && (
         <OfficeLocationModal
           agent={profile}
@@ -2280,13 +2263,7 @@ const AgentDashboard = ({ user, onLogout }) => {
               {/* Overview Header with Office Location Button */}
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <h2 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard Overview</h2>
-                <button
-                  onClick={handleViewOfficeLocation}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:shadow-lg hover:shadow-emerald-500/30 transition-all text-sm font-medium"
-                >
-                  <MapPin className="h-4 w-4" />
-                  <span>View Office Location</span>
-                </button>
+                {/* Office location preview removed from agent dashboard */}
               </div>
 
               {/* Stats Grid */}

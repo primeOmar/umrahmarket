@@ -149,19 +149,84 @@ export const SuperAdminDashboard = () => {
   const [sidebarHovered, setSidebarHovered] = useState(false);
   const [loading, setLoading]   = useState(true);
 
-  const resolveOfficeLocationUrl = (doc) => {
-    if (!doc) return null;
-    const candidates = [
-      doc?.mapsUrl,
-      doc?.officePhoto?.mapsUrl,
-      doc?.office_photo?.mapsUrl,
-      doc?.officePhotoUrl,
-      doc?.officeLocationUrl,
-      doc?.items?.office_photo?.mapsUrl,
-      doc?.items?.office_photo?.url,
-      doc?.office_photo?.[0]?.mapsUrl,
-    ];
-    return candidates.find(Boolean) || null;
+  const isMapsUrl = (value) => {
+    if (typeof value !== 'string') return false;
+    const normalized = value.trim();
+    if (!normalized) return false;
+    const lower = normalized.toLowerCase();
+    return (
+      lower.includes('google.com/maps') ||
+      lower.includes('maps.app.goo.gl') ||
+      lower.includes('goo.gl/maps') ||
+      lower.includes('google.com/place') ||
+      lower.includes('/@') ||
+      lower.includes('q=') ||
+      lower.includes('www.google.com/maps') ||
+      lower.includes('google.com/maps') ||
+      lower.includes('https://maps.google.com') ||
+      lower.includes('http://maps.google.com') ||
+      lower.includes('maps.google.com')
+    );
+  };
+
+  const resolveOfficeLocationUrl = (doc, seen = new Set()) => {
+    if (!doc || seen.has(doc)) return null;
+    seen.add(doc);
+
+    if (typeof doc === 'string') {
+      return isMapsUrl(doc) ? doc : null;
+    }
+
+    if (Array.isArray(doc)) {
+      for (const item of doc) {
+        const found = resolveOfficeLocationUrl(item, seen);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    if (typeof doc === 'object') {
+      const tryField = (value) => {
+        if (typeof value === 'string' && isMapsUrl(value)) return value;
+        return resolveOfficeLocationUrl(value, seen);
+      };
+
+      // Common expected shapes from agent-side save/verify flows
+      const officePhotoPaths = [
+        doc.officePhoto,
+        doc.office_photo,
+        doc.items?.office_photo,
+        doc.items?.office_photo?.data,
+        doc.items?.office_photo?.document,
+      ];
+      for (const value of officePhotoPaths) {
+        const found = tryField(value);
+        if (found) return found;
+      }
+
+      const knownFields = [
+        'mapsUrl', 'maps_url', 'googleMapsUrl', 'google_maps_url',
+        'officeLocationUrl', 'office_location_url', 'officeMapsUrl', 'office_maps_url',
+        'locationUrl', 'location_url', 'locationLink', 'location_link',
+        'mapsLink', 'maps_link', 'location', 'url', 'publicUrl', 'public_url',
+      ];
+
+      for (const key of knownFields) {
+        const value = doc[key];
+        if (typeof value === 'string' && isMapsUrl(value)) return value;
+        if (value && typeof value !== 'string') {
+          const found = resolveOfficeLocationUrl(value, seen);
+          if (found) return found;
+        }
+      }
+
+      for (const key of Object.keys(doc)) {
+        const found = resolveOfficeLocationUrl(doc[key], seen);
+        if (found) return found;
+      }
+    }
+
+    return null;
   };
 
   const getMapsEmbedUrl = (url) => {
@@ -257,7 +322,26 @@ export const SuperAdminDashboard = () => {
       ]);
 
       setStats(statsData?.data ?? statsData);
-      setAgents(Array.isArray(agentsData?.data) ? agentsData.data : []);
+      // Enrich agents with any saved office location from fetched documents
+      const rawAgents = Array.isArray(agentsData?.data) ? agentsData.data : [];
+      const rawDocs = Array.isArray(docsData?.data) ? docsData.data : [];
+      const docByAgent = new Map();
+      rawDocs.forEach(d => {
+        try {
+          const aid = d.agentId || d.agent?.id || d.agentIdString || d.agent_id;
+          if (!aid) return;
+          const existing = docByAgent.get(aid) || [];
+          existing.push(d);
+          docByAgent.set(aid, existing);
+        } catch (e) { /* ignore malformed doc */ }
+      });
+      const enrichedAgents = rawAgents.map(a => {
+        const docsForAgent = docByAgent.get(a.id) || [];
+        // Find first document that resolves to a maps URL using resolveOfficeLocationUrl
+        const mapsUrl = docsForAgent.map(resolveOfficeLocationUrl).find(Boolean) || null;
+        return { ...a, officeLocationUrl: mapsUrl };
+      });
+      setAgents(enrichedAgents);
       setClients(Array.isArray(clientsData?.data) ? clientsData.data : []);
       setChats(Array.isArray(chatsData?.data) ? chatsData.data : []);
       
@@ -265,11 +349,15 @@ export const SuperAdminDashboard = () => {
       let fetchedDocuments = [];
       try {
         fetchedDocuments = Array.isArray(docsData?.data) ? docsData.data : [];
-        setDocuments(fetchedDocuments);
-        documentsList = fetchedDocuments;
+        const enrichedDocs = fetchedDocuments.map(doc => ({
+          ...doc,
+          officeLocationUrl: resolveOfficeLocationUrl(doc),
+        }));
+        setDocuments(enrichedDocs);
+        documentsList = enrichedDocs;
         setDocumentsError(null);
-        if (fetchedDocuments.length > 0) {
-          toast.success(`Loaded ${fetchedDocuments.length} document(s)`);
+        if (enrichedDocs.length > 0) {
+          toast.success(`Loaded ${enrichedDocs.length} document(s)`);
         }
       } catch (docErr) {
         console.error('Failed to fetch documents:', docErr);
@@ -444,8 +532,12 @@ export const SuperAdminDashboard = () => {
       // Refresh only documents
       const docsData = await saJson(await saApi.get('/superadmin/documents'));
       const refreshedDocs = Array.isArray(docsData?.data) ? docsData.data : [];
-      setDocuments(refreshedDocs);
-      const refreshed = refreshedDocs.find((doc) => doc.id === selectedDocument.id);
+      const enrichedDocs = refreshedDocs.map(doc => ({
+        ...doc,
+        officeLocationUrl: resolveOfficeLocationUrl(doc),
+      }));
+      setDocuments(enrichedDocs);
+      const refreshed = enrichedDocs.find((doc) => doc.id === selectedDocument.id);
       if (refreshed) setSelectedDocument(refreshed);
       setVerificationNotes('');
       toast.success(`Document ${status} successfully`);
@@ -474,8 +566,12 @@ export const SuperAdminDashboard = () => {
       // this modal.
       const docsData = await saJson(await saApi.get('/superadmin/documents'));
       const refreshedDocs = Array.isArray(docsData?.data) ? docsData.data : [];
-      setDocuments(refreshedDocs);
-      const refreshed = refreshedDocs.find((doc) => doc.id === selectedDocument.id);
+      const enrichedDocs = refreshedDocs.map(doc => ({
+        ...doc,
+        officeLocationUrl: resolveOfficeLocationUrl(doc),
+      }));
+      setDocuments(enrichedDocs);
+      const refreshed = enrichedDocs.find((doc) => doc.id === selectedDocument.id);
       if (refreshed) setSelectedDocument(refreshed);
 
       setItemNotes(prev => ({ ...prev, [docType]: '' }));
@@ -873,7 +969,7 @@ const navItems = [
                                   ))}
                                 </div>
                               )}
-                              {officeLocationUrl && (
+                              {officeLocationUrl ? (
                                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                                   <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
                                     <MapPin className="h-3.5 w-3.5" /> Google Maps pin
@@ -896,6 +992,15 @@ const navItems = [
                                     </a>
                                   </div>
                                   <p className="mt-2 text-[11px] text-emerald-700 break-all">{officeLocationUrl}</p>
+                                </div>
+                              ) : (
+                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                  <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                                    <MapPin className="h-3.5 w-3.5" /> Location not provided
+                                  </div>
+                                  <p className="mt-2 text-[11px] text-gray-500">
+                                    Office photos uploaded, but no Google Maps location link was shared.
+                                  </p>
                                 </div>
                               )}
                             </div>
@@ -1227,12 +1332,21 @@ const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
       </div>
       <TableWrapper>
         <table className="w-full">
-          <thead><tr><Th>Agent</Th><Th>Email</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th></tr></thead>
+          <thead><tr><Th>Agent</Th><Th>Email</Th><Th>Location</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(agent => (
               <ObservedRow key={agent.id} id={agent.id} isPending={agent.status === 'pending'} onViewed={onViewAgent}>
                 <Td><span className="font-medium text-gray-900">{agent.name}</span></Td>
                 <Td>{agent.email}</Td>
+                <Td>
+                  {agent.officeLocationUrl ? (
+                    <a href={agent.officeLocationUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-xs text-emerald-700 hover:underline">
+                      <MapPin className="h-4 w-4 text-emerald-600" /> View
+                    </a>
+                  ) : (
+                    <span className="text-xs text-gray-400">—</span>
+                  )}
+                </Td>
                 <Td><StatusBadge status={agent.status} /></Td>
                 <Td>{agent.packageCount ?? 0}</Td>
                 <Td>{agent.clientCount ?? 0}</Td>
@@ -1383,6 +1497,14 @@ const DocumentsTab = ({ documents, filterStatus, setFilterStatus, onRefreshDocum
                 <p className="text-xs text-gray-400 mt-0.5">
                   Submitted {doc.submittedAt ? format(new Date(doc.submittedAt), 'MMM d, yyyy') : '—'} · {approvedCount}/{requiredKeys.length} required docs approved
                 </p>
+                {doc.officeLocationUrl && (
+                  <p className="text-xs text-emerald-700 mt-2 flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5" />
+                    <a href={doc.officeLocationUrl} target="_blank" rel="noreferrer" className="hover:underline">
+                      View shared location
+                    </a>
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {DOCUMENT_ITEM_DEFS.map(({ key, label, urlField }) => {
                     const uploaded = key === 'office_photo'

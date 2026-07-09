@@ -16,6 +16,7 @@ import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from 
 import SuperAdminRegister from './components/SuperAdminRegister';
 import GuidancePage from './components/GuidancePage';
 import ExperiencesPage from './components/ExperiencesPage';
+import VerifiedPage from './components/VerifiedPage';
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
@@ -255,6 +256,7 @@ function App() {
 
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
           <Route path="/auth/google/done"     element={<GoogleDone />} />
+          <Route path="/verified" element={<VerifiedPage />} />
 
           {/* FIX: packageId is in the path so Pesapal can't stomp it on redirect */}
           <Route path="/payment/callback/:packageId" element={<PaymentCallback />} />

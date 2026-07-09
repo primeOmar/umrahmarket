@@ -127,11 +127,14 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
             <div className="flex items-center gap-2">
 
               {/* Verified badge — lg+ only */}
-              <div className="hidden lg:flex items-center px-3 py-2 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/50 hover:border-emerald-200/70 transition-all duration-300 cursor-default">
+              <button
+                onClick={() => navigate('/verified')}
+                className="hidden lg:flex items-center px-3 py-2 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/50 hover:border-emerald-300 hover:from-emerald-100 hover:to-teal-100/60 transition-all duration-300 cursor-pointer"
+              >
                 <Shield className="h-3.5 w-3.5 text-emerald-600 mr-1.5" />
                 <span className="text-xs font-semibold text-emerald-700">Verified</span>
                 <Sparkles className="h-3 w-3 ml-1 text-emerald-500 opacity-60" />
-              </div>
+              </button>
 
               {/* Search — desktop */}
               <button className="hidden lg:flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 transition-all duration-300 group">
@@ -303,11 +306,14 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
 
         {/* Drawer footer */}
         <div className="px-4 py-5 border-t border-gray-100 space-y-3">
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+          <button
+            onClick={() => { setMobileMenuOpen(false); navigate('/verified'); }}
+            className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 transition-colors duration-200"
+          >
             <Shield className="h-4 w-4 text-emerald-600" />
             <span className="text-sm font-semibold text-emerald-700">Verified Platform</span>
             <Sparkles className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
-          </div>
+          </button>
           {currentUser ? (
             <button
               onClick={() => { setMobileMenuOpen(false); onLogout?.(); }}
