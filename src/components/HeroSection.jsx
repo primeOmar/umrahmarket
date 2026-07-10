@@ -17,15 +17,20 @@ import { userStore } from '../api';
 //   favorites      — string[]
 //   toggleFavorite — (id) => void
 // ─────────────────────────────────────────────────────────────────────────────
-const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, favorites = [], currentUser }) => {
+const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, favorites = [], currentUser, onAuthSuccess }) => {
   const navigate = useNavigate();
   const [showAuthModal, setShowAuthModal] = React.useState(false);
   
   // Stores the package id the guest tried to favourite before being sent to login
   const pendingFavouriteId = React.useRef(null);
   
-  // NEW: Stores the package id the guest tried to "View details" before login
+  // Stores the package id the guest tried to "Book Now" before login
   const pendingBookingId = React.useRef(null);
+
+  const getDashboardUrl = (user) => {
+    if (!user) return '/client/dashboard?welcome=true';
+    return user.role === 'agent' ? '/agent/dashboard?welcome=true' : '/client/dashboard?welcome=true';
+  };
 
   // Auth-gated action — shows login modal for guests, runs callback for logged-in users
   const requireAuth = (callback, packageId = null) => {
@@ -59,27 +64,27 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   // Called after successful login inside HeroSection's auth modal
  const handleAuthSuccess = (user) => {
     setShowAuthModal(false);
-    
-    // 1. Handle pending favorites 
-    if (pendingFavouriteId.current && toggleFavorite) {
-      toggleFavorite(pendingFavouriteId.current);
+    onAuthSuccess?.(user);
+
+    // 1. Handle pending favourite — apply it, then send the user to their dashboard.
+    if (pendingFavouriteId.current) {
+      const pkgId = pendingFavouriteId.current;
       pendingFavouriteId.current = null;
+      if (toggleFavorite) toggleFavorite(pkgId);
+      navigate(getDashboardUrl(user));
+      return;
     }
 
-    // 2. NEW: Handle the "Book Now" redirect
+    // 2. Handle the "Book Now" redirect
     if (pendingBookingId.current) {
       const pkgId = pendingBookingId.current;
       pendingBookingId.current = null;
-      // Send them to the dashboard with the package ID in the URL
       navigate(`/client/dashboard?bookPackage=${pkgId}`);
       return;
     }
 
     // 3. Default redirect if no specific intent
-    const targetUrl = user?.role === 'agent'
-      ? '/agent/dashboard?welcome=true'
-      : '/client/dashboard?welcome=true';
-    navigate(targetUrl);
+    navigate(getDashboardUrl(user));
   };
 
   // ── Filter state ────────────────────────────────────────────────────────────
@@ -89,6 +94,8 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   const [showFilters,         setShowFilters]         = useState(false);
   const [selectedFilters,     setSelectedFilters]     = useState(['all']);
   const [selectedLocations,   setSelectedLocations]   = useState([]);
+  const [selectedHotelStars,  setSelectedHotelStars]  = useState([]);
+  const [selectedMonths,      setSelectedMonths]      = useState([]);
   const [priceRange,          setPriceRange]          = useState([0, 10000]);
   const [duration,            setDuration]            = useState('any');
   const [rating,              setRating]              = useState('any');
@@ -123,7 +130,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ── Position the filter-group flyout (Type / Locations / Categories / Months) ──
+  // ── Position the filter-group flyout (Type / Locations / Hotel Stars / Months) ──
   // Uses `position: fixed` + coordinates from getBoundingClientRect so the
   // panel escapes the `overflow-x-auto` filter bar instead of being clipped
   // or sandwiched behind the package grid.
@@ -170,6 +177,36 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   }, [showFilters]);
 
 
+  const getHotelStarValue = (pkg) => {
+    const rawValue = pkg?.rating ?? pkg?.makkah_hotel_rating ?? pkg?.hotelStars ?? pkg?.hotel_stars ?? pkg?.hotelRating ?? 0;
+    if (typeof rawValue === 'number') return rawValue;
+    if (typeof rawValue === 'string') {
+      const match = rawValue.match(/(\d+(?:\.\d+)?)/);
+      return match ? Number(match[1]) : 0;
+    }
+    return 0;
+  };
+
+  const getMonthNameFromDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString('en-US', { month: 'long' });
+  };
+
+  const matchesSelectedMonth = (pkg, monthName) => {
+    const dateFields = [
+      pkg?.makkah_check_in_date,
+      pkg?.makkah_check_out_date,
+      pkg?.madinah_check_in_date,
+      pkg?.madinah_check_out_date,
+      pkg?.available_from,
+      pkg?.available_to,
+    ].filter(Boolean);
+
+    return dateFields.some((value) => getMonthNameFromDate(value) === monthName);
+  };
+
   useEffect(() => {
     if (!packages.length) { setFilteredPackages([]); return; }
     setFilterLoading(true);
@@ -189,6 +226,24 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
         });
       }
 
+      if (selectedHotelStars.length > 0) {
+        result = result.filter((p) => {
+          const starValue = getHotelStarValue(p);
+          return selectedHotelStars.some((filterId) => {
+            if (filterId === '1-2') return starValue <= 2;
+            if (filterId === '3') return starValue >= 3 && starValue < 4;
+            if (filterId === '4') return starValue >= 4 && starValue < 5;
+            if (filterId === '5') return starValue >= 5 && starValue < 6;
+            if (filterId === '6') return starValue >= 6;
+            return false;
+          });
+        });
+      }
+
+      if (selectedMonths.length > 0) {
+        result = result.filter((p) => selectedMonths.some((month) => matchesSelectedMonth(p, month)));
+      }
+
       result = result.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
 
       if (duration !== 'any') {
@@ -203,7 +258,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
       setFilterLoading(false);
     }, 300);
     return () => clearTimeout(timer);
-  }, [packages, selectedLocations, selectedFilters, priceRange, duration, rating]);
+  }, [packages, selectedLocations, selectedFilters, selectedHotelStars, selectedMonths, priceRange, duration, rating]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   const toggleFilter = (groupId, filterId, isExclusive = false) => {
@@ -211,6 +266,23 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
       setSelectedLocations(prev =>
         prev.includes(filterId) ? prev.filter(id => id !== filterId) : [...prev, filterId]
       );
+      return;
+    }
+    if (groupId === 'hotelStars') {
+      setSelectedHotelStars(prev =>
+        prev.includes(filterId) ? prev.filter(id => id !== filterId) : [...prev, filterId]
+      );
+      return;
+    }
+    if (groupId === 'months') {
+      if (filterId === 'all_months') {
+        setSelectedMonths([]);
+      } else {
+        setSelectedMonths(prev =>
+          prev.includes(filterId) ? prev.filter(id => id !== filterId) : [...prev, filterId]
+        );
+      }
+      setActiveFilterGroup(null);
       return;
     }
     if (isExclusive || filterId === 'all' || filterId.startsWith('all_')) {
@@ -227,17 +299,25 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   const clearAllFilters = () => {
     setSelectedFilters(['all']);
     setSelectedLocations([]);
+    setSelectedHotelStars([]);
+    setSelectedMonths([]);
     setPriceRange([0, 10000]);
     setDuration('any');
     setRating('any');
     setActiveFilterGroup(null);
   };
 
-  const isFilterSelected = (groupId, filterId) =>
-    groupId === 'locations' ? selectedLocations.includes(filterId) : selectedFilters.includes(filterId);
+  const isFilterSelected = (groupId, filterId) => {
+    if (groupId === 'locations') return selectedLocations.includes(filterId);
+    if (groupId === 'hotelStars') return selectedHotelStars.includes(filterId);
+    if (groupId === 'months') return selectedMonths.includes(filterId);
+    return selectedFilters.includes(filterId);
+  };
 
   const getActiveFilterCount = () => {
     let count = selectedLocations.length;
+    count += selectedHotelStars.length;
+    count += selectedMonths.length;
     count += selectedFilters.filter(f => f !== 'all' && f !== 'all_months').length;
     if (duration !== 'any') count++;
     if (rating !== 'any') count++;
@@ -266,14 +346,14 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
       ]
     },
     {
-      id: 'categories', label: 'Categories', icon: '⭐',
+      id: 'hotelStars', label: 'Hotel Stars', icon: '🏨',
       options: [
-        { id: 'ramadan', label: 'Ramadan',    icon: '🌙' },
-        { id: 'luxury',  label: '1/2 star',     icon: '✨' },
-        { id: 'budget',  label: '3 Star',     icon: '💰' },
-        { id: 'family',  label: '4 star',     icon: '👨‍👩‍👧‍👦' },
-        { id: 'short',   label: '5 star', icon: '⏱️' },
-        { id: 'premium', label: '6 star',    icon: '👑' },
+        { id: 'all_stars', label: 'Any Hotel Star', icon: '🏨', exclusive: true },
+        { id: '1-2', label: '1/2 Star Hotel', icon: '✨' },
+        { id: '3', label: '3 Star', icon: '💎' },
+        { id: '4', label: '4 Star', icon: '🌟' },
+        { id: '5', label: '5 Star', icon: '⭐' },
+        { id: '6', label: '6 Star', icon: '👑' },
       ]
     },
     {
@@ -528,7 +608,14 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                 {filteredPackages.slice(0, 20).map((pkg) => (
-                  <div key={pkg.id} className="group cursor-pointer">
+                  <div
+                    key={pkg.id}
+                    className="group cursor-pointer"
+                    onClick={() => handleViewDetails(pkg.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewDetails(pkg.id); } }}
+                  >
                     <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-2.5 bg-gray-100">
                       <img
                         src={pkg.image} alt={pkg.title}
@@ -587,7 +674,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                       {/* ONLY THIS BUTTON WAS CHANGED - now uses the new auth-gated handler */}
                    <div className="grid grid-cols-2 gap-2 mt-2">
     <button
-      onClick={() => handleViewDetails(pkg.id)}
+      onClick={e => { e.stopPropagation(); handleViewDetails(pkg.id); }}
       className="px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-md shadow-emerald-600/10"
     >
      View Details

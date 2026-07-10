@@ -74,6 +74,21 @@ const ProtectedSuperAdminRoute = ({ children, authReady }) => {
   return children;
 };
 
+const getDashboardPath = (user) => {
+  if (!user) return '/';
+  return user.role === 'agent' ? '/agent/dashboard' : '/client/dashboard';
+};
+
+const HomeRoute = ({ authReady, currentUser, children }) => {
+  if (!authReady) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-8 w-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+    </div>
+  );
+  if (currentUser) return <Navigate to={getDashboardPath(currentUser)} replace />;
+  return children;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 function App() {
   const [favorites,   setFavorites]   = useState([]); // array of package IDs
@@ -195,25 +210,32 @@ function App() {
         <Routes>
           {/* Home */}
           <Route path="/" element={
-            <>
-              <Header
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                onAuthSuccess={(user) => {
-                  setCurrentUser(user);
-                  userStore.set(user);
-                }}
-              />
-              <HeroSection
-                packages={packages}
-                loading={pkgLoading}
-                error={pkgError}
-                onRetry={fetchPackages}
-                favorites={favorites}
-                toggleFavorite={toggleFavorite}
-              />
-              <Footer />
-            </>
+            <HomeRoute authReady={authReady} currentUser={currentUser}>
+              <>
+                <Header
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  onAuthSuccess={(user) => {
+                    setCurrentUser(user);
+                    userStore.set(user);
+                  }}
+                />
+                <HeroSection
+                  packages={packages}
+                  loading={pkgLoading}
+                  error={pkgError}
+                  onRetry={fetchPackages}
+                  favorites={favorites}
+                  toggleFavorite={toggleFavorite}
+                  currentUser={currentUser}
+                  onAuthSuccess={(user) => {
+                    setCurrentUser(user);
+                    userStore.set(user);
+                  }}
+                />
+                <Footer />
+              </>
+            </HomeRoute>
           } />
 
           {/* Detail */}

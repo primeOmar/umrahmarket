@@ -376,8 +376,23 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
               <Share2 className="h-5 w-5 text-gray-600" />
             </button>
-            <button onClick={() => toggleFavorite?.(packageData.id)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-              <Heart className={`h-5 w-5 ${favorites.includes(packageData.id) ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
+            <button
+              onClick={async () => {
+                try {
+                  await toggleFavorite?.(packageData);
+                } catch (err) {
+                  console.error('[toggleFavorite]', err);
+                }
+              }}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <Heart
+                className={`h-5 w-5 ${
+                  favorites.some(f => String(f.id) === String(packageData.id))
+                    ? 'fill-red-500 text-red-500'
+                    : 'text-gray-600'
+                }`}
+              />
             </button>
             <button
               onClick={() => {

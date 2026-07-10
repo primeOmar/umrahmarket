@@ -60,7 +60,38 @@ const useToast = () => {
 const CACHE_TTL = 5 * 60 * 1000;
 const CACHE_VERSION = 'v3'; // bump this whenever normalise() changes shape
 
+// Reward points: 2 USD spent = 1 point, earned per successfully booked package.
+const USD_PER_REWARD_POINT = 2;
+// Used only when a booking has neither payment.amount_usd nor fx_rate_used
+// (older/legacy rows). Keep in sync with the backend's fallback FX rate in
+// currency.service.js if that changes.
+const FALLBACK_KES_PER_USD = 129;
+
 // ==================== UTILITIES ====================
+
+/**
+ * computeRewardPoints — derives reward points from real spend instead of a
+ * static number. Counts only successfully booked packages (confirmed or
+ * completed), converts each booking's amount to its USD equivalent using
+ * the same priority order as the booking card's usdEquivalent display,
+ * then applies the 2-USD-spent = 1-point rule.
+ */
+const computeRewardPoints = (bookings = []) => {
+  const eligible = bookings.filter(b =>
+    ['confirmed', 'completed'].includes(b.status?.toLowerCase())
+  );
+
+  const totalUsdSpent = eligible.reduce((sum, b) => {
+    const usd = b.payment?.amount_usd != null
+      ? Number(b.payment.amount_usd)
+      : (b.payment?.fx_rate_used && b.amount_paid)
+        ? Number(b.amount_paid) / Number(b.payment.fx_rate_used)
+        : (b.amount_paid ? Number(b.amount_paid) / FALLBACK_KES_PER_USD : 0);
+    return sum + (Number.isFinite(usd) ? usd : 0);
+  }, 0);
+
+  return Math.floor(totalUsdSpent / USD_PER_REWARD_POINT);
+};
 
 /**
  * normalise — maps raw backend package fields to a consistent frontend shape.
@@ -1033,7 +1064,7 @@ const ClientDashboard = ({ user, onLogout }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState({ bookings: true, messages: true, favorites: true, stats: true });
-  const [stats, setStats] = useState({ activeBookings: 0, favorites: 0, pastJourneys: 0, rewardPoints: 1250 });
+  const [stats, setStats] = useState({ activeBookings: 0, favorites: 0, pastJourneys: 0, rewardPoints: 0 });
 
   const { packages: availablePackages, loading: packagesLoading, error: packagesError, refetch: refetchPackages } = usePackages(showToast);
 
@@ -1093,7 +1124,8 @@ const ClientDashboard = ({ user, onLogout }) => {
         // Update stats: active = confirmed/pending, past = completed
         const active = raw.filter(b => ['confirmed', 'pending'].includes(b.status?.toLowerCase())).length;
         const past   = raw.filter(b => b.status?.toLowerCase() === 'completed').length;
-        setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past }));
+        const rewardPoints = computeRewardPoints(raw);
+        setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past, rewardPoints }));
 
         // Await face-photo check so we have the missing set before loading.bookings
         // is set to false — this prevents the auto-popup useEffect from running
@@ -1262,7 +1294,8 @@ const ClientDashboard = ({ user, onLogout }) => {
       setBookings(raw);
       const active = raw.filter(b => ['confirmed', 'pending'].includes(b.status?.toLowerCase())).length;
       const past   = raw.filter(b => b.status?.toLowerCase() === 'completed').length;
-      setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past }));
+      const rewardPoints = computeRewardPoints(raw);
+      setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past, rewardPoints }));
     } catch (err) {
       console.error('[refreshBookings]', err.message);
     }

@@ -71,6 +71,10 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
     if (item.path) navigate(item.path);
   };
 
+  // Hamburger click — ALWAYS opens/closes the nav drawer. No auth check here,
+  // ever. Signing in/out is handled separately inside the drawer itself.
+  const toggleMobileMenu = () => setMobileMenuOpen((v) => !v);
+
   // Keep the highlighted tab in sync with the actual URL (covers direct
   // links, refresh, and browser back/forward — not just in-app clicks).
   useEffect(() => {
@@ -172,8 +176,8 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
                 <button
                   onClick={() => setShowAuthModal(true)}
                   className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 hover:border-emerald-200 hover:shadow-md hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-teal-50/50 transition-all duration-300 group"
+                  aria-label="Sign in"
                 >
-                  <Menu className="h-4 w-4 text-gray-500 group-hover:text-emerald-600 transition-colors" />
                   <div className="p-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm">
                     <User className="h-3.5 w-3.5 text-white" />
                   </div>
@@ -183,11 +187,18 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
                 </button>
               )}
 
-              {/* Hamburger — xs/mobile only */}
+              {/* Hamburger — xs/mobile ONLY (sm:hidden). This is the sole
+                  place the Menu/X icon appears. Opens the nav drawer, full
+                  stop — never calls setShowAuthModal, regardless of login
+                  state. Fully independent of the Account button above,
+                  which is hidden on mobile (hidden sm:flex) and only ever
+                  opens the login modal. */}
               <button
-                onClick={() => setMobileMenuOpen((v) => !v)}
+                type="button"
+                onClick={toggleMobileMenu}
                 className="sm:hidden flex items-center justify-center h-9 w-9 rounded-full border border-gray-200 hover:bg-gray-50 transition-all duration-300"
-                aria-label="Open menu"
+                aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={mobileMenuOpen}
               >
                 {mobileMenuOpen
                   ? <X className="h-4 w-4 text-gray-600" />
