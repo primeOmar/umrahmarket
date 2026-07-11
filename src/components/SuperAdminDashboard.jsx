@@ -1048,13 +1048,19 @@ const navItems = [
                           </button>
                           <button
                             onClick={() => handleVerifyDocumentItem(key, 'approved')}
-                            disabled={isLoading || item.status === 'approved'}
+                            disabled={isLoading || item.status === 'approved' || (isOfficePhoto && !officeLocationUrl)}
+                            title={isOfficePhoto && !officeLocationUrl ? 'Agent must share a Google Maps location link before this can be approved' : undefined}
                             className="flex-1 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-medium hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                           >
                             {isLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
                             Approve
                           </button>
                         </div>
+                        {isOfficePhoto && !officeLocationUrl && (
+                          <p className="text-[11px] text-amber-600 mt-1.5">
+                            Can't approve yet — waiting on the agent's Google Maps location link.
+                          </p>
+                        )}
                       </>
                     )}
                   </div>
