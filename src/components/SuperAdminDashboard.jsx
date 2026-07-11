@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, MessageCircle, FileText, Package, Settings,
   LogOut, Search, Menu, X, Shield, Activity, TrendingUp, Briefcase,
   Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
-  Eye, EyeOff, Lock, MapPin, ExternalLink
+  Eye, EyeOff, Lock, MapPin,BookOpen, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -338,7 +338,7 @@ export const SuperAdminDashboard = () => {
       const enrichedAgents = rawAgents.map(a => {
         const docsForAgent = docByAgent.get(a.id) || [];
         // Find first document that resolves to a maps URL using resolveOfficeLocationUrl
-        const mapsUrl = docsForAgent.map(resolveOfficeLocationUrl).find(Boolean) || null;
+        const mapsUrl = docsForAgent.map(doc => resolveOfficeLocationUrl(doc)).find(Boolean) || null;
         return { ...a, officeLocationUrl: mapsUrl };
       });
       setAgents(enrichedAgents);
