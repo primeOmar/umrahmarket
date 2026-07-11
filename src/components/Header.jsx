@@ -11,18 +11,58 @@ import {
   Compass,
   Globe,
   BookOpen,
+  Users,
 } from 'lucide-react';
 import logoImage from '../assets/umramarket.png';
 import AuthModal from './AuthModal';
 
 const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const navigationItems = [
+    {
+      label: 'Packages',
+      path: '/',
+      icon: <Briefcase className="h-4 w-4" />,
+      activeIcon: <Briefcase className="h-4 w-4" />,
+    },
+    {
+      label: 'Experiences',
+      path: '/experiences',
+      icon: <Compass className="h-4 w-4" />,
+      activeIcon: <Globe className="h-4 w-4" />,
+    },
+    {
+      label: 'Guidance',
+      path: '/guidance',
+      icon: <BookOpen className="h-4 w-4" />,
+      activeIcon: <BookOpen className="h-4 w-4" fill="currentColor" />,
+    },
+    {
+      label: 'Agents',
+      path: '/agents',
+      icon: <Users className="h-4 w-4" />,
+      activeIcon: <Users className="h-4 w-4" fill="currentColor" />,
+    },
+  ];
+
+  // Exact match first ('/' only matches '/'), then prefix match for nested
+  // routes like /agents/:id so the "Agents" tab stays lit on an agent's
+  // detail page instead of silently falling back to whatever the previous
+  // tab was.
+  const getMatchingNavLabel = (pathname) => {
+    const exact = navigationItems.find((i) => i.path === pathname);
+    if (exact) return exact.label;
+    const prefix = navigationItems.find((i) => i.path !== '/' && pathname.startsWith(`${i.path}/`));
+    return prefix ? prefix.label : null;
+  };
+
   const [isScrolled, setIsScrolled] = useState(false);
-  const [activeNav, setActiveNav] = useState('Packages');
+  const [activeNav, setActiveNav] = useState(() => getMatchingNavLabel(location.pathname) || 'Packages');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
-  const location = useLocation();
-  const navigate = useNavigate();
 
   // Close the auth modal as soon as a user is present (login completed)
   useEffect(() => {
@@ -45,27 +85,6 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
     return () => { document.body.style.overflow = ''; };
   }, [mobileMenuOpen]);
 
-  const navigationItems = [
-    {
-      label: 'Packages',
-      path: '/',
-      icon: <Briefcase className="h-4 w-4" />,
-      activeIcon: <Briefcase className="h-4 w-4" />,
-    },
-    {
-      label: 'Experiences',
-      path: '/experiences',
-      icon: <Compass className="h-4 w-4" />,
-      activeIcon: <Globe className="h-4 w-4" />,
-    },
-    {
-      label: 'Guidance',
-      path: '/guidance',
-      icon: <BookOpen className="h-4 w-4" />,
-      activeIcon: <BookOpen className="h-4 w-4" fill="currentColor" />,
-    },
-  ];
-
   const goToNav = (item) => {
     setActiveNav(item.label);
     if (item.path) navigate(item.path);
@@ -76,10 +95,11 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
   const toggleMobileMenu = () => setMobileMenuOpen((v) => !v);
 
   // Keep the highlighted tab in sync with the actual URL (covers direct
-  // links, refresh, and browser back/forward — not just in-app clicks).
+  // links, refresh, browser back/forward, and nested routes like /agents/:id
+  // — not just in-app clicks).
   useEffect(() => {
-    const match = navigationItems.find(i => i.path === location.pathname);
-    if (match) setActiveNav(match.label);
+    const match = getMatchingNavLabel(location.pathname);
+    if (match) setActiveNav(match);
   }, [location.pathname]);
 
   return (

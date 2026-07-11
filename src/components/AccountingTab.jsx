@@ -25,6 +25,11 @@ import { format } from 'date-fns';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+const fmt = (kes) => {
+  if (kes == null || Number.isNaN(Number(kes))) return '—';
+  return `KES ${Number(kes).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
+};
+
 const fmtWithUsd = (kes, fxRate) => {
   if (kes == null) return '—';
   const kesStr = `KES ${Number(kes).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;

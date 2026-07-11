@@ -17,6 +17,8 @@ import SuperAdminRegister from './components/SuperAdminRegister';
 import GuidancePage from './components/GuidancePage';
 import ExperiencesPage from './components/ExperiencesPage';
 import VerifiedPage from './components/VerifiedPage';
+import AgentsPage from './components/AgentsPage';
+import AgentDetailPage from './components/AgentDetailPage';
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
@@ -275,6 +277,35 @@ function App() {
             </ProtectedClientRoute>
           } />
           <Route path="/guidance" element={<GuidancePage />} />
+
+          <Route path="/agents" element={
+            <>
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <AgentsPage />
+              <Footer />
+            </>
+          } />
+          <Route path="/agents/:id" element={
+            <>
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <AgentDetailPage />
+              <Footer />
+            </>
+          } />
 
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
           <Route path="/auth/google/done"     element={<GoogleDone />} />
