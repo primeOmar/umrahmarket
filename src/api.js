@@ -362,6 +362,25 @@ export const getAgentVerificationStatus = () =>
 export const requestDocumentReview = () =>
   request({ method: 'post', url: '/agent-documents/request-review' }).then((r) => r.data);
 
+// ─── Agent self-service profile (logo, bio, experience, specialties) ────────
+// Powers AgentProfileSettings.jsx. Same shape as the agent-documents calls
+// above: request() through the shared axios instance so Bearer auth +
+// auto-refresh apply, unwrapped to the JSON body via .then(r => r.data).
+export const getAgentProfile = () =>
+  request({ method: 'get', url: '/agents/me/profile' }).then((r) => r.data);
+
+export const updateAgentProfile = (payload) =>
+  request({ method: 'put', url: '/agents/me/profile', data: payload }).then((r) => r.data);
+
+// FormData — the request interceptor already strips Content-Type for
+// FormData bodies so Axios sets the multipart boundary itself (same as
+// uploadAgentDocument above). No manual headers needed here.
+export const uploadAgentLogo = (file) => {
+  const form = new FormData();
+  form.append('logo', file);
+  return request({ method: 'post', url: '/agents/me/logo', data: form }).then((r) => r.data);
+};
+
 export default {
   registerClient, registerAgent, login, googleLogin,
   logout, refreshToken, getMe, requestPasswordReset,
@@ -369,4 +388,5 @@ export default {
   tokenStore, userStore,
   checkPassport, verifyPassportImage, getPassportStatus,
   getAgentVerificationStatus, requestDocumentReview,
+  getAgentProfile, updateAgentProfile, uploadAgentLogo,
 };

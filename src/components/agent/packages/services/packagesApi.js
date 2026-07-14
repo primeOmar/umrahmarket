@@ -1,6 +1,3 @@
-// services/packagesApi.js
-// Match api.js: prefer VITE_API_BASE, fall back to VITE_API_URL.
-// If neither is set BASE_URL is undefined and every fetch will silently fail.
 const BASE_URL = (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000')
   .replace(/\/api$/, ''); // strip trailing /api — we add it explicitly in each path
 
@@ -104,7 +101,7 @@ const PACKAGE_SCALARS = [
   'madinah_hotel_address', 'madinah_check_in_date', 'madinah_check_out_date',
 ];
 
-const buildFormData = (formData, imageFiles = []) => {
+const buildFormData = (formData, imageFiles = [], keepImageUrls = []) => {
   const body = new FormData();
   PACKAGE_SCALARS.forEach((k) => {
     if (formData[k] != null && formData[k] !== '') body.append(k, formData[k]);
@@ -112,6 +109,11 @@ const buildFormData = (formData, imageFiles = []) => {
   body.append('highlights', JSON.stringify(formData.highlights ?? []));
   body.append('inclusions',  JSON.stringify(formData.inclusions  ?? []));
   body.append('exclusions',  JSON.stringify(formData.exclusions  ?? []));
+  // Existing photos the agent kept (edit) or carried over (duplicate) —
+  // newly uploaded files are appended separately below and merged server-side.
+  if (Array.isArray(keepImageUrls) && keepImageUrls.length > 0) {
+    body.append('existing_image_urls', JSON.stringify(keepImageUrls));
+  }
   imageFiles.forEach((file) => body.append('images', file));
   return body;
 };
@@ -134,8 +136,8 @@ export const getAgentPackages = async () => {
   return handleResponse(res);
 };
 
-export const createPackage = async (formData, imageFiles = []) => {
-  const body = buildFormData(formData, imageFiles);
+export const createPackage = async (formData, imageFiles = [], keepImageUrls = []) => {
+  const body = buildFormData(formData, imageFiles, keepImageUrls);
   const res  = await apiFetch('/api/packages/create-packages', {
     method: 'POST',
     body,
@@ -148,8 +150,8 @@ export const getPackageById = async (id) => {
   return handleResponse(res);
 };
 
-export const updatePackage = async (id, formData, imageFiles = []) => {
-  const body = buildFormData(formData, imageFiles);
+export const updatePackage = async (id, formData, imageFiles = [], keepImageUrls = []) => {
+  const body = buildFormData(formData, imageFiles, keepImageUrls);
   const res  = await apiFetch(`/api/packages/${id}`, {
     method: 'PUT',
     body,
@@ -220,6 +222,9 @@ export const normalise = (pkg) => {
     highlights: Array.isArray(pkg.highlights)  ? pkg.highlights  : [],
     location: pkg.location || pkg.destination || 'Makkah & Madinah',
     type: pkg.type || (pkg.is_hajj ? 'hajj' : 'umrah'),
-    agency_name: pkg.agency_name || pkg.agency || 'Premium Travel',
+    // Real owner name for display (card/detail page "by {agent_name}").
+    // No fake fallback here — better to hide the line than show a made-up agency.
+    agent_name: pkg.agent_name || pkg.agency_name || pkg.agency || null,
+    agency_name: pkg.agency_name || pkg.agency || null,
   };
 };

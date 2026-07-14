@@ -3,10 +3,10 @@ import {
   Plus, Edit, Copy, Trash2, Star, Users, MapPin, Clock,
   Search, Grid, List, Tag, Globe, ChevronRight,
   MoreVertical, AlertCircle, Loader2, RefreshCw,
-  Package, TrendingUp, Calendar, DollarSign, BookOpen
+  Package, TrendingUp, Calendar, DollarSign
 } from 'lucide-react';
 import { getAgentPackages, deletePackage } from '../services/packagesApi';
-import ItineraryModal from '../creation/ItineraryModal';
+import PackagePreviewModal from '../creation/PackagePreviewModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -23,7 +23,7 @@ const statusColor = (status = '') => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PackageCard
 // ─────────────────────────────────────────────────────────────────────────────
-export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onItinerary }) => {
+export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -84,12 +84,6 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onItinerary })
                   className="w-full flex items-center space-x-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 transition-colors"
                 >
                   <Copy className="h-4 w-4" /><span>Duplicate</span>
-                </button>
-                <button
-                  onClick={() => { onItinerary(pkg); setShowMenu(false); }}
-                  className="w-full flex items-center space-x-2 px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors"
-                >
-                  <BookOpen className="h-4 w-4" /><span>Itinerary</span>
                 </button>
                 <button
                   onClick={() => { onDelete(pkg); setShowMenu(false); }}
@@ -184,14 +178,12 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onItinerary })
             >
               <Copy className="h-3.5 w-3.5" /><span>Duplicate</span>
             </button>
-            <button
-              onClick={() => onItinerary(pkg)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
-            >
-              <BookOpen className="h-3.5 w-3.5" /><span>Itinerary</span>
-            </button>
           </div>
-          <button className="flex items-center space-x-1 text-sm text-emerald-600 font-medium hover:text-emerald-700 group/link">
+          <button
+            type="button"
+            onClick={() => onPreview(pkg)}
+            className="flex items-center space-x-1 text-sm text-emerald-600 font-medium hover:text-emerald-700 group/link"
+          >
             <span>Details</span>
             <ChevronRight className="h-4 w-4 group-hover/link:translate-x-0.5 transition-transform" />
           </button>
@@ -241,7 +233,7 @@ const DeleteModal = ({ pkg, onConfirm, onCancel, loading }) => (
 // ─────────────────────────────────────────────────────────────────────────────
 // PackagesTab
 // ─────────────────────────────────────────────────────────────────────────────
-const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => {
+const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refreshKey, onPackageDeleted }) => {
   const [packages, setPackages]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState(null);
@@ -251,7 +243,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
   const [viewMode, setViewMode]       = useState('grid');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [itineraryTarget, setItineraryTarget] = useState(null);
+  const [previewTarget, setPreviewTarget] = useState(null);
 
   // ── Fetch agent's packages ──────────────────────────────────────────────────
   const fetchPackages = useCallback(async () => {
@@ -271,7 +263,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
     }
   }, []);
 
-  useEffect(() => { fetchPackages(); }, [fetchPackages]);
+  useEffect(() => { fetchPackages(); }, [fetchPackages, refreshKey]);
 
   // ── Delete handler ──────────────────────────────────────────────────────────
   const handleDeleteConfirm = async () => {
@@ -280,6 +272,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
     try {
       await deletePackage(deleteTarget.id);
       setPackages((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      onPackageDeleted?.(deleteTarget);
       setDeleteTarget(null);
     } catch (err) {
       alert(err.message || 'Failed to delete package.');
@@ -312,7 +305,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -459,7 +452,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
               onEdit={onEditPackage}
               onDuplicate={onDuplicatePackage}
               onDelete={(p) => setDeleteTarget(p)}
-              onItinerary={(p) => setItineraryTarget(p)}
+              onPreview={(p) => setPreviewTarget(p)}
             />
           ))}
         </div>
@@ -475,11 +468,12 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage }) => 
         />
       )}
 
-      {/* Itinerary modal */}
-      {itineraryTarget && (
-        <ItineraryModal
-          pkg={itineraryTarget}
-          onClose={() => setItineraryTarget(null)}
+      {/* Read-only preview — no booking/payment, agents can't book their own packages */}
+      {previewTarget && (
+        <PackagePreviewModal
+          pkg={previewTarget}
+          onClose={() => setPreviewTarget(null)}
+          onEdit={onEditPackage}
         />
       )}
     </div>

@@ -3,7 +3,7 @@ import {
   X, Upload, Trash2, Loader2, CheckCircle2, MapPin, Building2, Check, TrendingUp,
   Sparkles, RefreshCw, ChevronDown, ChevronUp, Plus, CalendarClock,
 } from "lucide-react";
-import { createPackage, saveItinerary } from "../services/packagesApi";
+import { createPackage, updatePackage, getItinerary, saveItinerary } from "../services/packagesApi";
 import {
   Field, sanitizeText, sanitizeNumber, sanitizeDate,
   InputEl, TextareaEl, Stars, HotelBlock,
@@ -419,18 +419,96 @@ const ItineraryDayCard = ({ day, collapsed, onToggle, onUpdateTitle, onUpdateAct
 
 // ── main modal ───────────────────────────────────────────────────────────────
 
-const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
+// mode: "create" | "edit" | "duplicate". initialPackage: the source package
+// object (from the agent's package list) when mode is "edit" or "duplicate".
+const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialPackage = null }) => {
   const [form, setForm]     = useState(EMPTY);
   const [step, setStep]     = useState(0);
   const [images, setImages] = useState([]);
   const [previews, setPrev] = useState([]);
+  const [existingImageUrls, setExistingImageUrls] = useState([]); // photos already on R2 — kept unless the agent removes them
   const [drag, setDrag]     = useState(false);
   const [status, setStatus] = useState("idle");
   const [itinerary, setItinerary]           = useState([]);
   const [itineraryTouched, setItinTouched]  = useState(false); // becomes true once agent enters the step, so auto-regeneration only happens once
+  const [itineraryLoading, setItinLoading]  = useState(false);
   const [collapsedDays, setCollapsedDays]   = useState({});
   const [activeTemplate, setActiveTemplate] = useState(null);
   const fileRef             = useRef(null);
+
+  const isEdit = mode === "edit";
+
+  // Hydrate the form when opening in edit/duplicate mode, or reset to blank
+  // for create. Keyed on isOpen so every open starts from a clean slate.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (mode === "create" || !initialPackage) {
+      setForm(EMPTY);
+      setImages([]); setPrev([]);
+      setExistingImageUrls([]);
+      setItinerary([]); setItinTouched(false); setCollapsedDays({});
+      setActiveTemplate(null);
+      setStep(0);
+      setStatus("idle");
+      return;
+    }
+
+    const pkg = initialPackage;
+    setForm({
+      name:                  mode === "duplicate" ? `${pkg.name || ""} (Copy)` : (pkg.name || ""),
+      type:                  pkg.type || "umrah",
+      location:              pkg.location || "makkah",
+      description:           pkg.description || "",
+      price:                 pkg.price != null ? String(pkg.price) : "",
+      original_price:        pkg.original_price != null ? String(pkg.original_price) : "",
+      discount:              pkg.discount != null ? String(pkg.discount) : "",
+      duration:              pkg.duration != null ? String(pkg.duration) : "",
+      available_from:        pkg.available_from || "",
+      available_to:          pkg.available_to || "",
+      max_group_size:        pkg.max_group_size != null ? String(pkg.max_group_size) : "50",
+      min_group_size:        pkg.min_group_size != null ? String(pkg.min_group_size) : "1",
+      makkah_hotel_name:     pkg.makkah_hotel_name || "",
+      makkah_hotel_rating:   pkg.makkah_hotel_rating != null ? String(pkg.makkah_hotel_rating) : "",
+      makkah_hotel_distance: pkg.makkah_hotel_distance || "",
+      makkah_hotel_address:  pkg.makkah_hotel_address || "",
+      makkah_check_in_date:  pkg.makkah_check_in_date || "",
+      makkah_check_out_date: pkg.makkah_check_out_date || "",
+      madinah_hotel_name:     pkg.madinah_hotel_name || "",
+      madinah_hotel_rating:   pkg.madinah_hotel_rating != null ? String(pkg.madinah_hotel_rating) : "",
+      madinah_hotel_distance: pkg.madinah_hotel_distance || "",
+      madinah_hotel_address:  pkg.madinah_hotel_address || "",
+      madinah_check_in_date:  pkg.madinah_check_in_date || "",
+      madinah_check_out_date: pkg.madinah_check_out_date || "",
+      highlights: Array.isArray(pkg.highlights) ? pkg.highlights : [],
+      inclusions: Array.isArray(pkg.inclusions) ? pkg.inclusions : [],
+      exclusions: Array.isArray(pkg.exclusions) ? pkg.exclusions : [],
+    });
+    setExistingImageUrls(Array.isArray(pkg.image_urls) ? pkg.image_urls : []);
+    setImages([]); setPrev([]);
+    setActiveTemplate(null);
+    setStep(0);
+    setStatus("idle");
+
+    // Block the auto-seed effect below from stomping on this with a blank
+    // default itinerary while the real one is still loading.
+    setItinTouched(true);
+    setItinLoading(true);
+    getItinerary(pkg.id)
+      .then((data) => {
+        const days = Array.isArray(data?.days) && data.days.length
+          ? data.days
+          : buildDefaultItinerary(pkg.duration, pkg.location);
+        setItinerary(days);
+        setCollapsedDays(days.reduce((acc, d, i) => ({ ...acc, [i]: i !== 0 && i !== days.length - 1 }), {}));
+      })
+      .catch(() => {
+        const days = buildDefaultItinerary(pkg.duration, pkg.location);
+        setItinerary(days);
+        setCollapsedDays(days.reduce((acc, d, i) => ({ ...acc, [i]: i !== 0 && i !== days.length - 1 }), {}));
+      })
+      .finally(() => setItinLoading(false));
+  }, [isOpen, mode, initialPackage]); // eslint-disable-line
 
   // Auto-calculate duration from hotel dates
   useEffect(() => {
@@ -444,7 +522,8 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
   ]); // eslint-disable-line
 
   // Seed a default itinerary the first time the agent reaches that step, so
-  // it's never blank — but never overwrite edits they've already made.
+  // it's never blank — but never overwrite edits they've already made, and
+  // never overwrite what the edit/duplicate hydration is loading.
   useEffect(() => {
     if (step === 3 && !itineraryTouched) {
       const defaults = buildDefaultItinerary(form.duration, form.location);
@@ -517,7 +596,8 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
     const valid = Array.from(files).filter(
       (f) => ALLOWED_TYPES.includes(f.type) && f.size <= 10_485_760
     );
-    const next = [...images, ...valid].slice(0, 10);
+    const maxNew = Math.max(0, 10 - existingImageUrls.length);
+    const next = [...images, ...valid].slice(0, maxNew);
     setImages(next);
     Promise.all(
       next.map(
@@ -544,6 +624,10 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
     ).then(setPrev);
   };
 
+  const removeExistingImg = (i) => {
+    setExistingImageUrls((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
   // ── submit ────────────────────────────────────────────────────────────────
   // Two calls against two endpoints that already exist and already sanitise
   // independently server-side (createpackages.controller.js and
@@ -557,40 +641,50 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
     setStatus("loading");
     try {
       const cleanForm = sanitizeFormPayload(form);
-      const result    = await createPackage(cleanForm, images);
-      const newPkg    = result.package;
+
+      const result = isEdit
+        ? await updatePackage(initialPackage.id, cleanForm, images, existingImageUrls)
+        : await createPackage(cleanForm, images, existingImageUrls); // duplicate carries existingImageUrls too
+      const savedPkg = result.package;
 
       const cleanItinerary = sanitizeItineraryPayload(itinerary);
-      if (newPkg?.id && cleanItinerary.length > 0) {
+      // On edit, always sync the itinerary (even to an empty list, so removed
+      // days actually get removed). On create/duplicate, only write it if
+      // there's something to write.
+      if (savedPkg?.id && (isEdit || cleanItinerary.length > 0)) {
         try {
-          await saveItinerary(newPkg.id, cleanItinerary);
+          await saveItinerary(savedPkg.id, cleanItinerary);
         } catch (itinErr) {
           console.error("[CreatePackageModal] itinerary save failed:", itinErr);
           toast.warning(
-            "Package created, itinerary not saved",
-            "You can add the itinerary from the package list."
+            isEdit ? "Package updated, itinerary not saved" : "Package created, itinerary not saved",
+            "You can update the itinerary from the package list."
           );
         }
       }
 
       setStatus("success");
-      toast.success("Package created!", "Your package has been saved successfully.");
-      onSave?.(newPkg);
+      toast.success(
+        isEdit ? "Package updated!" : "Package created!",
+        isEdit ? "Your changes have been saved." : "Your package has been saved successfully."
+      );
+      onSave?.(savedPkg);
       setTimeout(() => {
         setStatus("idle");
         setForm(EMPTY);
         setStep(0);
         setImages([]);
         setPrev([]);
+        setExistingImageUrls([]);
         setItinerary([]);
         setItinTouched(false);
         setCollapsedDays({});
         setActiveTemplate(null);
         onClose?.();
-      }, 1500);
+      }, 1200);
     } catch (e) {
       const msg = sanitizeText(e.message || "Something went wrong", 200);
-      toast.error("Failed to create package", msg);
+      toast.error(isEdit ? "Failed to update package" : "Failed to create package", msg);
       setStatus("error");
     }
   };
@@ -619,7 +713,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
               Step {step + 1}/{STEPS.length} — {STEPS[step]}
             </p>
             <h2 className="text-xl font-bold" style={{ color: "#0D3D2B" }}>
-              Create Umrah / Hajj Package
+              {isEdit ? "Edit Package" : mode === "duplicate" ? "Duplicate Package" : "Create Umrah / Hajj Package"}
             </h2>
           </div>
           <button
@@ -830,7 +924,12 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
           )}
 
           {/* STEP 3 — Itinerary (pre-filled default, fully editable) */}
-          {step === 3 && (
+          {step === 3 && itineraryLoading && (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-7 w-7 animate-spin" style={{ color: "#0D3D2B" }} />
+            </div>
+          )}
+          {step === 3 && !itineraryLoading && (
             <>
               <div
                 className="flex items-start gap-3 rounded-2xl px-4 py-3"
@@ -927,6 +1026,25 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
 
               {/* Images */}
               <Field label="Package Images" hint="up to 10 · max 10 MB each">
+                {existingImageUrls.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {existingImageUrls.map((src, i) => (
+                      <div
+                        key={`existing-${i}`}
+                        className="relative group w-[72px] h-[72px] rounded-xl overflow-hidden"
+                        style={{ border: "1px solid #C8DFC8" }}
+                      >
+                        <img src={src} alt="" className="w-full h-full object-cover" />
+                        <button
+                          type="button" onClick={() => removeExistingImg(i)}
+                          className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="h-4 w-4 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {previews.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
                     {previews.map((src, i) => (
@@ -967,7 +1085,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
                     <span className="underline font-semibold" style={{ color: "#C9A84C" }}>browse</span>
                   </p>
                   <p className="text-xs" style={{ color: "#7aaa8a" }}>
-                    PNG, JPG, WEBP · {images.length}/10 selected
+                    PNG, JPG, WEBP · {existingImageUrls.length + images.length}/10 selected
                   </p>
                 </label>
                 <input
@@ -1017,7 +1135,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
               <button
                 type="button"
                 onClick={submit}
-                disabled={busy || ok}
+                disabled={busy || ok || itineraryLoading}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
                 style={{
                   background: ok
@@ -1029,7 +1147,11 @@ const CreatePackageModal = ({ isOpen, onClose, onSave }) => {
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 {ok   && <CheckCircle2 className="h-4 w-4" />}
-                {busy ? "Creating…" : ok ? "Created!" : "Create Package"}
+                {busy
+                  ? (isEdit ? "Saving…" : "Creating…")
+                  : ok
+                    ? (isEdit ? "Saved!" : "Created!")
+                    : (isEdit ? "Save Changes" : "Create Package")}
               </button>
             ) : (
               <button

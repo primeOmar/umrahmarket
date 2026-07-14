@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { userStore, tokenStore } from '../api';
-import { getItinerary } from './agent/packages/services/packagesApi';
+import { getItinerary, getPackageById, normalise } from './agent/packages/services/packagesApi';
 import AuthModal from './AuthModal';
 import BookingFlow from './BookingFlow';
 
@@ -219,7 +219,38 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   };
 
   // Find the package from the already-loaded list
-  const packageData = useMemo(() => packages.find(p => p.id === id) ?? null, [packages, id]);
+  const preloadedPkg = useMemo(() => packages.find(p => p.id === id) ?? null, [packages, id]);
+
+  // Fallback: not every package is in the preloaded `packages` list — it's
+  // typically only Active/public ones. An agent opening "Details" on their
+  // own Draft/Inactive package, or anyone following a direct link before the
+  // app-level list has loaded, would otherwise hit "Package not found" even
+  // though the package exists. Fetch it directly in that case.
+  const [fetchedPkg, setFetchedPkg]     = useState(null);
+  const [fallbackState, setFallbackState] = useState('idle'); // idle | loading | done | error
+
+  useEffect(() => {
+    setFetchedPkg(null);
+    setFallbackState('idle');
+    if (!id || preloadedPkg) return;
+
+    let cancelled = false;
+    setFallbackState('loading');
+    getPackageById(id)
+      .then((res) => {
+        if (cancelled) return;
+        const raw = res?.package || res;
+        setFetchedPkg(raw ? normalise(raw) : null);
+        setFallbackState('done');
+      })
+      .catch(() => {
+        if (!cancelled) setFallbackState('error');
+      });
+
+    return () => { cancelled = true; };
+  }, [id, preloadedPkg]);
+
+  const packageData = preloadedPkg ?? fetchedPkg;
 
   // Scroll to top whenever the viewed package changes
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [id]);
@@ -334,8 +365,9 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
     { id: 3, name: 'Mohammed Yusuf', avatar: 'MY', rating: 5.0, date: '3 days ago',  comment: 'Best Umrah experience ever. Everything was perfectly arranged. Will book again for Hajj.',     verified: true, stay: 'January 2025',  helpful: 32 },
   ];
 
-  // ── Loading (App hasn't finished fetching yet) ───────────────────────────────
-  if (loading) {
+  // ── Loading (App hasn't finished fetching yet, or we're fetching this
+  //    specific package as a fallback) ──────────────────────────────────────
+  if (loading || (!packageData && fallbackState === 'loading')) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

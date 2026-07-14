@@ -134,8 +134,8 @@ const AgentsPage = () => {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center text-white text-base font-bold shadow-sm overflow-hidden">
-                      {agent.avatar
-                        ? <img src={agent.avatar} alt={name} className="w-full h-full object-cover" />
+                      {agent.logoUrl
+                        ? <img src={agent.logoUrl} alt={name} className="w-full h-full object-cover" />
                         : name.charAt(0).toUpperCase()}
                     </div>
                     <VerificationBadge status={agent.verificationStatus} />
@@ -167,6 +167,9 @@ const AgentsPage = () => {
 
                   <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500">
                     <span>{agent.packageCount ?? 0} package{(agent.packageCount ?? 0) === 1 ? '' : 's'}</span>
+                    {typeof agent.yearsExperience === 'number' && agent.yearsExperience > 0 && (
+                      <span>{agent.yearsExperience} yr{agent.yearsExperience === 1 ? '' : 's'} exp.</span>
+                    )}
                     {agent.rating > 0 && (
                       <span className="font-medium text-gray-700">{agent.rating}★</span>
                     )}

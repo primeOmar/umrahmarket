@@ -21,6 +21,7 @@ import DocumentsTab from './agent/documents/DocumentsTab';
 import AccountingTab from './AccountingTab';
 import AgentAccountingTab from './AgentAccountingTab';
 import OfficeLocationModal from './OfficeLocationModal';
+import AgentProfileSettings from './AgentProfileSettings';
 import { useBookingNotifications } from '../hooks/useBookingNotifications';
 import { getAgentVerificationStatus, requestDocumentReview, getMe } from '../api';
 import umLogo from '../assets/umramarket.png';
@@ -1649,6 +1650,9 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCreatePackage, setShowCreatePackage] = useState(false);
+  const [packageModalMode, setPackageModalMode] = useState('create'); // 'create' | 'edit' | 'duplicate'
+  const [editingPackage, setEditingPackage] = useState(null); // source package for edit/duplicate
+  const [packagesRefreshKey, setPackagesRefreshKey] = useState(0); // bumped after any save so PackagesTab refetches
   // Shown instead of CreatePackageModal when the agent isn't fully verified
   // yet — explains why and routes them to either upload docs or request review.
   const [showVerificationGate, setShowVerificationGate] = useState(false);
@@ -1768,6 +1772,8 @@ const AgentDashboard = ({ user, onLogout }) => {
   // itself doesn't need a second, more fragile copy of the same check.
   const handleAttemptCreatePackage = async () => {
     console.log('[AgentDashboard] New Package clicked — checking approval status…');
+    setPackageModalMode('create');
+    setEditingPackage(null);
     setCheckingApproval(true);
     try {
       const data = await getAgentVerificationStatus();
@@ -1887,11 +1893,15 @@ const AgentDashboard = ({ user, onLogout }) => {
   };
 
   const handleEditPackage = (pkg) => {
-    console.log('Edit package:', pkg);
+    setPackageModalMode('edit');
+    setEditingPackage(pkg);
+    setShowCreatePackage(true);
   };
 
   const handleDuplicatePackage = (pkg) => {
-    console.log('Duplicate package:', pkg);
+    setPackageModalMode('duplicate');
+    setEditingPackage(pkg);
+    setShowCreatePackage(true);
   };
 
   const handleDeletePackage = (pkg) => {
@@ -1906,8 +1916,17 @@ const AgentDashboard = ({ user, onLogout }) => {
     await new Promise(resolve => setTimeout(resolve, 2000));
   };
 
+  // Fired by CreatePackageModal after a successful create/edit/duplicate.
+  // Refreshes both the sidebar package count and PackagesTab's own list.
   const handleSavePackage = (packageData) => {
-    console.log('Saving package:', packageData);
+    console.log('Package saved:', packageData);
+    getAgentPackages()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data.packages ?? data.data ?? []);
+        setAgentPackages(list);
+      })
+      .catch(() => {});
+    setPackagesRefreshKey((k) => k + 1);
   };
 
   // Close mobile drawer after nav click; desktop uses hover — no click needed
@@ -1952,8 +1971,14 @@ const AgentDashboard = ({ user, onLogout }) => {
       {/* Create Package Modal */}
       <CreatePackageModal
         isOpen={showCreatePackage}
-        onClose={() => setShowCreatePackage(false)}
+        onClose={() => {
+          setShowCreatePackage(false);
+          setPackageModalMode('create');
+          setEditingPackage(null);
+        }}
         onSave={handleSavePackage}
+        mode={packageModalMode}
+        initialPackage={editingPackage}
       />
 
       {/* Verification gate — shown instead of CreatePackageModal when the
@@ -2537,6 +2562,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                 onEditPackage={handleEditPackage}
                 onDuplicatePackage={handleDuplicatePackage}
                 onDeletePackage={handleDeletePackage}
+                refreshKey={packagesRefreshKey}
               />
             </div>
           )}
@@ -2615,21 +2641,18 @@ const AgentDashboard = ({ user, onLogout }) => {
           {activeTab === 'settings' && (
             <div className="space-y-6">
               <h2 className="text-xl md:text-2xl font-bold text-gray-900">Settings</h2>
-              
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+
+              {/* Agency profile: logo, bio, years of experience, specialties —
+                  the content that shows on the agent's public profile page
+                  and is meant to build trust and drive package bookings. */}
+              <AgentProfileSettings />
+
+              {/* <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900">Profile Settings</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">Account Details</h3>
                 </div>
                 <div className="p-6 space-y-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Agency Name</label>
-                      <input
-                        type="text"
-                        defaultValue={user?.agencyName}
-                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">License Number</label>
                       <input
@@ -2662,9 +2685,9 @@ const AgentDashboard = ({ user, onLogout }) => {
                     </button>
                   </div>
                 </div>
-              </div>
+              </div> */}
 
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+             {/*  <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Security Settings</h3>
                 </div>
@@ -2697,7 +2720,7 @@ const AgentDashboard = ({ user, onLogout }) => {
                     </button>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </div>
           )}
         </main>

@@ -666,6 +666,9 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
 
                     <div className="space-y-1">
                       <h3 className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-1 text-xs sm:text-sm">{pkg.title}</h3>
+                      {pkg.agent_name && (
+                        <p className="text-[10px] sm:text-xs text-emerald-700/80 font-medium line-clamp-1 uppercase ">{pkg.agent_name}</p>
+                      )}
                       <p className="text-[10px] sm:text-xs text-gray-500 line-clamp-1">
                         {[pkg.distance, pkg.hotelRating, pkg.type && (pkg.type.charAt(0).toUpperCase() + pkg.type.slice(1))].filter(Boolean).join(' · ')}
                       </p>
