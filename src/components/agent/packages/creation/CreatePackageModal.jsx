@@ -10,6 +10,7 @@ import {
   RadioPillGroup, PresetChips,
 } from "./Packageformcomponents";
 import toast from "./Toast";
+import { processPackageImages } from "./imageProcessing";
 
 const STEPS = ["Basic Info", "Hotels", "Pricing", "Itinerary", "Highlights & Photos"];
 
@@ -426,6 +427,8 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   const [step, setStep]     = useState(0);
   const [images, setImages] = useState([]);
   const [previews, setPrev] = useState([]);
+  const [imageMeta, setImageMeta] = useState([]); // parallel to `images`: { isLowRes, width, height }
+  const [processingImages, setProcessingImages] = useState(false);
   const [existingImageUrls, setExistingImageUrls] = useState([]); // photos already on R2 — kept unless the agent removes them
   const [drag, setDrag]     = useState(false);
   const [status, setStatus] = useState("idle");
@@ -445,7 +448,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
 
     if (mode === "create" || !initialPackage) {
       setForm(EMPTY);
-      setImages([]); setPrev([]);
+      setImages([]); setPrev([]); setImageMeta([]);
       setExistingImageUrls([]);
       setItinerary([]); setItinTouched(false); setCollapsedDays({});
       setActiveTemplate(null);
@@ -485,7 +488,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       exclusions: Array.isArray(pkg.exclusions) ? pkg.exclusions : [],
     });
     setExistingImageUrls(Array.isArray(pkg.image_urls) ? pkg.image_urls : []);
-    setImages([]); setPrev([]);
+    setImages([]); setPrev([]); setImageMeta([]);
     setActiveTemplate(null);
     setStep(0);
     setStatus("idle");
@@ -592,36 +595,59 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
 
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
-  const addFiles = (files) => {
-    const valid = Array.from(files).filter(
+  // Every accepted photo is re-encoded client-side before it's added to
+  // `images` (and therefore before it's ever uploaded to R2): oversized
+  // photos are downscaled to a sharp-but-reasonable cap, orientation is
+  // corrected, and undersized photos are flagged rather than silently
+  // stretched later in the carousel/thumbnail. See imageProcessing.js.
+  const addFiles = async (files) => {
+    const incoming = Array.from(files).filter(
       (f) => ALLOWED_TYPES.includes(f.type) && f.size <= 10_485_760
     );
-    const maxNew = Math.max(0, 10 - existingImageUrls.length);
-    const next = [...images, ...valid].slice(0, maxNew);
-    setImages(next);
-    Promise.all(
-      next.map(
-        (f) => new Promise((res) => {
-          const r = new FileReader();
-          r.onload = (e) => res(e.target.result);
-          r.readAsDataURL(f);
-        })
-      )
-    ).then(setPrev);
+    if (incoming.length === 0) return;
+
+    const maxNew = Math.max(0, 10 - existingImageUrls.length - images.length);
+    if (maxNew === 0) {
+      toast.warning("You've reached the 10 photo limit for this package.");
+      return;
+    }
+    const toProcess = incoming.slice(0, maxNew);
+    if (incoming.length > toProcess.length) {
+      toast.warning(`Only ${maxNew} more photo${maxNew === 1 ? "" : "s"} can be added (10 max).`);
+    }
+
+    setProcessingImages(true);
+    try {
+      const { results, failedCount } = await processPackageImages(toProcess);
+      if (results.length > 0) {
+        setImages((prev) => [...prev, ...results.map((r) => r.file)]);
+        setPrev((prev) => [...prev, ...results.map((r) => r.previewUrl)]);
+        setImageMeta((prev) => [
+          ...prev,
+          ...results.map((r) => ({ isLowRes: r.isLowRes, width: r.width, height: r.height })),
+        ]);
+      }
+      const lowResCount = results.filter((r) => r.isLowRes).length;
+      if (lowResCount > 0) {
+        toast.warning(
+          `${lowResCount} photo${lowResCount > 1 ? "s look" : " looks"} low-resolution — it may appear soft in the package carousel. Consider swapping in a higher-res photo.`
+        );
+      }
+      if (failedCount > 0) {
+        toast.error(`Couldn't process ${failedCount} photo${failedCount > 1 ? "s" : ""}. Try a different file.`);
+      }
+    } finally {
+      setProcessingImages(false);
+    }
   };
 
   const removeImg = (i) => {
-    const next = images.filter((_, idx) => idx !== i);
-    setImages(next);
-    Promise.all(
-      next.map(
-        (f) => new Promise((res) => {
-          const r = new FileReader();
-          r.onload = (e) => res(e.target.result);
-          r.readAsDataURL(f);
-        })
-      )
-    ).then(setPrev);
+    setPrev((prev) => {
+      URL.revokeObjectURL(prev[i]);
+      return prev.filter((_, idx) => idx !== i);
+    });
+    setImages((prev) => prev.filter((_, idx) => idx !== i));
+    setImageMeta((prev) => prev.filter((_, idx) => idx !== i));
   };
 
   const removeExistingImg = (i) => {
@@ -1025,7 +1051,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
               </Field>
 
               {/* Images */}
-              <Field label="Package Images" hint="up to 10 · max 10 MB each">
+              <Field label="Package Images" hint="up to 10 · max 10 MB each · auto-optimized for the carousel & thumbnail">
                 {existingImageUrls.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
                     {existingImageUrls.map((src, i) => (
@@ -1052,8 +1078,17 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                         key={i}
                         className="relative group w-[72px] h-[72px] rounded-xl overflow-hidden"
                         style={{ border: "1px solid #C8DFC8" }}
+                        title={imageMeta[i] ? `${imageMeta[i].width}×${imageMeta[i].height}px` : undefined}
                       >
                         <img src={src} alt="" className="w-full h-full object-cover" />
+                        {imageMeta[i]?.isLowRes && (
+                          <span
+                            className="absolute bottom-0 inset-x-0 text-center text-[9px] font-semibold text-white py-0.5"
+                            style={{ background: "rgba(180,83,9,0.85)" }}
+                          >
+                            Low-res
+                          </span>
+                        )}
                         <button
                           type="button" onClick={() => removeImg(i)}
                           className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1062,6 +1097,14 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                         </button>
                       </div>
                     ))}
+                    {processingImages && (
+                      <div
+                        className="flex items-center justify-center w-[72px] h-[72px] rounded-xl"
+                        style={{ border: "1px dashed #C8DFC8", background: "#F5FAF5" }}
+                      >
+                        <Loader2 className="h-4 w-4 animate-spin" style={{ color: "#4a7c5f" }} />
+                      </div>
+                    )}
                   </div>
                 )}
                 <label

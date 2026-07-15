@@ -83,13 +83,28 @@ const GalleryCarousel = ({ images, title }) => {
         <div className="relative w-full rounded-2xl overflow-hidden bg-gray-100 h-52 sm:h-72 md:h-96 lg:h-[420px]">
 
           {images.map((src, i) => (
-            <img
+            <div
               key={i}
-              src={src}
-              alt={`${title} – photo ${i + 1}`}
-              className="absolute inset-0 w-full h-full object-contain transition-opacity duration-500"
+              className="absolute inset-0 transition-opacity duration-500"
               style={{ opacity: i === current ? 1 : 0, zIndex: i === current ? 1 : 0 }}
-            />
+            >
+              {/* Blurred backdrop — a zoomed, softened copy of the same photo
+                  fills the whole frame, so portrait/odd-aspect photos never
+                  leave flat gray/white bars beside them. */}
+              <img
+                src={src}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-60"
+              />
+              <div className="absolute inset-0 bg-black/20" />
+              {/* Actual photo — always shown in full, never cropped. */}
+              <img
+                src={src}
+                alt={`${title} – photo ${i + 1}`}
+                className="relative w-full h-full object-contain"
+              />
+            </div>
           ))}
 
           {/* Subtle bottom gradient */}

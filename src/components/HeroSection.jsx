@@ -617,9 +617,19 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewDetails(pkg.id); } }}
                   >
                     <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-2.5 bg-gray-100">
+                      {/* Blurred backdrop — a zoomed, softened copy fills the
+                          card edge-to-edge so badges/gradient still have full
+                          coverage, while the real photo below is never cropped. */}
+                      <img
+                        src={pkg.image} alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-60"
+                        loading="lazy"
+                        onError={e => { e.currentTarget.style.display = 'none'; }}
+                      />
                       <img
                         src={pkg.image} alt={pkg.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="relative w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
                         onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80'; }}
                       />
