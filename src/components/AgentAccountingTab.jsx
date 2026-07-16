@@ -50,8 +50,8 @@ export default function AgentAccountingTab() {
     setError(null);
     try {
       const [sumRes, txRes] = await Promise.all([
-        fetch(`${API}/agent_accounting/summary`, { credentials: 'include' }),
-        fetch(`${API}/agent_accounting/transactions?limit=200`, { credentials: 'include' }),
+        fetch(`${API}/api/agent_accounting/summary`, { credentials: 'include' }),
+        fetch(`${API}/api/agent_accounting/transactions?limit=200`, { credentials: 'include' }),
       ]);
 
       if (!sumRes.ok || !txRes.ok) throw new Error('Failed to fetch accounting data');
