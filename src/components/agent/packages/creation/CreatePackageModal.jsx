@@ -110,7 +110,7 @@ const PACKAGE_TEMPLATES = [
     label: "Umrah · Economy 7N",
     icon: "🕋",
     data: {
-      type: "umrah", location: "makkah", duration: "7",
+      type: "umrah", location: "makkah_madinah", duration: "7",
       min_group_size: "15", max_group_size: "40",
       highlights: ["Shared transfers", "Expert Umrah guide", "Daily breakfast"],
       inclusions: ["Return flights", "Saudi visa processing", "Makkah hotel", "Madinah hotel", "Shared transfers", "Daily breakfast"],
@@ -122,7 +122,7 @@ const PACKAGE_TEMPLATES = [
     label: "Umrah · Premium 14N",
     icon: "🌙",
     data: {
-      type: "umrah", location: "makkah", duration: "14",
+      type: "umrah", location: "makkah_madinah", duration: "14",
       min_group_size: "10", max_group_size: "25",
       highlights: ["Private transfers", "Premium hotel (near Haram)", "Haramain high-speed train", "5L Zamzam water"],
       inclusions: ["Return flights", "Saudi visa processing", "Makkah hotel", "Madinah hotel", "Private transfers", "Full board (all meals)", "Guided Ziyarat tours", "Umrah kit"],
@@ -134,7 +134,7 @@ const PACKAGE_TEMPLATES = [
     label: "Hajj · Gold 21N",
     icon: "☪️",
     data: {
-      type: "hajj", location: "makkah", duration: "21",
+      type: "hajj", location: "makkah_madinah_jeddah", duration: "21",
       min_group_size: "20", max_group_size: "60",
       highlights: ["Luxury accommodation", "24/7 support", "Spiritual guidance sessions", "Medical insurance"],
       inclusions: ["Return flights", "Saudi visa processing", "Hajj permit assistance", "Makkah hotel", "Madinah hotel", "Full board (all meals)", "Group guide", "24/7 customer support", "Medical insurance"],
@@ -156,7 +156,7 @@ const ITINERARY_MIDDLE_TEMPLATES = [
 
 function buildDefaultItinerary(duration, location) {
   const days = Math.min(ITINERARY_MAX_DAYS, Math.max(1, parseInt(duration, 10) || 7));
-  const arrivalCity = location === "madinah" ? "Madinah" : "Jeddah, then transfer to Makkah";
+  const arrivalCity = location === "makkah_madinah" ? "Madinah, then continue to Makkah" : "Jeddah, then transfer to Makkah";
   const out = [];
   for (let i = 1; i <= days; i++) {
     if (i === 1) {
@@ -188,7 +188,7 @@ function sanitizeFormPayload(form) {
     ...form,
     name:                  sanitizeText(form.name, 120),
     type:                  ["umrah", "hajj"].includes(form.type) ? form.type : "umrah",
-    location:              ["makkah", "madinah", "jeddah"].includes(form.location)
+    location:              ["makkah", "makkah_madinah", "makkah_madinah_jeddah"].includes(form.location)
                              ? form.location : "makkah",
     description:           sanitizeText(form.description, 1200),
     price:                 sanitizeNumber(form.price),
@@ -549,7 +549,18 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
 
   const applyTemplate = (tmpl) => {
     setActiveTemplate(tmpl.id);
-    if (tmpl.data) setForm((p) => ({ ...p, ...tmpl.data }));
+    if (tmpl.data) {
+      setForm((p) => ({ ...p, ...tmpl.data }));
+      // Duration/highlights/inclusions/exclusions live on later steps and
+      // won't be visible from here, so confirm immediately or it looks like
+      // nothing happened.
+      toast.success(`${tmpl.label} applied — duration, highlights & inclusions prefilled`);
+    } else {
+      // "Start blank" previously only toggled the highlight and left
+      // whatever a prior template had already filled in place.
+      setForm((p) => ({ ...EMPTY, name: p.name }));
+      toast.info("Starting blank — all fields reset except the package name");
+    }
   };
 
   // ── itinerary helpers ────────────────────────────────────────────────────
@@ -804,19 +815,22 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                     ]}
                   />
                 </Field>
-                <Field label="Primary Location" required>
+                <Field label="Primary Location" required hint="which cities this package covers">
                   <RadioPillGroup
                     color="gold"
                     value={form.location}
                     onChange={(v) => set("location", v)}
                     options={[
-                      { value: "makkah",  label: "Makkah" },
-                      { value: "madinah", label: "Madinah" },
-                      { value: "jeddah",  label: "Jeddah" },
+                      { value: "makkah",                 label: "Makkah Only",              icon: "🕋" },
+                      { value: "makkah_madinah",          label: "Makkah & Madinah",         icon: "🕌" },
+                      { value: "makkah_madinah_jeddah",   label: "Makkah, Madinah & Jeddah",  icon: "🌊" },
                     ]}
                   />
                 </Field>
               </div>
+              <p className="text-xs -mt-1" style={{ color: "#7aaa8a" }}>
+                Clients filter by exactly which of these three a package covers — pick the option that matches this package's full itinerary, not just where it starts.
+              </p>
               <Field label="Description" hint="optional">
                 <TextareaEl
                   rows={3}

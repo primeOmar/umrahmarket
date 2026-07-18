@@ -1,5 +1,5 @@
 // ClientDashboard.jsx - Complete Production Ready Version
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   LayoutDashboard, Calendar, Heart, Clock, Star, MapPin, 
   Hotel, Users, ChevronRight, Bell, Search, Menu, X, 
@@ -22,6 +22,16 @@ import FacePhotoModal from './FacePhotoModal';
 import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
+
+// A package's `location` is one of three coverage tiers set by the agent in
+// CreatePackageModal ("Primary Location"), not a single free-text city —
+// this turns the raw value into the label clients should see.
+const LOCATION_LABELS = {
+  makkah:                 'Makkah Only',
+  makkah_madinah:         'Makkah & Madinah',
+  makkah_madinah_jeddah:  'Makkah, Madinah & Jeddah',
+};
+const formatLocation = (loc) => LOCATION_LABELS[(loc || '').toLowerCase()] || 'Makkah Only';
 
 // ==================== TOAST NOTIFICATION SYSTEM ====================
 const Toast = ({ message, type, onClose }) => {
@@ -141,8 +151,10 @@ const normalise = (pkg) => {
     type:          (pkg.package_type ?? pkg.packageType ?? pkg.type ?? 'umrah').toLowerCase(),
     location:      (pkg.location ?? pkg.city ?? 'makkah').toLowerCase(),
     distance:      pkg.makkah_hotel_distance ?? pkg.distance ?? '',
-    hotelRating:   pkg.hotel_stars ? `${pkg.hotel_stars}★ Hotel` : (pkg.hotelRating ?? ''),
-    hotelStars:    Number(pkg.hotel_stars ?? pkg.hotelStars ?? 0),
+    // schema uses makkah_hotel_rating (string "1"–"6"), not hotel_stars —
+    // same field HeroSection's getHotelStarValue() falls back to.
+    hotelRating:   pkg.makkah_hotel_rating ? `${pkg.makkah_hotel_rating}★ Hotel` : (pkg.hotel_stars ? `${pkg.hotel_stars}★ Hotel` : (pkg.hotelRating ?? '')),
+    hotelStars:    Number(pkg.makkah_hotel_rating ?? pkg.hotel_stars ?? pkg.hotelStars ?? 0),
 
     // meta
     rating:        Number(pkg.average_rating ?? pkg.rating ?? 0),
@@ -552,12 +564,75 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
   );
 };
 
+// ==================== FILTER DROPDOWN (popover pill) ====================
+const FilterDropdown = ({ label, icon, active, isOpen, onToggle, onClose, darkMode, width = 'w-64', children }) => {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    };
+    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isOpen, onClose]);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button
+        onClick={onToggle}
+        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+          active
+            ? 'bg-emerald-600 text-white border-emerald-600'
+            : darkMode
+              ? 'bg-gray-800 text-gray-300 border-gray-700 hover:border-gray-600'
+              : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'
+        }`}
+      >
+        {icon}
+        {label}
+        <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute left-0 top-full mt-2 ${width} max-w-[85vw] z-30 rounded-2xl border shadow-xl p-3 ${
+            darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+          }`}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const FilterOption = ({ label, selected, onClick, darkMode }) => (
+  <button
+    onClick={onClick}
+    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-between transition-colors ${
+      selected
+        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+        : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+    }`}
+  >
+    <span>{label}</span>
+    {selected && <CheckCircle className="h-4 w-4 flex-shrink-0" />}
+  </button>
+);
+
 // ==================== PACKAGE DISCOVERY SECTION ====================
 const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], loading = false, error = null, onRetry, favorites = [], onToggleFav, bookings = [] }) => {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({
     type: 'all',
+    location: 'all',
     stars: 'all',
     duration: 'all',
     priceRange: { min: 0, max: 10000 }
@@ -566,6 +641,8 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
   const [viewMode, setViewMode] = useState('grid');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [priceCeil, setPriceCeil] = useState(10000);
+  const [openDropdown, setOpenDropdown] = useState(null); // 'location' | 'rating' | 'duration' | 'price' | null
+  const toggleDropdown = (name) => setOpenDropdown(prev => (prev === name ? null : name));
 
   // Get bookings from context or parent component
   // const { bookings } = useContext(DashboardContext) || { bookings: [] };
@@ -604,9 +681,18 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
       result = result.filter(p => p.type === filters.type);
     }
 
+    // Exact-tier match: a package's `location` is one of three coverage
+    // combos ("makkah" / "makkah_madinah" / "makkah_madinah_jeddah"), so
+    // selecting "Madinah" shows only Makkah+Madinah packages — not
+    // Makkah-only ones — and selecting "Jeddah" shows only the full
+    // 3-city packages, not every package.
+    if (filters.location !== 'all') {
+      result = result.filter(p => (p.location || '').toLowerCase() === filters.location);
+    }
+
     if (filters.stars !== 'all') {
       const minStars = parseInt(filters.stars);
-      result = result.filter(p => (p.rating || 0) >= minStars);
+      result = result.filter(p => (p.hotelStars || 0) >= minStars);
     }
 
     if (filters.duration !== 'all') {
@@ -638,6 +724,7 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.type !== 'all') count++;
+    if (filters.location !== 'all') count++;
     if (filters.stars !== 'all') count++;
     if (filters.duration !== 'all') count++;
     if (filters.priceRange.min > 0 || filters.priceRange.max < priceCeil) count++;
@@ -647,6 +734,7 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
   const clearFilters = () => {
     setFilters({
       type: 'all',
+      location: 'all',
       stars: 'all',
       duration: 'all',
       priceRange: { min: 0, max: priceCeil }
@@ -654,6 +742,61 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
     setSearch('');
     setSortBy('newest');
   };
+
+  const LOCATION_OPTIONS = [
+    { id: 'makkah',                label: '📍 Makkah Only' },
+    { id: 'makkah_madinah',        label: '📍 Makkah & Madinah' },
+    { id: 'makkah_madinah_jeddah', label: '📍 Makkah, Madinah & Jeddah' },
+  ];
+  const RATING_OPTIONS = [3, 4, 5].map(s => ({ id: s.toString(), label: `${s}+ Stars` }));
+  const DURATION_OPTIONS = [
+    { id: '1-7',    label: '1–7 Days' },
+    { id: '8-14',   label: '8–14 Days' },
+    { id: '15-999', label: '15+ Days' },
+  ];
+
+  // Chips describing every currently-active filter, each with its own
+  // one-click remove — lets people see and undo their filters without
+  // opening a dropdown.
+  const activeChips = useMemo(() => {
+    const chips = [];
+    if (filters.type !== 'all') {
+      chips.push({
+        key: 'type',
+        label: filters.type === 'umrah' ? '🕌 Umrah' : '🏕 Hajj',
+        onRemove: () => setFilters(prev => ({ ...prev, type: 'all' })),
+      });
+    }
+    if (filters.location !== 'all') {
+      chips.push({
+        key: 'location',
+        label: LOCATION_OPTIONS.find(o => o.id === filters.location)?.label,
+        onRemove: () => setFilters(prev => ({ ...prev, location: 'all' })),
+      });
+    }
+    if (filters.stars !== 'all') {
+      chips.push({
+        key: 'stars',
+        label: `★ ${filters.stars}+`,
+        onRemove: () => setFilters(prev => ({ ...prev, stars: 'all' })),
+      });
+    }
+    if (filters.duration !== 'all') {
+      chips.push({
+        key: 'duration',
+        label: `⏱ ${DURATION_OPTIONS.find(o => o.id === filters.duration)?.label}`,
+        onRemove: () => setFilters(prev => ({ ...prev, duration: 'all' })),
+      });
+    }
+    if (filters.priceRange.min > 0 || filters.priceRange.max < priceCeil) {
+      chips.push({
+        key: 'price',
+        label: `$${filters.priceRange.min.toLocaleString()} – $${filters.priceRange.max.toLocaleString()}`,
+        onRemove: () => setFilters(prev => ({ ...prev, priceRange: { min: 0, max: priceCeil } })),
+      });
+    }
+    return chips;
+  }, [filters, priceCeil]);
 
   if (loading) {
     return (
@@ -719,11 +862,112 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
           </div>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <button onClick={() => setShowMobileFilters(true)} className="lg:hidden flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold bg-white shadow-sm">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Filters {activeFilterCount > 0 && <span className="w-4 h-4 bg-emerald-600 text-white text-[10px] rounded-full flex items-center justify-center">{activeFilterCount}</span>}
-          </button>
+        {/* Desktop / tablet filter bar — grouped dropdowns instead of a wall
+            of pills. Wraps onto a second line at narrower widths rather
+            than clipping, since popovers need visible overflow. */}
+        <div className="hidden lg:flex flex-wrap items-center gap-2">
+          {/* Trip type — segmented control, one visual unit instead of two loose pills */}
+          <div className={`inline-flex rounded-xl border p-0.5 flex-shrink-0 ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
+            {[
+              { id: 'all', label: 'All trips' },
+              { id: 'umrah', label: '🕌 Umrah' },
+              { id: 'hajj', label: '🏕 Hajj' },
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setFilters(prev => ({ ...prev, type: opt.id }))}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                  filters.type === opt.id
+                    ? 'bg-emerald-600 text-white'
+                    : darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <FilterDropdown
+            label="Location" icon={<MapPin className="h-3.5 w-3.5" />}
+            active={filters.location !== 'all'}
+            isOpen={openDropdown === 'location'}
+            onToggle={() => toggleDropdown('location')}
+            onClose={() => setOpenDropdown(null)}
+            darkMode={darkMode} width="w-72"
+          >
+            {/* Exact-tier match: selecting Madinah shows only Makkah+Madinah
+                packages, selecting Jeddah shows only full 3-city packages. */}
+            <FilterOption label="All locations" selected={filters.location === 'all'} darkMode={darkMode}
+              onClick={() => { setFilters(prev => ({ ...prev, location: 'all' })); setOpenDropdown(null); }} />
+            {LOCATION_OPTIONS.map(opt => (
+              <FilterOption key={opt.id} label={opt.label} selected={filters.location === opt.id} darkMode={darkMode}
+                onClick={() => { setFilters(prev => ({ ...prev, location: opt.id })); setOpenDropdown(null); }} />
+            ))}
+          </FilterDropdown>
+
+          <FilterDropdown
+            label="Rating" icon={<Star className="h-3.5 w-3.5" />}
+            active={filters.stars !== 'all'}
+            isOpen={openDropdown === 'rating'}
+            onToggle={() => toggleDropdown('rating')}
+            onClose={() => setOpenDropdown(null)}
+            darkMode={darkMode} width="w-48"
+          >
+            <FilterOption label="Any rating" selected={filters.stars === 'all'} darkMode={darkMode}
+              onClick={() => { setFilters(prev => ({ ...prev, stars: 'all' })); setOpenDropdown(null); }} />
+            {RATING_OPTIONS.map(opt => (
+              <FilterOption key={opt.id} label={opt.label} selected={filters.stars === opt.id} darkMode={darkMode}
+                onClick={() => { setFilters(prev => ({ ...prev, stars: opt.id })); setOpenDropdown(null); }} />
+            ))}
+          </FilterDropdown>
+
+          <FilterDropdown
+            label="Duration" icon={<Clock className="h-3.5 w-3.5" />}
+            active={filters.duration !== 'all'}
+            isOpen={openDropdown === 'duration'}
+            onToggle={() => toggleDropdown('duration')}
+            onClose={() => setOpenDropdown(null)}
+            darkMode={darkMode} width="w-48"
+          >
+            <FilterOption label="Any length" selected={filters.duration === 'all'} darkMode={darkMode}
+              onClick={() => { setFilters(prev => ({ ...prev, duration: 'all' })); setOpenDropdown(null); }} />
+            {DURATION_OPTIONS.map(opt => (
+              <FilterOption key={opt.id} label={opt.label} selected={filters.duration === opt.id} darkMode={darkMode}
+                onClick={() => { setFilters(prev => ({ ...prev, duration: opt.id })); setOpenDropdown(null); }} />
+            ))}
+          </FilterDropdown>
+
+          <FilterDropdown
+            label="Price" icon={<span className="text-xs font-bold">$</span>}
+            active={filters.priceRange.min > 0 || filters.priceRange.max < priceCeil}
+            isOpen={openDropdown === 'price'}
+            onToggle={() => toggleDropdown('price')}
+            onClose={() => setOpenDropdown(null)}
+            darkMode={darkMode} width="w-72"
+          >
+            <div className="space-y-3 px-1 py-1">
+              <div className="flex justify-between text-sm font-semibold">
+                <span>${filters.priceRange.min.toLocaleString()}</span>
+                <span>${filters.priceRange.max.toLocaleString()}</span>
+              </div>
+              <div className="space-y-2">
+                <input type="range" min={0} max={priceCeil} value={filters.priceRange.min}
+                  onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, min: Math.min(parseInt(e.target.value), prev.priceRange.max) } }))}
+                  className="w-full accent-emerald-600" />
+                <input type="range" min={0} max={priceCeil} value={filters.priceRange.max}
+                  onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, max: Math.max(parseInt(e.target.value), prev.priceRange.min) } }))}
+                  className="w-full accent-emerald-600" />
+              </div>
+            </div>
+          </FilterDropdown>
+
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters} className="flex-shrink-0 flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50">
+              <X className="h-3.5 w-3.5" /> Clear all
+            </button>
+          )}
+
+          <div className="flex-1" />
 
           <div className="relative flex-shrink-0">
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`appearance-none pl-3 pr-7 py-2 rounded-xl border text-sm font-semibold cursor-pointer ${
@@ -737,73 +981,153 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
             </select>
             <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none ${sortBy !== 'newest' ? 'text-white' : ''}`} />
           </div>
-
-          <button onClick={() => setFilters(prev => ({ ...prev, type: prev.type === 'umrah' ? 'all' : 'umrah' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
-            filters.type === 'umrah' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
-          }`}>🕌 Umrah</button>
-          
-          <button onClick={() => setFilters(prev => ({ ...prev, type: prev.type === 'hajj' ? 'all' : 'hajj' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
-            filters.type === 'hajj' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
-          }`}>🏕 Hajj</button>
-
-          {[3, 4, 5].map(star => (
-            <button key={star} onClick={() => setFilters(prev => ({ ...prev, stars: prev.stars === star.toString() ? 'all' : star.toString() }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border flex items-center gap-1 ${
-              filters.stars === star.toString() ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
-            }`}>
-              <Star className="h-3 w-3 fill-current" /> {star}+
-            </button>
-          ))}
-
-          <button onClick={() => setFilters(prev => ({ ...prev, duration: prev.duration === '1-7' ? 'all' : '1-7' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
-            filters.duration === '1-7' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
-          }`}>⏱ 1-7 Days</button>
-          
-          <button onClick={() => setFilters(prev => ({ ...prev, duration: prev.duration === '8-14' ? 'all' : '8-14' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
-            filters.duration === '8-14' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
-          }`}>⏱ 8-14 Days</button>
-          
-          <button onClick={() => setFilters(prev => ({ ...prev, duration: prev.duration === '15-999' ? 'all' : '15-999' }))} className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-semibold border ${
-            filters.duration === '15-999' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
-          }`}>⏱ 15+ Days</button>
-
-          {activeFilterCount > 0 && (
-            <button onClick={clearFilters} className="flex-shrink-0 flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50">
-              <X className="h-3.5 w-3.5" /> Clear
-            </button>
-          )}
         </div>
+
+        {/* Mobile filter trigger — a single button opens the full sheet
+            below, instead of a horizontally-scrolling wall of pills. */}
+        <div className="flex lg:hidden items-center gap-2">
+          <button onClick={() => setShowMobileFilters(true)} className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'} shadow-sm`}>
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+            {activeFilterCount > 0 && <span className="w-4 h-4 bg-emerald-600 text-white text-[10px] rounded-full flex items-center justify-center">{activeFilterCount}</span>}
+          </button>
+
+          <div className="relative flex-shrink-0">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`appearance-none pl-3 pr-7 py-2.5 rounded-xl border text-sm font-semibold cursor-pointer ${
+              sortBy !== 'newest' ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+            }`}>
+              <option value="newest">Latest</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="rating">Top Rated</option>
+              <option value="duration">Shortest Duration</option>
+            </select>
+            <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none ${sortBy !== 'newest' ? 'text-white' : ''}`} />
+          </div>
+        </div>
+
+        {/* Active-filter chips — only appear once something is actually
+            selected, keeping the bar itself calm by default. */}
+        {activeChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+            {activeChips.map(chip => (
+              <span key={chip.key} className={`inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/40 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}>
+                {chip.label}
+                <button onClick={chip.onRemove} className="p-0.5 rounded-full hover:bg-black/10">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            <button onClick={clearFilters} className={`text-xs font-semibold underline ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>
+              Clear all
+            </button>
+          </div>
+        )}
 
         <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
           <span className="font-semibold text-emerald-600">{filteredAndSorted.length}</span> packages found
-          {activeFilterCount > 0 && <span> · {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active</span>}
         </p>
       </div>
 
       {showMobileFilters && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fixed inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)} />
-          <div className={`fixed right-0 top-0 bottom-0 w-80 max-w-[90vw] overflow-y-auto shadow-2xl ${darkMode ? 'bg-gray-900' : 'bg-white'}`}>
-            <div className="sticky top-0 p-4 border-b flex items-center justify-between bg-inherit">
+          <div className={`fixed right-0 top-0 bottom-0 w-80 max-w-[90vw] overflow-y-auto shadow-2xl ${darkMode ? 'bg-gray-900 text-white' : 'bg-white'}`}>
+            <div className={`sticky top-0 p-4 border-b flex items-center justify-between bg-inherit ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
               <h3 className="font-bold text-lg">Filters</h3>
-              <button onClick={() => setShowMobileFilters(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => setShowMobileFilters(false)} className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="p-4 space-y-6">
               <div>
-                <label className="block text-sm font-medium mb-2">Price Range</label>
+                <label className="block text-sm font-medium mb-2">Trip type</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'all', label: 'All trips' },
+                    { id: 'umrah', label: '🕌 Umrah' },
+                    { id: 'hajj', label: '🏕 Hajj' },
+                  ].map(opt => (
+                    <button key={opt.id} onClick={() => setFilters(prev => ({ ...prev, type: opt.id }))}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold border ${
+                        filters.type === opt.id ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Locations</label>
+                <div className="flex flex-wrap gap-2">
+                  {LOCATION_OPTIONS.map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => setFilters(prev => ({ ...prev, location: prev.location === opt.id ? 'all' : opt.id }))}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold border ${
+                        filters.location === opt.id ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Rating</label>
+                <div className="flex flex-wrap gap-2">
+                  {RATING_OPTIONS.map(opt => (
+                    <button key={opt.id} onClick={() => setFilters(prev => ({ ...prev, stars: prev.stars === opt.id ? 'all' : opt.id }))}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold border flex items-center gap-1 ${
+                        filters.stars === opt.id ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+                      }`}
+                    >
+                      <Star className="h-3 w-3 fill-current" /> {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Duration</label>
+                <div className="flex flex-wrap gap-2">
+                  {DURATION_OPTIONS.map(opt => (
+                    <button key={opt.id} onClick={() => setFilters(prev => ({ ...prev, duration: prev.duration === opt.id ? 'all' : opt.id }))}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold border ${
+                        filters.duration === opt.id ? 'bg-emerald-600 text-white border-emerald-600' : darkMode ? 'bg-gray-800 text-gray-300 border-gray-700' : 'bg-white text-gray-700 border-gray-300'
+                      }`}
+                    >
+                      ⏱ {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Price range</label>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>${filters.priceRange.min.toLocaleString()}</span>
                     <span>${filters.priceRange.max.toLocaleString()}</span>
                   </div>
-                  <input type="range" min={0} max={priceCeil} value={filters.priceRange.min} onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, min: parseInt(e.target.value) } }))} className="w-full accent-emerald-600" />
-                  <input type="range" min={0} max={priceCeil} value={filters.priceRange.max} onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, max: parseInt(e.target.value) } }))} className="w-full accent-emerald-600" />
+                  <input type="range" min={0} max={priceCeil} value={filters.priceRange.min} onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, min: Math.min(parseInt(e.target.value), prev.priceRange.max) } }))} className="w-full accent-emerald-600" />
+                  <input type="range" min={0} max={priceCeil} value={filters.priceRange.max} onChange={(e) => setFilters(prev => ({ ...prev, priceRange: { ...prev.priceRange, max: Math.max(parseInt(e.target.value), prev.priceRange.min) } }))} className="w-full accent-emerald-600" />
                 </div>
               </div>
-              <button onClick={() => setShowMobileFilters(false)} className="w-full py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700">
-                Apply Filters
-              </button>
+
+              <div className="flex gap-2">
+                {activeFilterCount > 0 && (
+                  <button onClick={clearFilters} className={`flex-1 py-3 font-semibold rounded-xl border ${darkMode ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>
+                    Clear all
+                  </button>
+                )}
+                <button onClick={() => setShowMobileFilters(false)} className="flex-1 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700">
+                  Show {filteredAndSorted.length} results
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -861,7 +1185,7 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mb-1.5">
-                  <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {pkg.location?.split(',')[0] || 'Makkah'}</span>
+                  <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {formatLocation(pkg.location)}</span>
                   <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {pkg.duration}d</span>
                   <span className="flex items-center gap-1"><Star className="h-3 w-3 text-amber-400 fill-current" /> {pkg.rating}★</span>
                   <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${pkg.type === 'hajj' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{pkg.type?.toUpperCase()}</span>

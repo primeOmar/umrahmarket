@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Shield, ShieldCheck, ArrowLeft, X, ZoomIn,
+  Shield, ShieldCheck, ArrowLeft, X, ScanLine,
   Building2, Landmark, FileCheck, BadgeCheck, Radio,
+  ExternalLink, Copy, Check,
 } from 'lucide-react';
 import Header from './Header';
 
@@ -16,17 +17,36 @@ const DOCUMENTS = [
     number: 'PVT-XXXXXX',
     issued: '2020',
     status: 'Active',
-    image: '/documents/company-reg.jpeg',
+    verify: {
+      type: 'portal',
+      portalUrl: 'https://brs.ecitizen.go.ke',
+      portalLabel: 'brs.ecitizen.go.ke',
+      steps: [
+        'Go to the Business Registration Service portal on eCitizen.',
+        'Open the "Company Search" or "Verify a Business" service.',
+        'Enter the certificate/registration number shown above.',
+        'Confirm the company name and status match this certificate.',
+      ],
+    },
   },
   {
     id: 'tra-licence',
     icon: BadgeCheck,
     title: 'Travel Agency Licence',
     issuer: 'Tourism Regulatory Authority (TRA)',
-    number: 'TRA/2020/TA-4821',
-    issued: '2020',
+    number: 'TRA1/47/C04/90849',
+    issued: '2026',
     status: 'Active',
-    image: '/documents/tra-licence.jpeg',
+    verify: {
+      type: 'portal',
+      portalUrl: 'https://verify.tra.go.ke',
+      portalLabel: 'verify.tra.go.ke',
+      steps: [
+        'Go to the TRA licence verification portal.',
+        'Enter the licence number shown above.',
+        'TRA will confirm the licence is approved, in-date, and in the official registry.',
+      ],
+    },
   },
   {
     id: 'kra-pin',
@@ -36,7 +56,16 @@ const DOCUMENTS = [
     number: 'P051890766M',
     issued: '2020',
     status: 'Active',
-    image: '/documents/kra-certificate.jpeg',
+    verify: {
+      type: 'portal',
+      portalUrl: 'https://itax.kra.go.ke/KRA-Portal/',
+      portalLabel: 'itax.kra.go.ke',
+      steps: [
+        'Go to the iTax Portal and open the "TCC Checker" service.',
+        'Enter the certificate/PIN number shown above.',
+        'iTax will display the holder name and current certificate status.',
+      ],
+    },
   },
   {
     id: 'mohu-recognition',
@@ -46,7 +75,13 @@ const DOCUMENTS = [
     number: 'MH/KE/2021/0034',
     issued: '2021',
     status: 'Active',
-    image: '/documents/mohu-recognition.jpeg',
+    verify: {
+      type: 'manual',
+      steps: [
+        'This recognition is issued directly to Kenyan agencies by the Saudi Ministry of Hajj & Umrah and is not listed on a public self-service checker.',
+        'To confirm authenticity, contact us with the reference number above and we\u2019ll share the underlying documentation.',
+      ],
+    },
   },
   {
     id: 'ca-licence',
@@ -56,7 +91,16 @@ const DOCUMENTS = [
     number: 'CA/DD/ICT/0298/2022',
     issued: '2022',
     status: 'Active',
-    image: '/documents/ca-licence.png',
+    verify: {
+      type: 'portal',
+      portalUrl: 'https://ca.go.ke',
+      portalLabel: 'ca.go.ke',
+      steps: [
+        'Go to the Communications Authority of Kenya\u2019s licensee register.',
+        'Search using the licence number shown above.',
+        'Confirm the licensee name and status match this certificate.',
+      ],
+    },
   },
 ];
 
@@ -67,54 +111,71 @@ const DocumentCard = ({ doc, onOpen }) => {
   return (
     <button
       onClick={() => onOpen(doc)}
-      className="group text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all duration-300 overflow-hidden"
+      className="group text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all duration-300 overflow-hidden p-5 flex flex-col"
     >
-      <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
-        <img
-          src={doc.image}
-          alt={doc.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.querySelector('.doc-fallback').style.display = 'flex'; }}
-        />
-        <div className="doc-fallback hidden absolute inset-0 items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-50">
-          <Icon className="h-10 w-10 text-emerald-300" />
+      <div className="flex items-start justify-between">
+        <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+          <Icon className="h-5 w-5 text-emerald-600" />
         </div>
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
-          <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 text-xs font-semibold text-gray-800">
-            <ZoomIn className="h-3.5 w-3.5" /> View document
-          </span>
-        </div>
-        <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-semibold shadow-sm">
+        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold">
           {doc.status}
         </span>
       </div>
-      <div className="p-4">
-        <div className="flex items-start gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <Icon className="h-4 w-4 text-emerald-600" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 leading-tight">{doc.title}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{doc.issuer}</p>
-          </div>
+
+      <div className="mt-4">
+        <p className="text-sm font-semibold text-gray-900 leading-tight">{doc.title}</p>
+        <p className="text-xs text-gray-500 mt-1">{doc.issuer}</p>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] text-gray-400">Licence / Cert. No.</p>
+          <p className="text-xs font-mono text-gray-700 truncate">{doc.number}</p>
         </div>
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-          <span className="text-[11px] font-mono text-gray-400 truncate">{doc.number}</span>
-          <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2">Issued {doc.issued}</span>
-        </div>
+        <span className="flex-shrink-0 ml-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-semibold">
+          <ScanLine className="h-3 w-3" /> Verify
+        </span>
       </div>
     </button>
   );
 };
 
-const DocumentLightbox = ({ doc, onClose }) => {
+const CopyableNumber = ({ value }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable — silently ignore
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1.5 text-xs font-mono text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg px-2.5 py-1.5 transition-colors"
+      title="Copy to clipboard"
+    >
+      {value}
+      {copied ? <Check className="h-3 w-3 text-emerald-600 flex-shrink-0" /> : <Copy className="h-3 w-3 text-gray-400 flex-shrink-0" />}
+    </button>
+  );
+};
+
+const VerifyModal = ({ doc, onClose }) => {
   const Icon = doc.icon;
+  const { verify } = doc;
+
   return (
     <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl overflow-hidden max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl"
+        className="bg-white rounded-2xl overflow-hidden max-w-md w-full max-h-[90vh] flex flex-col shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
@@ -129,22 +190,51 @@ const DocumentLightbox = ({ doc, onClose }) => {
             <X className="h-4 w-4 text-gray-500" />
           </button>
         </div>
-        <div className="overflow-auto flex-1 bg-gray-50 flex items-center justify-center p-4">
-          <img
-            src={doc.image}
-            alt={doc.title}
-            className="max-w-full max-h-full rounded-lg shadow-sm object-contain"
-            onError={(e) => { e.currentTarget.replaceWith(Object.assign(document.createElement('div'), {
-              className: 'flex flex-col items-center justify-center py-16 text-gray-400 text-sm',
-              innerText: 'Document photo not yet uploaded',
-            })); }}
-          />
-        </div>
-        <div className="px-5 py-3.5 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-white">
-          <span className="text-xs font-mono text-gray-400">{doc.number}</span>
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-            <ShieldCheck className="h-3.5 w-3.5" /> {doc.status} · Issued {doc.issued}
-          </span>
+
+        <div className="overflow-auto flex-1">
+          {/* Status block */}
+          <div className="bg-gray-50 px-5 py-6 flex flex-col items-center">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center">
+              <ShieldCheck className="h-7 w-7 text-emerald-600" />
+            </div>
+
+            <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+              <ShieldCheck className="h-3.5 w-3.5" /> {doc.status} · Issued {doc.issued}
+            </div>
+          </div>
+
+          {/* Details */}
+          <div className="px-5 py-5">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+              Licence / Certificate No.
+            </p>
+            <CopyableNumber value={doc.number} />
+
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-5 mb-2">
+              How to verify
+            </p>
+            <ol className="space-y-2">
+              {verify.steps.map((step, i) => (
+                <li key={i} className="flex gap-2.5 text-sm text-gray-600 leading-snug">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold flex items-center justify-center mt-0.5">
+                    {i + 1}
+                  </span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+
+            {verify.portalUrl && (
+              <a
+                href={verify.portalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-5 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors"
+              >
+                Open {verify.portalLabel} <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -188,7 +278,7 @@ const VerifiedPage = ({ currentUser, onLogout, onAuthSuccess }) => {
               Everything that makes us verified,<br className="hidden sm:block" /> in one place.
             </h1>
             <p className="mt-4 text-base text-emerald-100/80 max-w-xl leading-relaxed">
-              Umrah Market operates under real licences from real authorities. Below are our current registration and compliance documents — the same ones we require every agency on the platform to hold.
+              Umrah Market operates under real licences from real authorities. Below are our current registration and compliance documents — check any of them directly with the issuing authority, the same way we require every agency on the platform to be verifiable.
             </p>
           </div>
         </div>
@@ -199,7 +289,7 @@ const VerifiedPage = ({ currentUser, onLogout, onAuthSuccess }) => {
         <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Our Documents</p>
         <h2 className="text-xl font-bold text-gray-900 mb-1">Registration &amp; compliance</h2>
         <p className="text-sm text-gray-500 mb-8 max-w-xl">
-          Tap any document to view it in full.
+          Tap any document to see its licence number and how to check it against the issuing authority yourself.
         </p>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -225,7 +315,7 @@ const VerifiedPage = ({ currentUser, onLogout, onAuthSuccess }) => {
         </div>
       </section>
 
-      {activeDoc && <DocumentLightbox doc={activeDoc} onClose={() => setActiveDoc(null)} />}
+      {activeDoc && <VerifyModal doc={activeDoc} onClose={() => setActiveDoc(null)} />}
     </div>
   );
 };

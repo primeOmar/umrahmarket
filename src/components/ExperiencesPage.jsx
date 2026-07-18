@@ -486,7 +486,7 @@ const ExperiencesPage = () => {
                   <a href="/register-agent" className="px-6 py-3 bg-white text-emerald-700 font-semibold text-sm rounded-xl hover:bg-emerald-50 transition-colors text-center">
                     Register Your Agency
                   </a>
-                  <a href="mailto:agents@umrahmarket.com" className="px-6 py-3 bg-white/15 border border-white/25 text-white font-medium text-sm rounded-xl hover:bg-white/25 transition-colors text-center flex items-center justify-center gap-2">
+                  <a href="mailto:support@umrahmarket.net" className="px-6 py-3 bg-white/15 border border-white/25 text-white font-medium text-sm rounded-xl hover:bg-white/25 transition-colors text-center flex items-center justify-center gap-2">
                     <Mail className="h-4 w-4" /> Contact Us
                   </a>
                 </div>
@@ -508,7 +508,7 @@ const ExperiencesPage = () => {
             <a href="tel:+254700000000" className="flex items-center gap-2 px-4 py-2.5 bg-white/10 rounded-xl text-sm hover:bg-white/20 transition-colors">
               <Phone className="h-4 w-4 text-emerald-400" /> +254 700 000 000
             </a>
-            <a href="mailto:support@umrahmarket.com" className="flex items-center gap-2 px-4 py-2.5 bg-white/10 rounded-xl text-sm hover:bg-white/20 transition-colors">
+            <a href="mailto:support@umrahmarket.net" className="flex items-center gap-2 px-4 py-2.5 bg-white/10 rounded-xl text-sm hover:bg-white/20 transition-colors">
               <Mail className="h-4 w-4 text-emerald-400" /> support@umrahmarket.com
             </a>
           </div>

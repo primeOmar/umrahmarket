@@ -338,11 +338,16 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
       ]
     },
     {
+      // Each option is an exact coverage tier, not an independent city — a
+      // package's `location` is one of these three combos (set in
+      // CreatePackageModal's "Primary Location" field), so selecting
+      // "Madinah" shows only Makkah+Madinah packages, not Makkah-only ones,
+      // and selecting "Jeddah" shows only the full 3-city packages.
       id: 'locations', label: 'Locations', icon: '📍',
       options: [
-        { id: 'makkah',  label: 'Makkah',  icon: '🕋' },
-        { id: 'madinah', label: 'Madinah', icon: '🕌' },
-        { id: 'jeddah',  label: 'Jeddah',  icon: '🌊' },
+        { id: 'makkah',                  label: 'Makkah Only',              icon: '🕋' },
+        { id: 'makkah_madinah',          label: 'Makkah & Madinah',         icon: '🕌' },
+        { id: 'makkah_madinah_jeddah',   label: 'Makkah, Madinah & Jeddah', icon: '🌊' },
       ]
     },
     {
@@ -675,7 +680,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                     </div>
 
                     <div className="space-y-1">
-                      <h3 className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-1 text-xs sm:text-sm">{pkg.title}</h3>
+                      <h3 className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-1 text-xs sm:text-sm capitalize">{pkg.title}</h3>
                       {pkg.agent_name && (
                         <p className="text-[10px] sm:text-xs text-emerald-700/80 font-medium line-clamp-1 uppercase ">{pkg.agent_name}</p>
                       )}
