@@ -1,6 +1,10 @@
 {
-    "rewrites": [
-      { "source": "/(.*)", "destination": "/index.html" }
-    ]
+  "rewrites": [
+    { "source": "/package/:id", "destination": "/api/package-meta" }
+  ],
+  "functions": {
+    "api/package-meta.js": {
+      "includeFiles": "dist/index.html"
+    }
   }
-  
+}
