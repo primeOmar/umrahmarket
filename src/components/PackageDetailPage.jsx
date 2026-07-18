@@ -296,6 +296,53 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
     return ['https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80'];
   }, [packageData]);
 
+  // ── Share ───────────────────────────────────────────────────────────────────
+  const [shareCopied, setShareCopied] = useState(false);
+
+  const handleShare = useCallback(async () => {
+    if (!packageData) return;
+
+    const shareUrl = `${window.location.origin}/package/${packageData.id}`;
+
+    const priceLine = packageData.price ? `from $${formatPrice(packageData.price)}/person` : '';
+    const metaBits = [
+      packageData.duration ? `${packageData.duration}d` : null,
+      packageData.distance || null,
+      packageData.hotelRating ? `${packageData.hotelRating} Hotel` : null,
+    ].filter(Boolean).join(' · ');
+
+    const shareText = [
+      `${packageData.title || 'Umrah Package'}${priceLine ? ` — ${priceLine}` : ''}`,
+      metaBits,
+      packageData.agent_name ? `by ${packageData.agent_name}` : null,
+    ].filter(Boolean).join('\n');
+
+    const shareData = { title: packageData.title || 'Umrah Package', text: shareText, url: shareUrl };
+
+    // Native share sheet (mobile browsers, some desktop browsers)
+    if (navigator.share) {
+      try {
+        if (!navigator.canShare || navigator.canShare(shareData)) {
+          await navigator.share(shareData);
+          return;
+        }
+      } catch (err) {
+        // User cancelled the share sheet — don't fall through to clipboard
+        if (err?.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback: copy a shareable message + link to clipboard
+    try {
+      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch (err) {
+      console.error('[handleShare] clipboard fallback failed', err);
+      window.prompt('Copy this link:', shareUrl); // last-resort fallback
+    }
+  }, [packageData]);
+
   // ── UI state ────────────────────────────────────────────────────────────────
   const [showAllAmenities, setShowAllAmenities] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -419,10 +466,19 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             <ChevronLeft className="h-5 w-5 mr-1" />
             <span className="hidden sm:inline">Back to packages</span>
           </button>
-          <div className="flex items-center space-x-4">
-            <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+          <div className="flex items-center space-x-4 relative">
+            <button
+              onClick={handleShare}
+              aria-label="Share this package"
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            >
               <Share2 className="h-5 w-5 text-gray-600" />
             </button>
+            {shareCopied && (
+              <span className="absolute top-10 right-0 whitespace-nowrap bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg animate-in fade-in slide-in-from-top-1">
+                Link copied!
+              </span>
+            )}
             <button
               onClick={async () => {
                 try {

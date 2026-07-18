@@ -690,13 +690,13 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                       {pkg.description && <p className="text-[10px] sm:text-xs text-gray-600 line-clamp-2">{pkg.description}</p>}
                       
                       {/* ONLY THIS BUTTON WAS CHANGED - now uses the new auth-gated handler */}
-                   <div className="grid grid-cols-2 gap-2 mt-2">
+                   <div className="mt-2">
     <button
-      onClick={e => { e.stopPropagation(); handleViewDetails(pkg.id); }}
-      className="px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-md shadow-emerald-600/10"
-    >
-     View Details
-    </button>
+  onClick={e => { e.stopPropagation(); handleViewDetails(pkg.id); }}
+  className="w-full px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-md shadow-emerald-600/10 text-center"
+>
+  View Details
+</button>
   </div>
                     </div>
                   </div>
