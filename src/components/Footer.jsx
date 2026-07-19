@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Plane, Mail, Phone, MapPin, Facebook, Twitter, Instagram, Youtube } from 'lucide-react';
+import { Mail, Phone, MapPin, Facebook, Twitter, Instagram, Youtube } from 'lucide-react';
 import logoImage from '../assets/umramarket1.png';
 import { useNavigate } from 'react-router-dom';
 import AuthModal from './AuthModal';
+import ChatWidget from '../publicchat/ChatWidget';
 const Footer = () => {
   const navigate = useNavigate();
   const [showAgentModal, setShowAgentModal] = useState(false);
+
   return (
     <footer className="bg-gray-900 text-white">
       <div className="container mx-auto px-4 py-12">
@@ -14,16 +16,14 @@ const Footer = () => {
           <div className="lg:col-span-2">
             <div className="flex items-center space-x-3 mb-6">
               <div className="bg-white p-2 rounded-lg">
-                
-                 <div className="flex-shrink-0">
-                              <img
-                                src={logoImage}
-                                alt="Umrah Market Logo"
-                                className="h-8 sm:h-9 w-auto cursor-pointer hover:opacity-90 transition-opacity duration-300"
-                                onClick={() => navigate('/')}
-                              />
-                            </div>
-                            
+                <div className="flex-shrink-0">
+                  <img
+                    src={logoImage}
+                    alt="Umrah Market Logo"
+                    className="h-8 sm:h-9 w-auto cursor-pointer hover:opacity-90 transition-opacity duration-300"
+                    onClick={() => navigate('/')}
+                  />
+                </div>
               </div>
               <div>
                 <h3 className="text-2xl font-bold">Umrah Market</h3>
@@ -31,7 +31,7 @@ const Footer = () => {
               </div>
             </div>
             <p className="text-gray-400 mb-6">
-              Connecting pilgrims with verified Umrah agencies East Africa. 
+              Connecting pilgrims with verified Umrah agencies East Africa.
               We ensure transparent pricing, verified services, and memorable spiritual journeys.
             </p>
             <div className="flex space-x-4">
@@ -80,7 +80,7 @@ const Footer = () => {
             <ul className="space-y-3">
               <li className="flex items-center space-x-2">
                 <Mail className="h-5 w-5 text-green-400" />
-                <span className="text-gray-400">support@umrahmarket.net</span>
+                <span className="text-gray-400">support@umrahmarket.com</span>
               </li>
               <li className="flex items-center space-x-2">
                 <Phone className="h-5 w-5 text-green-400" />
@@ -108,7 +108,11 @@ const Footer = () => {
           </div>
         </div>
       </div>
-          {showAgentModal && (
+
+      {/* Visitor ↔ Agent live chat */}
+      <ChatWidget />
+
+      {showAgentModal && (
         <div className="fixed inset-0 z-[100]">
           <AuthModal
             initialMode="agent"
