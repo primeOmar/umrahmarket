@@ -368,7 +368,7 @@ const ExperiencesPage = () => {
             </div>
 
             {/* Technology & payment partners */}
-            <div>
+            {/* <div>
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Partners</p>
               <h2 className="text-xl font-bold text-gray-900 mb-6">Technology & payment partners</h2>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -381,7 +381,7 @@ const ExperiencesPage = () => {
                 <PartnerLogo name="Twilio"       type="SMS/WhatsApp" />
                 <PartnerLogo name="Safaricom"    type="Mobile Operator" />
               </div>
-            </div>
+            </div> */}
 
             {/* Media mentions */}
             <div className="rounded-2xl overflow-hidden relative">
