@@ -604,7 +604,7 @@ const ChatWidget = () => {
             <button
               onClick={() => setIsOpen(false)}
               aria-label="Minimize chat"
-              className="p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+              className="cursor-pointer p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -684,7 +684,7 @@ const ChatWidget = () => {
 
               <button
                 type="submit"
-                className="w-full bg-green-600 text-white font-semibold text-sm py-2.5 rounded-lg hover:bg-green-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+                className="cursor-pointer w-full bg-green-600 text-white font-semibold text-sm py-2.5 rounded-lg hover:bg-green-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
               >
                 Start chat
               </button>
@@ -733,7 +733,7 @@ const ChatWidget = () => {
                     onClick={sendMessage}
                     disabled={!draft.trim()}
                     aria-label="Send message"
-                    className="h-10 w-10 flex-shrink-0 rounded-lg bg-green-600 text-white flex items-center justify-center hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+                    className="cursor-pointer h-10 w-10 flex-shrink-0 rounded-lg bg-green-600 text-white flex items-center justify-center hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
                   >
                     <Send className="h-4 w-4" />
                   </button>
