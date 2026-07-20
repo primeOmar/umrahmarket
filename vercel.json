@@ -1,7 +1,9 @@
 {
-  "rewrites": [
-    { "source": "/package/:id", "destination": "/api/package-meta" }
-  ],
+  
+    "rewrites": [
+      { "source": "/(.*)", "destination": "/index.html" }
+    ],
+  
   "functions": {
     "api/package-meta.js": {
       "includeFiles": "dist/index.html"

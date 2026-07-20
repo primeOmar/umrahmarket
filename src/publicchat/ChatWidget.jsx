@@ -5,6 +5,7 @@ import {
   Send,
   ChevronDown,
   User,
+  Phone,
   Headset,
   Clock,
   CheckCheck,
@@ -53,6 +54,12 @@ import { findFaqAnswer } from './ChatFaqs';
  *   `text-white` from the launcher wrapper — white icon on the light
  *   bg-green-100 circle, i.e. practically invisible. It now uses
  *   text-green-400, identical to the desktop icon.
+ *
+ * PRE-CHAT FORM — phone number field:
+ *   Added between name and email. Input is sanitized on every keystroke
+ *   (only digits, spaces, +, -, and parentheses survive) and validated on
+ *   submit against a loose but real phone pattern before the conversation
+ *   is allowed to start.
  */
 
 const BELL_DELAY_MS = 4000; // first attempt after mount
@@ -60,6 +67,13 @@ const BELL_WINDOW_MS = 30000; // chime allowed only within this window
 const BELL_SESSION_KEY = 'um_chat_bell_played'; // once-per-visit flag
 const ICON_SWAP_MS = 5000; // launcher alternates icon <-> "MESSAGE US"
 const FAQ_TYPING_MS = 1400; // fake "agent typing" delay before an FAQ answer
+
+// Allows optional leading +, then 7-15 digits, with spaces/hyphens/parens
+// permitted as separators. Rejects letters and other junk.
+const PHONE_REGEX = /^\+?[0-9][0-9\s\-()]{6,18}[0-9]$/;
+
+// Strip anything that isn't a digit, space, +, -, ( or ) as the user types.
+const sanitizePhoneInput = (value) => value.replace(/[^\d\s+\-()]/g, '');
 
 const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -72,6 +86,7 @@ const ChatWidget = () => {
 
   // Pre-chat form
   const [visitorName, setVisitorName] = useState('');
+  const [visitorPhone, setVisitorPhone] = useState('');
   const [visitorEmail, setVisitorEmail] = useState('');
   const [formError, setFormError] = useState('');
 
@@ -262,23 +277,36 @@ const ChatWidget = () => {
     }
   };
 
+  const handlePhoneChange = (e) => {
+    setVisitorPhone(sanitizePhoneInput(e.target.value));
+  };
+
   // ---------------------------------------------------------------
   // BACKEND: start a conversation (stubbed)
   // ---------------------------------------------------------------
   const startConversation = (e) => {
     e?.preventDefault?.();
 
-    if (!visitorName.trim()) {
+    const cleanName = visitorName.trim();
+    const cleanPhone = sanitizePhoneInput(visitorPhone).trim();
+    const cleanEmail = visitorEmail.trim();
+
+    if (!cleanName) {
       setFormError('Please enter your name so an agent knows who they are speaking with.');
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(visitorEmail.trim())) {
+    if (!PHONE_REGEX.test(cleanPhone)) {
+      setFormError('Please enter a valid phone number.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setFormError('Please enter a valid email so we can follow up if you go offline.');
       return;
     }
     setFormError('');
+    setVisitorPhone(cleanPhone);
 
-    // TODO BACKEND: POST /api/chat/conversations { name, email }
+    // TODO BACKEND: POST /api/chat/conversations { name, phone, email }
     // const res = await fetch('/api/chat/conversations', { ... });
     // conversationIdRef.current = res.conversation_id;
     // -> then subscribe to the realtime channel for agent replies
@@ -287,7 +315,7 @@ const ChatWidget = () => {
       {
         id: 'sys-1',
         sender: 'system',
-        text: `Welcome, ${visitorName.trim().split(' ')[0]}. You are connected to Umrah Market support.`,
+        text: `Welcome, ${cleanName.split(' ')[0]}. You are connected to Umrah Market support.`,
         created_at: new Date().toISOString(),
         status: 'delivered',
       },
@@ -314,6 +342,7 @@ const ChatWidget = () => {
         body: JSON.stringify({
           conversation_id: conversationIdRef.current, // null until backend wired
           visitor_name: visitorName.trim(),
+          visitor_phone: sanitizePhoneInput(visitorPhone).trim(),
           visitor_email: visitorEmail.trim(),
           question: questionText,
           asked_at: new Date().toISOString(),
@@ -615,6 +644,25 @@ const ChatWidget = () => {
               </div>
 
               <div>
+                <label htmlFor="chat-phone" className="block text-xs font-medium text-gray-600 mb-1">
+                  Phone number
+                </label>
+                <div className="relative">
+                  <Phone className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    id="chat-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={visitorPhone}
+                    onChange={handlePhoneChange}
+                    placeholder="e.g. +254 700 000000"
+                    className="text-black w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                </div>
+              </div>
+
+              <div>
                 <label htmlFor="chat-email" className="block text-xs font-medium text-gray-600 mb-1">
                   Email address
                 </label>
@@ -642,7 +690,7 @@ const ChatWidget = () => {
               </button>
 
               <p className="text-[11px] text-gray-400 text-center">
-                We only use your email to continue this conversation.
+                We only use your phone and email to continue this conversation.
               </p>
             </form>
           ) : (

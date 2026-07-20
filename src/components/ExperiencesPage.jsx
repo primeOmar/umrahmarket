@@ -509,7 +509,7 @@ const ExperiencesPage = () => {
               <Phone className="h-4 w-4 text-emerald-400" /> +254 700 111 106
             </a>
             <a href="mailto:support@umrahmarket.net" className="flex items-center gap-2 px-4 py-2.5 bg-white/10 rounded-xl text-sm hover:bg-white/20 transition-colors">
-              <Mail className="h-4 w-4 text-emerald-400" /> support@umrahmarket.NET
+              <Mail className="h-4 w-4 text-emerald-400" /> support@umrahmarket.net
             </a>
           </div>
         </div>
