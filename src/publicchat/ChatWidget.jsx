@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   MessageCircle,
   X,
@@ -11,62 +11,54 @@ import {
   CheckCheck,
   Check,
 } from 'lucide-react';
-import { findFaqAnswer } from './ChatFaqs';
 
 /**
  * ChatWidget — visitor ↔ agent live chat for Umrah Market.
  *
- * FAQ-FIRST FLOW:
- *   1. Visitor sends a message.
- *   2. findFaqAnswer() scans the FAQ knowledge base (./ChatFaqs).
- *   3. Match found  -> auto-reply as the "agent" after a short typing delay.
- *   4. No match     -> notifyAgent() fires POST /api/chat/notify-agent so a
- *                      human is alerted, and the visitor sees a "forwarded
- *                      to an agent" system note.
+ * AGENT-DIRECT FLOW (FAQ auto-answering removed):
+ *   1. Visitor fills the pre-chat form -> POST /api/chat/conversations
+ *   2. Every message the visitor sends -> POST /api/chat/conversations/:id/messages
+ *      The backend stores it in the conversation's `messages` JSONB array and
+ *      notifies human agents (email / dashboard badge).
+ *   3. The widget polls GET /api/chat/conversations/:id/messages every 4s so
+ *      agent replies from the superadmin dashboard appear live. Replies that
+ *      arrive while the panel is minimised increment the unread badge.
  *
- * BACKEND touchpoints (all isolated, drop-in later):
- *   1. startConversation(visitor)  -> POST /api/chat/conversations
- *   2. sendMessage(text)           -> POST /api/chat/conversations/:id/messages
- *   3. notifyAgent(question)       -> POST /api/chat/notify-agent
- *   4. (later) subscribe to agent replies via Supabase Realtime / socket.io
+ * The conversation id is kept in sessionStorage so the thread survives page
+ * navigation within the same tab.
  *
- * Message shape:
- *   { id, sender: 'visitor' | 'agent' | 'system', text, created_at, status }
- *   status: 'sending' | 'sent' | 'delivered'
+ * Message shape (identical on both sides of the wire):
+ *   { id, sender: 'visitor' | 'agent' | 'system', text, created_at }
+ *   Visitor bubbles additionally carry a local-only status:
+ *   'sending' | 'sent' | 'delivered'
  *
- * BELL CHIME — fixed to actually fire once per visit:
- *   The old version failed for two reasons:
- *     a) `scroll` is NOT a valid user-activation gesture for audio, but the
- *        handler removed ALL listeners before attempting to play — so the
- *        first scroll disarmed the click/keydown fallbacks forever.
- *     b) A 'suspended' AudioContext was closed instead of resume()d. Inside
- *        a real gesture handler, resume() is exactly what unlocks audio.
- *   Now:
- *     - "Once per visit" is tracked in sessionStorage (key below), so it
- *       survives SPA route changes / component remounts within the tab.
- *     - We try shortly after mount; if blocked, we listen for pointerdown /
- *       keydown / touchstart (real activation gestures — no scroll), call
- *       ctx.resume() inside the handler, and only remove listeners after
- *       the bell actually plays or the 30s window closes.
- *
- * LAUNCHER ICON — mobile now matches desktop:
- *   The mobile MessageCircle previously had no colour class, so it inherited
- *   `text-white` from the launcher wrapper — white icon on the light
- *   bg-green-100 circle, i.e. practically invisible. It now uses
- *   text-green-400, identical to the desktop icon.
- *
- * PRE-CHAT FORM — phone number field:
- *   Added between name and email. Input is sanitized on every keystroke
- *   (only digits, spaces, +, -, and parentheses survive) and validated on
- *   submit against a loose but real phone pattern before the conversation
- *   is allowed to start.
+ * BELL CHIME — once per visit, via real user-activation gestures only
+ * (pointerdown / keydown / touchstart — never scroll), with ctx.resume()
+ * inside the gesture handler to unlock a suspended AudioContext.
  */
+
+// ─── API base ────────────────────────────────────────────────────────────────
+const _base =
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const BASE_API = _base.endsWith('/publicchat') ? _base : `${_base}/publicchat`;
+
+const apiFetch = async (url, options = {}) => {
+  const res = await fetch(`${BASE_API}${url}`, {
+        credentials: 'include',
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+  return data;
+};
 
 const BELL_DELAY_MS = 4000; // first attempt after mount
 const BELL_WINDOW_MS = 30000; // chime allowed only within this window
 const BELL_SESSION_KEY = 'um_chat_bell_played'; // once-per-visit flag
+const CONVERSATION_SESSION_KEY = 'um_chat_conversation'; // { id, name }
 const ICON_SWAP_MS = 5000; // launcher alternates icon <-> "MESSAGE US"
-const FAQ_TYPING_MS = 1400; // fake "agent typing" delay before an FAQ answer
+const POLL_MS = 4000; // agent-reply polling interval
 
 // Allows optional leading +, then 7-15 digits, with spaces/hyphens/parens
 // permitted as separators. Rejects letters and other junk.
@@ -75,25 +67,38 @@ const PHONE_REGEX = /^\+?[0-9][0-9\s\-()]{6,18}[0-9]$/;
 // Strip anything that isn't a digit, space, +, -, ( or ) as the user types.
 const sanitizePhoneInput = (value) => value.replace(/[^\d\s+\-()]/g, '');
 
+const readStoredConversation = () => {
+  try {
+    const raw = sessionStorage.getItem(CONVERSATION_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 const ChatWidget = () => {
+  const stored = useRef(readStoredConversation()).current;
+
   const [isOpen, setIsOpen] = useState(false);
 
   // 'prechat' -> visitor identifies themselves, 'chat' -> conversation view
-  const [stage, setStage] = useState('prechat');
+  const [stage, setStage] = useState(stored ? 'chat' : 'prechat');
 
   // Launcher alternation: true -> icon, false -> "MESSAGE US" text (sm+ only)
   const [showIcon, setShowIcon] = useState(true);
 
   // Pre-chat form
-  const [visitorName, setVisitorName] = useState('');
+  const [visitorName, setVisitorName] = useState(stored?.name || '');
   const [visitorPhone, setVisitorPhone] = useState('');
   const [visitorEmail, setVisitorEmail] = useState('');
   const [formError, setFormError] = useState('');
+  const [starting, setStarting] = useState(false);
 
   // Conversation state
+  const [conversationId, setConversationId] = useState(stored?.id || null);
+  const [conversationClosed, setConversationClosed] = useState(false);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
-  const [agentTyping, setAgentTyping] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const messagesEndRef = useRef(null);
@@ -103,8 +108,12 @@ const ChatWidget = () => {
   const bellPlayedRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
 
-  // Conversation id once the backend is wired (kept in a ref for the stubs)
-  const conversationIdRef = useRef(null);
+  // Polling bookkeeping
+  const isOpenRef = useRef(isOpen);
+  const serverCountRef = useRef(0); // server messages seen so far (unread detection)
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
 
   // ---------------------------------------------------------------
   // Launcher icon <-> "MESSAGE US" alternation (every 5 seconds)
@@ -201,8 +210,7 @@ const ChatWidget = () => {
 
     const withinWindow = () => Date.now() - mountTimeRef.current < BELL_WINDOW_MS;
 
-    // ONLY real user-activation gestures — 'scroll' does NOT unlock audio
-    // and was previously disarming the fallback on first scroll.
+    // ONLY real user-activation gestures — 'scroll' does NOT unlock audio.
     const interactionEvents = ['pointerdown', 'keydown', 'touchstart'];
     let disarmTimer = null;
 
@@ -256,11 +264,11 @@ const ChatWidget = () => {
       scrollToBottom();
       setUnreadCount(0);
     }
-  }, [messages, isOpen, agentTyping]);
+  }, [messages, isOpen]);
 
   useEffect(() => {
-    if (isOpen && stage === 'chat') inputRef.current?.focus();
-  }, [isOpen, stage]);
+    if (isOpen && stage === 'chat' && !conversationClosed) inputRef.current?.focus();
+  }, [isOpen, stage, conversationClosed]);
 
   const formatTime = (iso) =>
     new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -269,23 +277,65 @@ const ChatWidget = () => {
     setIsOpen((v) => !v);
   };
 
-  const pushMessage = (msg) => {
-    setMessages((prev) => [...prev, msg]);
-    // Count agent replies as unread while the panel is closed
-    if (!isOpen && msg.sender === 'agent') {
-      setUnreadCount((c) => c + 1);
-    }
-  };
-
   const handlePhoneChange = (e) => {
     setVisitorPhone(sanitizePhoneInput(e.target.value));
   };
 
+  /**
+   * Merge the server's message list with locally pending ('sending') bubbles
+   * so an in-flight message never flickers away during a poll.
+   */
+  const applyServerMessages = useCallback((serverMessages) => {
+    if (!Array.isArray(serverMessages)) return;
+
+    setMessages((prev) => {
+      const serverIds = new Set(serverMessages.map((m) => m.id));
+      const pending = prev.filter(
+        (m) => m.status === 'sending' && !serverIds.has(m.id)
+      );
+      const delivered = serverMessages.map((m) =>
+        m.sender === 'visitor' ? { ...m, status: 'delivered' } : m
+      );
+      return [...delivered, ...pending];
+    });
+
+    // Unread badge: new agent messages that arrived while the panel is closed
+    if (!isOpenRef.current) {
+      const fresh = serverMessages.slice(serverCountRef.current);
+      const newAgentReplies = fresh.filter((m) => m.sender === 'agent').length;
+      if (newAgentReplies > 0) setUnreadCount((c) => c + newAgentReplies);
+    }
+    serverCountRef.current = serverMessages.length;
+  }, []);
+
   // ---------------------------------------------------------------
-  // BACKEND: start a conversation (stubbed)
+  // BACKEND: poll for agent replies every 4s while a conversation exists
   // ---------------------------------------------------------------
-  const startConversation = (e) => {
+  const fetchThread = useCallback(async () => {
+    if (!conversationId) return;
+    try {
+      const data = await apiFetch(`/chat/conversations/${conversationId}/messages`);
+      applyServerMessages(data.messages);
+      if (data.status === 'closed') setConversationClosed(true);
+    } catch {
+      /* transient network error — next poll will retry */
+    }
+  }, [conversationId, applyServerMessages]);
+
+  useEffect(() => {
+    if (!conversationId) return undefined;
+    fetchThread(); // load immediately (also restores a stored conversation)
+    if (conversationClosed) return undefined; // closed thread — stop polling
+    const intervalId = setInterval(fetchThread, POLL_MS);
+    return () => clearInterval(intervalId);
+  }, [conversationId, conversationClosed, fetchThread]);
+
+  // ---------------------------------------------------------------
+  // BACKEND: start a conversation
+  // ---------------------------------------------------------------
+  const startConversation = async (e) => {
     e?.preventDefault?.();
+    if (starting) return;
 
     const cleanName = visitorName.trim();
     const cleanPhone = sanitizePhoneInput(visitorPhone).trim();
@@ -305,126 +355,82 @@ const ChatWidget = () => {
     }
     setFormError('');
     setVisitorPhone(cleanPhone);
+    setStarting(true);
 
-    // TODO BACKEND: POST /api/chat/conversations { name, phone, email }
-    // const res = await fetch('/api/chat/conversations', { ... });
-    // conversationIdRef.current = res.conversation_id;
-    // -> then subscribe to the realtime channel for agent replies
-
-    setMessages([
-      {
-        id: 'sys-1',
-        sender: 'system',
-        text: `Welcome, ${cleanName.split(' ')[0]}. You are connected to Umrah Market support.`,
-        created_at: new Date().toISOString(),
-        status: 'delivered',
-      },
-      {
-        id: 'sys-2',
-        sender: 'agent',
-        text: 'Assalamu alaikum! Ask anything about our services, customer care agents are here to serve you.',
-        created_at: new Date().toISOString(),
-        status: 'delivered',
-      },
-    ]);
-    setStage('chat');
-  };
-
-  // ---------------------------------------------------------------
-  // BACKEND: notify a human agent about an unanswered question
-  // ---------------------------------------------------------------
-  const notifyAgent = async (questionText) => {
-    // Fire-and-forget: the visitor already sees the "forwarded" system note.
     try {
-      await fetch('/api/chat/notify-agent', {
+      const data = await apiFetch('/chat/conversations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversation_id: conversationIdRef.current, // null until backend wired
-          visitor_name: visitorName.trim(),
-          visitor_phone: sanitizePhoneInput(visitorPhone).trim(),
-          visitor_email: visitorEmail.trim(),
-          question: questionText,
-          asked_at: new Date().toISOString(),
+          name: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail,
           page_url: typeof window !== 'undefined' ? window.location.href : null,
         }),
       });
-      // TODO BACKEND: this endpoint should
-      //   1. Persist the escalation against the conversation
-      //   2. Push a notification to online agents (Supabase Realtime broadcast
-      //      / socket.io room) and/or send an email via Nodemailer
-    } catch {
-      // Swallow network errors — escalation UX must not break the chat.
-      // Optionally queue and retry here later.
+
+      setConversationId(data.conversation_id);
+      serverCountRef.current = Array.isArray(data.messages) ? data.messages.length : 0;
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      setConversationClosed(false);
+      setStage('chat');
+
+      try {
+        sessionStorage.setItem(
+          CONVERSATION_SESSION_KEY,
+          JSON.stringify({ id: data.conversation_id, name: cleanName })
+        );
+      } catch {
+        /* sessionStorage unavailable — thread just won't survive navigation */
+      }
+    } catch (err) {
+      setFormError(err.message || 'Could not start the chat. Please try again.');
+    } finally {
+      setStarting(false);
     }
   };
 
   // ---------------------------------------------------------------
-  // FAQ-first responder
+  // BACKEND: send a visitor message (agents are notified server-side)
   // ---------------------------------------------------------------
-  const respondToVisitor = (text) => {
-    const match = findFaqAnswer(text);
-
-    if (match) {
-      // Auto-answer as the agent after a believable typing delay
-      setAgentTyping(true);
-      setTimeout(() => {
-        setAgentTyping(false);
-        pushMessage({
-          id: `faq-${match.faq.id}-${Date.now()}`,
-          sender: 'agent',
-          text: match.faq.answer,
-          created_at: new Date().toISOString(),
-          status: 'delivered',
-        });
-      }, FAQ_TYPING_MS);
-      return;
-    }
-
-    // No FAQ match -> escalate to a human agent
-    notifyAgent(text);
-    setTimeout(() => {
-      pushMessage({
-        id: `sys-escalate-${Date.now()}`,
-        sender: 'system',
-        text: 'Your question has been forwarded to an agent. Kindly wait a little bit for your response.',
-        created_at: new Date().toISOString(),
-        status: 'delivered',
-      });
-    }, 700);
-  };
-
-  // ---------------------------------------------------------------
-  // BACKEND: send a visitor message (stubbed) + FAQ pipeline
-  // ---------------------------------------------------------------
-  const sendMessage = (e) => {
+  const sendMessage = async (e) => {
     e?.preventDefault?.();
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !conversationId || conversationClosed) return;
 
     const tempId = `local-${Date.now()}`;
-    const newMessage = {
-      id: tempId,
-      sender: 'visitor',
-      text,
-      created_at: new Date().toISOString(),
-      status: 'sending',
-    };
-
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        sender: 'visitor',
+        text,
+        created_at: new Date().toISOString(),
+        status: 'sending',
+      },
+    ]);
     setDraft('');
 
-    // TODO BACKEND: POST /api/chat/conversations/:id/messages { text }
-    // On success, replace status 'sending' -> 'sent' using the returned id.
-    // Simulated here so the UI states are visible during development:
-    setTimeout(() => {
+    try {
+      const data = await apiFetch(`/chat/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+      // Server response is the source of truth — swaps the temp bubble for
+      // the stored one (status 'delivered').
+      applyServerMessages(data.messages);
+    } catch (err) {
+      if (/closed/i.test(err.message || '')) {
+        setConversationClosed(true);
+      }
+      // Mark the bubble as failed-ish: keep it visible but flag it
       setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...m, status: 'sending', text: `${text} (not sent — check your connection)` }
+            : m
+        )
       );
-    }, 600);
-
-    // FAQ-first: try to answer locally; otherwise notify a human agent
-    respondToVisitor(text);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -432,6 +438,20 @@ const ChatWidget = () => {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const startNewConversation = () => {
+    try {
+      sessionStorage.removeItem(CONVERSATION_SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+    serverCountRef.current = 0;
+    setConversationId(null);
+    setConversationClosed(false);
+    setMessages([]);
+    setDraft('');
+    setStage('prechat');
   };
 
   // ---------------------------------------------------------------
@@ -597,7 +617,11 @@ const ChatWidget = () => {
               <div>
                 <p className="font-semibold text-sm">Umrah Market Support</p>
                 <p className="text-xs text-gray-400">
-                  {stage === 'chat' ? 'Instant answers · agents on standby' : 'Typically replies in minutes'}
+                  {stage === 'chat'
+                    ? conversationClosed
+                      ? 'Conversation closed'
+                      : 'Live agents · typically replies in minutes'
+                    : 'Typically replies in minutes'}
                 </p>
               </div>
             </div>
@@ -684,9 +708,10 @@ const ChatWidget = () => {
 
               <button
                 type="submit"
-                className="cursor-pointer w-full bg-green-600 text-white font-semibold text-sm py-2.5 rounded-lg hover:bg-green-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+                disabled={starting}
+                className="cursor-pointer w-full bg-green-600 text-white font-semibold text-sm py-2.5 rounded-lg hover:bg-green-700 disabled:bg-green-300 disabled:cursor-wait transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
               >
-                Start chat
+                {starting ? 'Connecting…' : 'Start chat'}
               </button>
 
               <p className="text-[11px] text-gray-400 text-center">
@@ -700,41 +725,44 @@ const ChatWidget = () => {
                 {messages.map((msg) => (
                   <MessageBubble key={msg.id} msg={msg} />
                 ))}
-
-                {agentTyping && (
-                  <div className="flex justify-start mb-3">
-                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-green-100 flex items-center justify-center mr-2 self-end">
-                      <Headset className="h-4 w-4 text-green-700" />
-                    </div>
-               <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
-<span className="text-sm text-gray-500 italic animate-pulse">Typing...</span></div>
-                  </div>
-                )}
-
                 <div ref={messagesEndRef} />
               </div>
 
               {/* Composer */}
               <div className="border-t border-gray-200 px-3 py-3 bg-white">
-                <div className="flex items-end gap-2">
-                  <textarea
-                    ref={inputRef}
-                    rows={1}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Type your message…"
-                    className="flex-1 text-black resize-none max-h-28 px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                  />
-                  <button
-                    onClick={sendMessage}
-                    disabled={!draft.trim()}
-                    aria-label="Send message"
-                    className="cursor-pointer h-10 w-10 flex-shrink-0 rounded-lg bg-green-600 text-white flex items-center justify-center hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
-                  >
-                    <Send className="h-4 w-4" />
-                  </button>
-                </div>
+                {conversationClosed ? (
+                  <div className="text-center space-y-2">
+                    <p className="text-xs text-gray-500">
+                      This conversation has been closed by our team.
+                    </p>
+                    <button
+                      onClick={startNewConversation}
+                      className="cursor-pointer text-sm font-semibold text-green-700 hover:underline"
+                    >
+                      Start a new conversation
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-end gap-2">
+                    <textarea
+                      ref={inputRef}
+                      rows={1}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Type your message…"
+                      className="flex-1 text-black resize-none max-h-28 px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    />
+                    <button
+                      onClick={sendMessage}
+                      disabled={!draft.trim()}
+                      aria-label="Send message"
+                      className="cursor-pointer h-10 w-10 flex-shrink-0 rounded-lg bg-green-600 text-white flex items-center justify-center hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           )}

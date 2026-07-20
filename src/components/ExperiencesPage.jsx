@@ -498,7 +498,7 @@ const ExperiencesPage = () => {
       </div>
 
       {/* ── BOTTOM CONTACT STRIP ──────────────────────────────────────────── */}
-      <section className="bg-gray-900 text-white py-10">
+      {/* <section className="bg-gray-900 text-white py-10">
         <div className="container mx-auto px-4 sm:px-6 flex flex-col sm:flex-row justify-between items-center gap-6">
           <div>
             <p className="font-bold text-base">Questions? We're here.</p>
@@ -513,7 +513,7 @@ const ExperiencesPage = () => {
             </a>
           </div>
         </div>
-      </section>
+      </section> */}
     </div>
   );
 };
