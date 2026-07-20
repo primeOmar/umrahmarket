@@ -8,25 +8,27 @@ import { format, formatDistanceToNow } from 'date-fns';
 
 /**
  * PublicChatTab — superadmin view for conversations started from the public
- * website's ChatWidget. Agents receive every visitor message here (no FAQ bot
- * in between) and reply directly; replies are appended to the conversation's
- * `messages` JSONB array and appear in the visitor's widget on its next poll.
+ * website's ChatWidget.
  *
- * Layout: THREE conversation cards per row on large screens
- * (1 col mobile → 2 cols md → 3 cols xl).
+ * THIS REVISION ADDS:
+ *   • VISITOR-TYPING INDICATOR — the thread endpoint now returns
+ *     `visitor_typing` (fresh visitor_typing_at on the row); an animated
+ *     "Visitor is typing…" bubble shows in the open thread.
+ *   • AGENT TYPING PINGS — while the agent composes a reply the tab sends a
+ *     throttled POST /superadmin/public-chats/:id/typing so the visitor's
+ *     widget can show its typing bubble.
+ *   • NEW-MESSAGE SOUND — a soft ding plays when (a) a new visitor message
+ *     lands in the open thread, or (b) the silent list refresh finds more
+ *     "Needs reply" conversations than before.
+ *   • If the poll finds the conversation was closed elsewhere, the composer
+ *     hides automatically.
  *
- * Backend endpoints (public_chat_routes.js — superadminChatRouter):
+ * Backend endpoints (public_chat_routes.js):
  *   GET  /superadmin/public-chats
- *   GET  /superadmin/public-chats/:id/messages
- *   POST /superadmin/public-chats/:id/messages   { text }   -> stored as sender 'agent'
- *   POST /superadmin/public-chats/:id/close      { reason }
- *
- * Message shape (matches the public ChatWidget exactly):
- *   { id, sender ('visitor'|'agent'|'system'), text, created_at }
- *
- * While a thread modal is open, its messages are polled every 5s; the
- * conversation list itself silently refreshes every 15s so new visitor
- * messages and "Needs reply" badges appear without a manual refresh.
+ *   GET  /superadmin/public-chats/:id/messages        -> + visitor_typing
+ *   POST /superadmin/public-chats/:id/messages        { text }
+ *   POST /superadmin/public-chats/:id/typing          (agent typing ping)
+ *   POST /superadmin/public-chats/:id/close           { reason }
  */
 
 // ─── API base + superadmin-scoped fetch (self-contained) ─────────────────────
@@ -40,7 +42,6 @@ const pcFetch = async (url, options = {}) => {
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
-      
       Authorization: `Bearer ${localStorage.getItem('superadmin_token')}`,
     },
   });
@@ -48,6 +49,7 @@ const pcFetch = async (url, options = {}) => {
     window.location.href = '/superadmin/login';
     throw new Error('Session expired');
   }
+  if (res.status === 204) return {};
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || err.error || `HTTP ${res.status}`);
@@ -57,6 +59,7 @@ const pcFetch = async (url, options = {}) => {
 
 const THREAD_POLL_MS = 5000;
 const LIST_POLL_MS = 15000;
+const TYPING_PING_MS = 2500; // min gap between "agent is typing" pings
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const PublicChatTab = () => {
@@ -70,6 +73,7 @@ const PublicChatTab = () => {
   const [selected, setSelected] = useState(null); // conversation or null
   const [messages, setMessages] = useState([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [visitorTyping, setVisitorTyping] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -79,12 +83,56 @@ const PublicChatTab = () => {
   const pollRef = useRef(null);
   const bottomRef = useRef(null);
 
+  // Notification-sound bookkeeping
+  const audioCtxRef = useRef(null);
+  const threadCountRef = useRef(0); // messages seen in the open thread
+  const escalatedBaselineRef = useRef(null); // "Needs reply" count baseline
+  const lastTypingPingRef = useRef(0);
+
+  // ── Sound: soft ding when a visitor message lands ─────────────────────────
+  const playPing = async () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch { /* still locked */ }
+      }
+      if (ctx.state !== 'running') return; // needs one user gesture first
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now); // A5 — distinct from the widget
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.55);
+    } catch {
+      /* audio must never break the dashboard */
+    }
+  };
+
+  // ── Conversation list ─────────────────────────────────────────────────────
   const fetchConversations = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const data = await pcFetch('/superadmin/public-chats');
-      setConversations(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []));
+      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+      setConversations(list);
       setError(null);
+
+      // Ding when the number of "Needs reply" conversations grows.
+      const escalated = list.filter(c => c.escalated && c.status !== 'closed').length;
+      if (escalatedBaselineRef.current !== null && escalated > escalatedBaselineRef.current) {
+        playPing();
+      }
+      escalatedBaselineRef.current = escalated;
     } catch (e) {
       if (!silent) setError(e.message || 'Failed to load public chats');
     } finally {
@@ -100,13 +148,29 @@ const PublicChatTab = () => {
     return () => clearInterval(id);
   }, [fetchConversations]);
 
+  // ── Open thread ───────────────────────────────────────────────────────────
   const fetchMessages = useCallback(async (conversationId, silent = false) => {
     if (!conversationId) return;
     if (!silent) setThreadLoading(true);
     try {
       const data = await pcFetch(`/superadmin/public-chats/${conversationId}/messages`);
       const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.messages) ? data.messages : []);
+
+      // Ding for visitor messages that arrived since the last poll.
+      if (silent) {
+        const fresh = list.slice(threadCountRef.current);
+        if (fresh.some(m => m.sender === 'visitor')) playPing();
+      }
+      threadCountRef.current = list.length;
+
       setMessages(list);
+      setVisitorTyping(Boolean(data?.visitor_typing) && data?.status !== 'closed');
+
+      // If it was closed elsewhere, hide the composer live.
+      if (data?.status === 'closed') {
+        setSelected(s => (s && s.id === conversationId ? { ...s, status: 'closed' } : s));
+        setVisitorTyping(false);
+      }
     } catch (e) {
       if (!silent) toast.error(e.message || 'Failed to load messages');
     } finally {
@@ -114,7 +178,7 @@ const PublicChatTab = () => {
     }
   }, []);
 
-  // Poll the open thread every 5s so new visitor messages appear live
+  // Poll the open thread every 5s so new visitor messages + typing appear live
   useEffect(() => {
     if (!selected) return undefined;
     if (pollRef.current) clearInterval(pollRef.current);
@@ -129,7 +193,7 @@ const PublicChatTab = () => {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, visitorTyping]);
 
   const counts = useMemo(() => ({
     open: conversations.filter(c => c.status !== 'closed').length,
@@ -155,19 +219,37 @@ const PublicChatTab = () => {
   const openThread = async (conv) => {
     setSelected(conv);
     setMessages([]);
+    setVisitorTyping(false);
     setReply('');
     setShowCloseForm(false);
     setCloseReason('');
+    threadCountRef.current = 0; // first (non-silent) load sets the baseline
     await fetchMessages(conv.id);
   };
 
   const closeModal = () => {
     setSelected(null);
     setMessages([]);
+    setVisitorTyping(false);
     setReply('');
     setShowCloseForm(false);
     setCloseReason('');
     fetchConversations(true); // keep list badges in sync after replying
+  };
+
+  // ── Agent typing pings (throttled) ───────────────────────────────────────
+  const sendTypingPing = () => {
+    if (!selected || selected.status === 'closed') return;
+    const now = Date.now();
+    if (now - lastTypingPingRef.current < TYPING_PING_MS) return;
+    lastTypingPingRef.current = now;
+    pcFetch(`/superadmin/public-chats/${selected.id}/typing`, { method: 'POST' })
+      .catch(() => { /* best-effort */ });
+  };
+
+  const handleReplyChange = (e) => {
+    setReply(e.target.value);
+    if (e.target.value.trim()) sendTypingPing();
   };
 
   const handleSendReply = async () => {
@@ -181,6 +263,7 @@ const PublicChatTab = () => {
       });
       setReply('');
       if (Array.isArray(data?.messages)) {
+        threadCountRef.current = data.messages.length;
         setMessages(data.messages);
       } else {
         await fetchMessages(selected.id, true);
@@ -390,6 +473,27 @@ const PublicChatTab = () => {
                     </div>
                   );
                 })}
+
+                {/* Visitor is typing… */}
+                {!threadLoading && visitorTyping && selected.status !== 'closed' && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[80%] rounded-2xl p-3 bg-slate-100">
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <User className="h-3 w-3" />
+                        <span>{selected.visitorName || 'Visitor'} is typing</span>
+                        <span className="flex items-center gap-1">
+                          {[0, 1, 2].map(i => (
+                            <span
+                              key={i}
+                              className="h-1 w-1 rounded-full bg-slate-400 animate-bounce"
+                              style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.9s' }}
+                            />
+                          ))}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div ref={bottomRef} />
               </div>
             </div>
@@ -401,7 +505,7 @@ const PublicChatTab = () => {
                   <textarea
                     rows={1}
                     value={reply}
-                    onChange={e => setReply(e.target.value)}
+                    onChange={handleReplyChange}
                     onKeyDown={handleReplyKeyDown}
                     placeholder="Reply to the visitor as an agent…"
                     className="flex-1 resize-none max-h-28 px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

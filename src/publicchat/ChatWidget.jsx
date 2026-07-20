@@ -10,6 +10,7 @@ import {
   Clock,
   CheckCheck,
   Check,
+  AlertCircle,
 } from 'lucide-react';
 
 /**
@@ -18,23 +19,31 @@ import {
  * AGENT-DIRECT FLOW (FAQ auto-answering removed):
  *   1. Visitor fills the pre-chat form -> POST /api/chat/conversations
  *   2. Every message the visitor sends -> POST /api/chat/conversations/:id/messages
- *      The backend stores it in the conversation's `messages` JSONB array and
- *      notifies human agents (email / dashboard badge).
  *   3. The widget polls GET /api/chat/conversations/:id/messages every 4s so
- *      agent replies from the superadmin dashboard appear live. Replies that
- *      arrive while the panel is minimised increment the unread badge.
+ *      agent replies from the superadmin dashboard appear live.
  *
- * The conversation id is kept in sessionStorage so the thread survives page
- * navigation within the same tab.
+ * THIS REVISION FIXES / ADDS:
+ *   • DUPLICATE-BUBBLE FIX — the optimistic local bubble uses a temp id, and
+ *     the server stores the same message under its own UUID, so the old merge
+ *     kept BOTH (one "delivered", one stuck on the clock icon). The merge now
+ *     accepts a dropIds list: on a successful send the temp bubble is removed
+ *     in the same state update that applies the server's copy.
+ *   • FAILED SENDS are now marked status 'failed' (red icon + "Not sent")
+ *     instead of being left on 'sending' forever.
+ *   • TYPING INDICATOR — the poll response now carries `agent_typing`
+ *     (backend keeps an agent_typing_at timestamp, fresh for a few seconds);
+ *     an animated three-dot bubble is shown while it's true. The widget also
+ *     pings POST /chat/conversations/:id/typing (throttled) while the visitor
+ *     types, so the agent dashboard can show "Visitor is typing…".
+ *   • NEW-MESSAGE SOUND — a short soft ding plays whenever an agent reply
+ *     lands (open or minimised), via a persistent AudioContext that unlocks
+ *     on the visitor's first real gesture.
+ *   • RESTORED-THREAD HYDRATION GUARD — the first fetch of a restored
+ *     conversation sets the baseline silently, so old messages no longer
+ *     count as "unread" or trigger the ding.
  *
- * Message shape (identical on both sides of the wire):
- *   { id, sender: 'visitor' | 'agent' | 'system', text, created_at }
- *   Visitor bubbles additionally carry a local-only status:
- *   'sending' | 'sent' | 'delivered'
- *
- * BELL CHIME — once per visit, via real user-activation gestures only
- * (pointerdown / keydown / touchstart — never scroll), with ctx.resume()
- * inside the gesture handler to unlock a suspended AudioContext.
+ * NOTE: polling means the typing indicator / sound can lag by up to one poll
+ * interval (~4s). Supabase Realtime or websockets would make both instant.
  */
 
 // ─── API base ────────────────────────────────────────────────────────────────
@@ -44,7 +53,7 @@ const BASE_API = _base.endsWith('/publicchat') ? _base : `${_base}/publicchat`;
 
 const apiFetch = async (url, options = {}) => {
   const res = await fetch(`${BASE_API}${url}`, {
-        credentials: 'include',
+    credentials: 'include',
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
@@ -53,12 +62,13 @@ const apiFetch = async (url, options = {}) => {
   return data;
 };
 
-const BELL_DELAY_MS = 4000; // first attempt after mount
+const BELL_DELAY_MS = 4000; // first welcome-bell attempt after mount
 const BELL_WINDOW_MS = 30000; // chime allowed only within this window
 const BELL_SESSION_KEY = 'um_chat_bell_played'; // once-per-visit flag
 const CONVERSATION_SESSION_KEY = 'um_chat_conversation'; // { id, name }
 const ICON_SWAP_MS = 5000; // launcher alternates icon <-> "MESSAGE US"
 const POLL_MS = 4000; // agent-reply polling interval
+const TYPING_PING_MS = 2500; // min gap between "visitor is typing" pings
 
 // Allows optional leading +, then 7-15 digits, with spaces/hyphens/parens
 // permitted as separators. Rejects letters and other junk.
@@ -100,6 +110,7 @@ const ChatWidget = () => {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [agentTyping, setAgentTyping] = useState(false);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -108,12 +119,27 @@ const ChatWidget = () => {
   const bellPlayedRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
 
+  // Persistent AudioContext for the new-message ping (separate from the
+  // one-shot welcome bell). Created lazily; resumed inside gesture handlers.
+  const audioCtxRef = useRef(null);
+
   // Polling bookkeeping
   const isOpenRef = useRef(isOpen);
-  const serverCountRef = useRef(0); // server messages seen so far (unread detection)
+  const serverCountRef = useRef(0); // server messages seen so far
+  const hydratedRef = useRef(false); // first server payload applied yet?
+  const lastTypingPingRef = useRef(0);
+  const conversationIdRef = useRef(conversationId);
+  const conversationClosedRef = useRef(false);
+
   useEffect(() => {
     isOpenRef.current = isOpen;
   }, [isOpen]);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+  useEffect(() => {
+    conversationClosedRef.current = conversationClosed;
+  }, [conversationClosed]);
 
   // ---------------------------------------------------------------
   // Launcher icon <-> "MESSAGE US" alternation (every 5 seconds)
@@ -128,7 +154,54 @@ const ChatWidget = () => {
   }, []);
 
   // ---------------------------------------------------------------
-  // Bell chime — synthesized with Web Audio, once per visit
+  // Audio — shared helpers
+  // ---------------------------------------------------------------
+
+  /** Lazily create (and try to resume) the persistent AudioContext. */
+  const getAudioCtx = async () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch {
+          /* still locked — caller checks state */
+        }
+      }
+      return ctx.state === 'running' ? ctx : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** Short soft ding when an agent reply lands. */
+  const playMessagePing = async () => {
+    const ctx = await getAudioCtx();
+    if (!ctx) return; // autoplay still locked — badge/typing UI still inform
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1046.5, now); // C6 — soft notification tone
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.6);
+    } catch {
+      /* never let audio break the chat */
+    }
+  };
+
+  // ---------------------------------------------------------------
+  // Welcome bell chime — synthesized with Web Audio, once per visit
   // ---------------------------------------------------------------
 
   const bellAlreadyPlayedThisVisit = () => {
@@ -145,37 +218,19 @@ const ChatWidget = () => {
     try {
       sessionStorage.setItem(BELL_SESSION_KEY, '1');
     } catch {
-      /* sessionStorage unavailable (private mode edge cases) — ref still guards */
+      /* sessionStorage unavailable — ref still guards */
     }
   };
 
   /**
-   * Attempt to ring the bell.
+   * Attempt to ring the welcome bell.
    * @returns {Promise<boolean>} true if it actually played.
    */
   const playBell = async () => {
-    if (bellAlreadyPlayedThisVisit()) return true; // nothing more to do
+    if (bellAlreadyPlayedThisVisit()) return true;
+    const ctx = await getAudioCtx();
+    if (!ctx) return false; // still blocked — caller may retry on a gesture
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return false;
-      const ctx = new AudioCtx();
-
-      // If autoplay is blocked the context starts 'suspended'. When we are
-      // inside a user-gesture handler, resume() unlocks it — so try that
-      // instead of giving up immediately.
-      if (ctx.state === 'suspended') {
-        try {
-          await ctx.resume();
-        } catch {
-          /* fall through to the state check below */
-        }
-      }
-
-      if (ctx.state !== 'running') {
-        ctx.close();
-        return false; // still blocked — caller may retry on a real gesture
-      }
-
       const now = ctx.currentTime;
       const master = ctx.createGain();
       master.gain.setValueAtTime(0.35, now);
@@ -198,7 +253,6 @@ const ChatWidget = () => {
       });
 
       markBellPlayed();
-      setTimeout(() => ctx.close(), 1600);
       return true;
     } catch {
       return false;
@@ -264,7 +318,7 @@ const ChatWidget = () => {
       scrollToBottom();
       setUnreadCount(0);
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, agentTyping]);
 
   useEffect(() => {
     if (isOpen && stage === 'chat' && !conversationClosed) inputRef.current?.focus();
@@ -281,42 +335,81 @@ const ChatWidget = () => {
     setVisitorPhone(sanitizePhoneInput(e.target.value));
   };
 
+  /** Throttled "visitor is typing" ping so the agent dashboard can show it. */
+  const sendTypingPing = () => {
+    const id = conversationIdRef.current;
+    if (!id || conversationClosedRef.current) return;
+    const now = Date.now();
+    if (now - lastTypingPingRef.current < TYPING_PING_MS) return;
+    lastTypingPingRef.current = now;
+    apiFetch(`/chat/conversations/${id}/typing`, { method: 'POST' }).catch(() => {
+      /* best-effort — never surfaces to the visitor */
+    });
+  };
+
+  const handleDraftChange = (e) => {
+    setDraft(e.target.value);
+    if (e.target.value.trim()) sendTypingPing();
+  };
+
   /**
-   * Merge the server's message list with locally pending ('sending') bubbles
-   * so an in-flight message never flickers away during a poll.
+   * Merge the server's message list with locally pending/failed bubbles.
+   *
+   * DUPLICATE FIX: `dropIds` lists local temp ids whose server copy is known
+   * to be inside `serverMessages` (i.e. a send just succeeded). Those temp
+   * bubbles are removed in the SAME state update that applies the server
+   * list, so the message can never appear twice.
    */
-  const applyServerMessages = useCallback((serverMessages) => {
+  const applyServerMessages = useCallback((serverMessages, dropIds = []) => {
     if (!Array.isArray(serverMessages)) return;
+    const drop = new Set(dropIds);
 
     setMessages((prev) => {
       const serverIds = new Set(serverMessages.map((m) => m.id));
-      const pending = prev.filter(
-        (m) => m.status === 'sending' && !serverIds.has(m.id)
+      const localOnly = prev.filter(
+        (m) =>
+          (m.status === 'sending' || m.status === 'failed') &&
+          !serverIds.has(m.id) &&
+          !drop.has(m.id)
       );
       const delivered = serverMessages.map((m) =>
         m.sender === 'visitor' ? { ...m, status: 'delivered' } : m
       );
-      return [...delivered, ...pending];
+      return [...delivered, ...localOnly];
     });
 
-    // Unread badge: new agent messages that arrived while the panel is closed
-    if (!isOpenRef.current) {
-      const fresh = serverMessages.slice(serverCountRef.current);
-      const newAgentReplies = fresh.filter((m) => m.sender === 'agent').length;
-      if (newAgentReplies > 0) setUnreadCount((c) => c + newAgentReplies);
+    // First payload after mount/restore just sets the baseline — old
+    // messages must not count as unread or ring the ping.
+    if (!hydratedRef.current) {
+      hydratedRef.current = true;
+      serverCountRef.current = serverMessages.length;
+      return;
+    }
+
+    const fresh = serverMessages.slice(serverCountRef.current);
+    const newAgentReplies = fresh.filter((m) => m.sender === 'agent').length;
+    if (newAgentReplies > 0) {
+      playMessagePing(); // audible whether the panel is open or minimised
+      if (!isOpenRef.current) setUnreadCount((c) => c + newAgentReplies);
     }
     serverCountRef.current = serverMessages.length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------
-  // BACKEND: poll for agent replies every 4s while a conversation exists
+  // BACKEND: poll for agent replies + typing every 4s
   // ---------------------------------------------------------------
   const fetchThread = useCallback(async () => {
     if (!conversationId) return;
     try {
       const data = await apiFetch(`/chat/conversations/${conversationId}/messages`);
       applyServerMessages(data.messages);
-      if (data.status === 'closed') setConversationClosed(true);
+      if (data.status === 'closed') {
+        setConversationClosed(true);
+        setAgentTyping(false);
+      } else {
+        setAgentTyping(Boolean(data.agent_typing));
+      }
     } catch {
       /* transient network error — next poll will retry */
     }
@@ -369,9 +462,11 @@ const ChatWidget = () => {
       });
 
       setConversationId(data.conversation_id);
+      hydratedRef.current = true; // greeting is the baseline, not "new"
       serverCountRef.current = Array.isArray(data.messages) ? data.messages.length : 0;
       setMessages(Array.isArray(data.messages) ? data.messages : []);
       setConversationClosed(false);
+      setAgentTyping(false);
       setStage('chat');
 
       try {
@@ -415,20 +510,16 @@ const ChatWidget = () => {
         method: 'POST',
         body: JSON.stringify({ text }),
       });
-      // Server response is the source of truth — swaps the temp bubble for
-      // the stored one (status 'delivered').
-      applyServerMessages(data.messages);
+      // Server response is the source of truth. The temp bubble is dropped in
+      // the same update that applies the server copy — no more duplicates.
+      applyServerMessages(data.messages, [tempId]);
     } catch (err) {
       if (/closed/i.test(err.message || '')) {
         setConversationClosed(true);
       }
-      // Mark the bubble as failed-ish: keep it visible but flag it
+      // Mark the bubble as failed so the visitor knows to retype/resend.
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId
-            ? { ...m, status: 'sending', text: `${text} (not sent — check your connection)` }
-            : m
-        )
+        prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
       );
     }
   };
@@ -447,8 +538,10 @@ const ChatWidget = () => {
       /* ignore */
     }
     serverCountRef.current = 0;
+    hydratedRef.current = false;
     setConversationId(null);
     setConversationClosed(false);
+    setAgentTyping(false);
     setMessages([]);
     setDraft('');
     setStage('prechat');
@@ -459,6 +552,7 @@ const ChatWidget = () => {
   // ---------------------------------------------------------------
 
   const StatusIcon = ({ status }) => {
+    if (status === 'failed') return <AlertCircle className="h-3 w-3 text-red-300" />;
     if (status === 'sending') return <Clock className="h-3 w-3 text-gray-300" />;
     if (status === 'sent') return <Check className="h-3 w-3 text-gray-300" />;
     return <CheckCheck className="h-3 w-3 text-green-300" />;
@@ -498,11 +592,32 @@ const ChatWidget = () => {
           >
             <span>{formatTime(msg.created_at)}</span>
             {isVisitor && <StatusIcon status={msg.status} />}
+            {isVisitor && msg.status === 'failed' && (
+              <span className="text-red-200 font-medium">Not sent</span>
+            )}
           </div>
         </div>
       </div>
     );
   };
+
+  /** Animated "agent is typing" bubble (three bouncing dots). */
+  const TypingBubble = () => (
+    <div className="flex justify-start mb-3">
+      <div className="flex-shrink-0 h-8 w-8 rounded-full bg-green-100 flex items-center justify-center mr-2 self-end">
+        <Headset className="h-4 w-4 text-green-700" />
+      </div>
+      <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce"
+            style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.9s' }}
+          />
+        ))}
+      </div>
+    </div>
+  );
 
   // ---------------------------------------------------------------
   // Main render
@@ -620,7 +735,9 @@ const ChatWidget = () => {
                   {stage === 'chat'
                     ? conversationClosed
                       ? 'Conversation closed'
-                      : 'Live agents · typically replies in minutes'
+                      : agentTyping
+                        ? 'Agent is typing…'
+                        : 'Live agents · typically replies in minutes'
                     : 'Typically replies in minutes'}
                 </p>
               </div>
@@ -725,6 +842,7 @@ const ChatWidget = () => {
                 {messages.map((msg) => (
                   <MessageBubble key={msg.id} msg={msg} />
                 ))}
+                {agentTyping && !conversationClosed && <TypingBubble />}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -748,7 +866,7 @@ const ChatWidget = () => {
                       ref={inputRef}
                       rows={1}
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={handleDraftChange}
                       onKeyDown={handleKeyDown}
                       placeholder="Type your message…"
                       className="flex-1 text-black resize-none max-h-28 px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
