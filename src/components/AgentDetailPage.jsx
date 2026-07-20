@@ -92,10 +92,10 @@ const AgentDetailPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
       {/* Back */}
-      <div className="container mx-auto px-4 sm:px-6 pt-6">
+      <div className=" container mx-auto px-4 sm:px-6 pt-6">
         <button
           onClick={() => navigate('/agents')}
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-emerald-600 transition-colors"
+          className="cursor-pointer inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-emerald-600 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />Back to Agents
         </button>
