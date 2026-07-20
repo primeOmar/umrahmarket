@@ -368,7 +368,7 @@ const ExperiencesPage = () => {
             </div>
 
             {/* Technology & payment partners */}
-            <div>
+            {/* <div>
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Partners</p>
               <h2 className="text-xl font-bold text-gray-900 mb-6">Technology & payment partners</h2>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -381,7 +381,7 @@ const ExperiencesPage = () => {
                 <PartnerLogo name="Twilio"       type="SMS/WhatsApp" />
                 <PartnerLogo name="Safaricom"    type="Mobile Operator" />
               </div>
-            </div>
+            </div> */}
 
             {/* Media mentions */}
             <div className="rounded-2xl overflow-hidden relative">
@@ -506,10 +506,10 @@ const ExperiencesPage = () => {
           </div>
           <div className="flex flex-wrap gap-4">
             <a href="tel:+254700000000" className="flex items-center gap-2 px-4 py-2.5 bg-white/10 rounded-xl text-sm hover:bg-white/20 transition-colors">
-              <Phone className="h-4 w-4 text-emerald-400" /> +254 700 000 000
+              <Phone className="h-4 w-4 text-emerald-400" /> +254 700 111 106
             </a>
             <a href="mailto:support@umrahmarket.net" className="flex items-center gap-2 px-4 py-2.5 bg-white/10 rounded-xl text-sm hover:bg-white/20 transition-colors">
-              <Mail className="h-4 w-4 text-emerald-400" /> support@umrahmarket.com
+              <Mail className="h-4 w-4 text-emerald-400" /> support@umrahmarket.net
             </a>
           </div>
         </div>
