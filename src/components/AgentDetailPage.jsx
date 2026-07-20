@@ -12,7 +12,21 @@ import { request } from '../api';
 // businessName, firstName, lastName, verificationStatus, agentNumber,
 // officeMapsUrl, bio, logoUrl, yearsExperience, specialties, websiteUrl,
 // memberSince. This page shows agent details only — no package listings.
+//
+// "Since" year is DERIVED on the client: currentYear − yearsExperience.
+// The backend memberSince field is intentionally NOT consumed here.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Derive the year the agent started working from yearsExperience:
+ *   startYear = current year − yearsExperience
+ * e.g. in 2026, an agent with 7 years of experience → Since 2019.
+ * Returns null when yearsExperience is missing or not a positive number.
+ */
+const getStartYear = (yearsExperience) => {
+  if (typeof yearsExperience !== 'number' || yearsExperience <= 0) return null;
+  return new Date().getFullYear() - Math.floor(yearsExperience);
+};
 
 const AgentDetailPage = () => {
   const { id } = useParams();
@@ -71,6 +85,9 @@ const AgentDetailPage = () => {
 
   const name = agent.businessName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || 'Unnamed Agent';
   const isVerified = agent.verificationStatus === 'verified' || agent.verificationStatus === 'approved';
+
+  // Derived start year — computed from yearsExperience, NOT from backend memberSince
+  const startYear = getStartYear(agent.yearsExperience);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
@@ -138,8 +155,8 @@ const AgentDetailPage = () => {
                 {typeof agent.yearsExperience === 'number' && agent.yearsExperience > 0 && (
                   <span className="flex items-center gap-1.5"><Briefcase className="h-3.5 w-3.5" />{agent.yearsExperience} year{agent.yearsExperience === 1 ? '' : 's'} experience</span>
                 )}
-                {agent.memberSince && (
-                  <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />Since {agent.memberSince}</span>
+                {startYear && (
+                  <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />Since {startYear}</span>
                 )}
                 {agent.websiteUrl && (
                   <a
