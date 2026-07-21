@@ -242,15 +242,27 @@ function App() {
 
           {/* Detail */}
           <Route path="/package/:id" element={
-            <PackageDetailPage
-              packages={packages}
-              loading={pkgLoading}
-              favorites={favorites}
-              toggleFavorite={toggleFavorite}
-              currentUser={currentUser}
-            />
+            <>
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <PackageDetailPage
+                packages={packages}
+                loading={pkgLoading}
+                favorites={favorites}
+                toggleFavorite={toggleFavorite}
+                currentUser={currentUser}
+              />
+              <Footer />
+            </>
           } />
-<Route path="/experiences" element={
+
+          <Route path="/experiences" element={
             <>
               <Header
                 currentUser={currentUser}
@@ -264,19 +276,34 @@ function App() {
               <Footer />
             </>
           } />
+
           <Route path="/agent/dashboard" element={
             <ProtectedAgentRoute authReady={authReady}>
               <AgentDashboard user={currentUser} onLogout={handleLogout} />
+              <Footer />
             </ProtectedAgentRoute>
           } />
 
-<Route path="/superadmin/register" element={<SuperAdminRegister />} />
+          <Route path="/superadmin/register" element={
+            <>
+              <SuperAdminRegister />
+              <Footer />
+            </>
+          } />
+
           <Route path="/client/dashboard" element={
             <ProtectedClientRoute authReady={authReady}>
               <ClientDashboard user={currentUser} onLogout={handleLogout} packages={packages} />
+              <Footer />
             </ProtectedClientRoute>
           } />
-          <Route path="/guidance" element={<GuidancePage />} />
+
+          <Route path="/guidance" element={
+            <>
+              <GuidancePage />
+              <Footer />
+            </>
+          } />
 
           <Route path="/agents" element={
             <>
@@ -307,21 +334,47 @@ function App() {
             </>
           } />
 
-          <Route path="/auth/google/callback" element={<GoogleCallback />} />
-          <Route path="/auth/google/done"     element={<GoogleDone />} />
-          <Route path="/verified" element={<VerifiedPage />} />
+          <Route path="/auth/google/callback" element={
+            <>
+              <GoogleCallback />
+              <Footer />
+            </>
+          } />
+          <Route path="/auth/google/done" element={
+            <>
+              <GoogleDone />
+              <Footer />
+            </>
+          } />
+          <Route path="/verified" element={
+            <>
+              <VerifiedPage />
+              <Footer />
+            </>
+          } />
 
           {/* FIX: packageId is in the path so Pesapal can't stomp it on redirect */}
-          <Route path="/payment/callback/:packageId" element={<PaymentCallback />} />
+          <Route path="/payment/callback/:packageId" element={
+            <>
+              <PaymentCallback />
+              <Footer />
+            </>
+          } />
 
           {/* ─────────────────────────────────────────────────────────────────── */}
           {/* SUPERADMIN ROUTES - Restricted Access                             */}
           {/* ─────────────────────────────────────────────────────────────────── */}
-          <Route path="/superadmin/login" element={<SuperAdminLogin />} />
-          
+          <Route path="/superadmin/login" element={
+            <>
+              <SuperAdminLogin />
+              {/* <Footer /> */}
+            </>
+          } />
+
           <Route path="/superadmin/dashboard" element={
             <ProtectedSuperAdminRoute authReady={authReady}>
               <SuperAdminDashboard />
+              {/* <Footer /> */}
             </ProtectedSuperAdminRoute>
           } />
 
