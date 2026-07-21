@@ -11,28 +11,35 @@ import { format, formatDistanceToNow } from 'date-fns';
  * PublicChatTab — superadmin view for conversations started from the public
  * website's ChatWidget.
  *
- * REALTIME REVISION 3 — direct P2P message delivery + id-deduped unread.
+ * REALTIME REVISION 4 — unread badge is DB-backed, not per-browser state.
  *
- * A reply now broadcasts directly to the visitor's widget the instant it's
- * sent, over the same `chat:conversation:{id}` channel typing already
- * uses — no backend round trip needed for the visitor to see it live.
- * Symmetrically, this tab listens for the visitor's own direct broadcast
- * ('message_sent' on the open thread's channel, 'visitor_message' on the
- * shared admin-list channel) instead of relying solely on the backend's
- * 'messages_updated' / 'conversation_updated' broadcasts, which still run
- * on every send as the durable/reconciling backup path.
+ * Previously `unreadCounts` was local React state, built up only from
+ * broadcasts a given tab happened to see. A second agent window, or a
+ * refreshed tab, started blank — there was no unread history to replay.
  *
- * Because a message can now arrive via two independent paths (direct
- * broadcast, then the backend's own broadcast a moment later), every
- * "new message" signal is deduped by the message's id — via
- * `seenVisitorMsgIdsRef` for unread/ping, and a plain "do we already have
- * this id" check before appending to an open thread. Whichever path
- * arrives first wins; the second is a no-op.
+ * Now each conversation's unread count comes from the server (`unreadCount`
+ * on the row, backed by a real `unread_count` column — see
+ * public_chat_unread_migration.sql). Every card just renders
+ * `conv.unreadCount` directly:
+ *   - On first load / refresh, it comes from `listConversations`.
+ *   - On a visitor message, the direct 'visitor_message' broadcast
+ *     optimistically bumps it by 1 for instant feedback, and the backend's
+ *     'conversation_updated' broadcast (which now carries the
+ *     authoritative DB value) overwrites it moments later — self-healing
+ *     if the two ever disagree.
+ *   - Opening a thread calls the new `/superadmin/public-chats/:id/read`
+ *     endpoint, which resets it to 0 in the DB and broadcasts that reset —
+ *     so every other agent window sees the badge clear too, not just the
+ *     one that opened it.
  *
- * UNREAD — per-card badges + ping on every visitor message, not just the
- * first one that escalates a conversation. `unreadCounts` is
- * { [conversationId]: number }, bumped once per distinct message id while
- * that conversation isn't the open thread, cleared on open.
+ * `pingedMsgIdsRef` still exists, but now it only dedupes the notification
+ * *sound* (so the same message never chimes twice across the two delivery
+ * paths) — it no longer has anything to do with the badge's number.
+ *
+ * REALTIME REVISION 3 (still in effect) — a reply broadcasts directly to
+ * the visitor's widget the instant it's sent, over the same
+ * `chat:conversation:{id}` channel typing already uses; the backend
+ * REST + broadcast path is the durable/reconciling backup.
  *
  * SETUP REQUIRED: npm install @supabase/supabase-js; env vars
  * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (same as the public widget).
@@ -42,6 +49,7 @@ import { format, formatDistanceToNow } from 'date-fns';
  *   GET  /superadmin/public-chats/:id/messages
  *   POST /superadmin/public-chats/:id/messages   { text, id? }
  *   POST /superadmin/public-chats/:id/close      { reason }
+ *   POST /superadmin/public-chats/:id/read
  */
 
 // ─── API base + superadmin-scoped fetch (self-contained) ─────────────────────
@@ -95,11 +103,6 @@ const PublicChatTab = () => {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
 
-  // Unread tracking: { [conversationId]: count }. Bumped once per distinct
-  // visitor message id while that conversation isn't the open thread;
-  // cleared when the thread is opened.
-  const [unreadCounts, setUnreadCounts] = useState({});
-
   // Thread modal
   const [selected, setSelected] = useState(null); // conversation or null
   const [messages, setMessages] = useState([]);
@@ -118,7 +121,9 @@ const PublicChatTab = () => {
   const threadCountRef = useRef(0);
   const lastTypingBroadcastRef = useRef(0);
   const typingStaleTimerRef = useRef(null);
-  const seenVisitorMsgIdsRef = useRef(new Set());
+  // Dedupes the notification *sound* only — the badge number itself comes
+  // straight from the server's unread_count via conv.unreadCount.
+  const pingedMsgIdsRef = useRef(new Set());
 
   useEffect(() => { selectedIdRef.current = selected?.id ?? null; }, [selected]);
 
@@ -149,21 +154,14 @@ const PublicChatTab = () => {
     } catch { /* audio must never break the dashboard */ }
   };
 
-  /**
-   * Register a visitor message as "seen" for unread purposes exactly once,
-   * regardless of which path delivered it (direct 'visitor_message'
-   * broadcast, or the backend's 'conversation_updated' carrying
-   * lastMessageId). If the conversation is the one currently open, this
-   * still records the id (so a later duplicate signal is a no-op) but
-   * skips the badge/ping — the agent is already looking at it.
-   */
-  const maybeMarkUnread = useCallback((conversationId, messageId) => {
+  /** Play the ping at most once per distinct message id, whichever path
+   *  (direct broadcast or backend event) reports it first. */
+  const maybePing = useCallback((conversationId, messageId) => {
     if (!messageId) return;
-    if (seenVisitorMsgIdsRef.current.has(messageId)) return;
-    seenVisitorMsgIdsRef.current.add(messageId);
-    if (selectedIdRef.current === conversationId) return;
+    if (pingedMsgIdsRef.current.has(messageId)) return;
+    pingedMsgIdsRef.current.add(messageId);
+    if (selectedIdRef.current === conversationId) return; // already looking at it
     playPing();
-    setUnreadCounts((u) => ({ ...u, [conversationId]: (u[conversationId] || 0) + 1 }));
   }, []);
 
   // ── Conversation list ─────────────────────────────────────────────────────
@@ -198,13 +196,13 @@ const PublicChatTab = () => {
       })
       .on('broadcast', { event: 'visitor_message' }, ({ payload }) => {
         // Direct signal from the visitor's widget — instant, independent
-        // of the backend. Patches the card preview immediately; the
-        // matching backend 'conversation_updated' event below arrives
-        // shortly after as a reconciling backup and is deduped by
-        // messageId so it never double-counts the unread badge.
+        // of the backend. Optimistically bumps the preview and unread
+        // count; the matching 'conversation_updated' event below arrives
+        // shortly after carrying the authoritative DB unread_count and
+        // overwrites this, correcting any drift.
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === payload.id);
-          if (idx === -1) return prev; // unknown conversation — let the backend event create the card
+          if (idx === -1) return prev; // unknown conversation — the backend event will create the card
           const next = [...prev];
           next[idx] = {
             ...next[idx],
@@ -212,34 +210,35 @@ const PublicChatTab = () => {
             lastSender: 'visitor',
             lastActivity: payload.createdAt,
             messageCount: (next[idx].messageCount || 0) + 1,
+            unreadCount: (next[idx].unreadCount || 0) + 1,
             escalated: true,
           };
           return next;
         });
-        maybeMarkUnread(payload.id, payload.messageId);
+        maybePing(payload.id, payload.messageId);
       })
       .on('broadcast', { event: 'conversation_updated' }, ({ payload }) => {
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === payload.id);
           if (idx === -1) return [payload, ...prev];
           const next = [...prev];
-          next[idx] = payload;
+          next[idx] = payload; // authoritative — includes the real unreadCount from the DB
           return next;
         });
-        if (payload.lastSender === 'visitor') maybeMarkUnread(payload.id, payload.lastMessageId);
+        if (payload.lastSender === 'visitor') maybePing(payload.id, payload.lastMessageId);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') fetchConversations(true); // resync after reconnect
       });
 
     return () => supabase.removeChannel(channel);
-  }, [fetchConversations, maybeMarkUnread]);
+  }, [fetchConversations, maybePing]);
 
   const counts = useMemo(() => ({
     open: conversations.filter(c => c.status !== 'closed').length,
     escalated: conversations.filter(c => c.escalated && c.status !== 'closed').length,
-    unread: Object.values(unreadCounts).reduce((sum, n) => sum + n, 0),
-  }), [conversations, unreadCounts]);
+    unread: conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
+  }), [conversations]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -285,13 +284,14 @@ const PublicChatTab = () => {
     setShowCloseForm(false);
     setCloseReason('');
     threadCountRef.current = 0;
-    // Opening the thread is the "read" action — clear its unread count.
-    setUnreadCounts((u) => {
-      if (!u[conv.id]) return u;
-      const next = { ...u };
-      delete next[conv.id];
-      return next;
+
+    // Optimistic local clear for instant feedback…
+    setConversations((prev) => prev.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c)));
+    // …and the real, DB-backed clear, broadcast to every other agent window.
+    pcFetch(`/superadmin/public-chats/${conv.id}/read`, { method: 'POST' }).catch(() => {
+      /* best-effort — the safety-net refresh will still pick up the true count */
     });
+
     await fetchMessages(conv.id);
   };
 
@@ -314,10 +314,7 @@ const PublicChatTab = () => {
         const msg = payload.message;
         if (!msg) return;
         setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
-        if (msg.sender === 'visitor') {
-          setVisitorTyping(false);
-          maybeMarkUnread(selected.id, msg.id); // records as seen; no-ops the badge since thread is open
-        }
+        if (msg.sender === 'visitor') setVisitorTyping(false);
       })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload.sender !== 'visitor') return;
@@ -482,7 +479,7 @@ const PublicChatTab = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(conv => {
             const isClosed = conv.status === 'closed';
-            const unread = unreadCounts[conv.id] || 0;
+            const unread = conv.unreadCount || 0;
             return (
               <button
                 key={conv.id}
