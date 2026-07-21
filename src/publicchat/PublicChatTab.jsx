@@ -39,7 +39,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 
 // ─── API base + superadmin-scoped fetch (self-contained) ─────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-const BASE_API = _base.endsWith('/publicchat') ? _base : `${_base}/publicchat`;
+const BASE_API = _base.endsWith('/api/publicchat') ? _base : `${_base}/api/publicchat`;
 
 const pcFetch = async (url, options = {}) => {
   const res = await fetch(`${BASE_API}${url}`, {
