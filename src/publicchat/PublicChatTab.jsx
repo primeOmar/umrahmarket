@@ -27,6 +27,22 @@ import { format, formatDistanceToNow } from 'date-fns';
  *   • A long (2 min) background refresh of the list stays as a safety net in
  *     case a broadcast is ever missed — not the primary update path.
  *
+ * UNREAD REVISION — per-card unread badges + ping on every visitor message.
+ *
+ *   Previously the only "you have something to look at" signal was a chime
+ *   that fired once per conversation, on the not-escalated -> escalated
+ *   transition. That missed every subsequent visitor message in an
+ *   already-escalated thread, and there was no visible count anywhere.
+ *
+ *   Now: `unreadCounts` is a { [conversationId]: number } map kept in this
+ *   component. Every 'conversation_updated' broadcast whose lastSender is
+ *   'visitor' and whose messageCount increased over what we already had for
+ *   that row counts as one new visitor message. If that conversation isn't
+ *   the one currently open, we bump its unread count and play the ping —
+ *   every time, not just on first escalation. Opening a thread clears its
+ *   count. Closing a thread from elsewhere (another agent) doesn't touch
+ *   unread counts on its own.
+ *
  * SETUP REQUIRED: npm install @supabase/supabase-js; env vars
  * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (same as the public widget).
  *
@@ -80,6 +96,11 @@ const PublicChatTab = () => {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+
+  // Unread tracking: { [conversationId]: count }. Bumped on every visitor
+  // message while that conversation isn't the open thread; cleared when
+  // the thread is opened.
+  const [unreadCounts, setUnreadCounts] = useState({});
 
   // Thread modal
   const [selected, setSelected] = useState(null); // conversation or null
@@ -162,15 +183,25 @@ const PublicChatTab = () => {
       .on('broadcast', { event: 'conversation_updated' }, ({ payload }) => {
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === payload.id);
+          const prevRow = idx !== -1 ? prev[idx] : null;
+
+          // A new visitor message is any update where the sender of the
+          // latest message is the visitor and the message count grew
+          // past what we already had on file for this row. This fires on
+          // *every* visitor message, not just the first one that escalates
+          // a conversation — that's the whole point of the unread count.
+          const isNewVisitorMessage =
+            payload.lastSender === 'visitor' &&
+            (!prevRow || (payload.messageCount ?? 0) > (prevRow.messageCount ?? 0));
+
+          if (isNewVisitorMessage && selectedIdRef.current !== payload.id) {
+            playPing();
+            setUnreadCounts((u) => ({ ...u, [payload.id]: (u[payload.id] || 0) + 1 }));
+          }
+
           if (idx === -1) return [payload, ...prev];
           const next = [...prev];
-          const wasEscalated = next[idx].escalated;
           next[idx] = payload;
-          // A brand-new "needs reply" (visitor message with no open thread)
-          // deserves a ding even if the thread isn't currently open.
-          if (!wasEscalated && payload.escalated && selectedIdRef.current !== payload.id) {
-            playPing();
-          }
           return next;
         });
       })
@@ -184,7 +215,8 @@ const PublicChatTab = () => {
   const counts = useMemo(() => ({
     open: conversations.filter(c => c.status !== 'closed').length,
     escalated: conversations.filter(c => c.escalated && c.status !== 'closed').length,
-  }), [conversations]);
+    unread: Object.values(unreadCounts).reduce((sum, n) => sum + n, 0),
+  }), [conversations, unreadCounts]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -230,6 +262,13 @@ const PublicChatTab = () => {
     setShowCloseForm(false);
     setCloseReason('');
     threadCountRef.current = 0;
+    // Opening the thread is the "read" action — clear its unread count.
+    setUnreadCounts((u) => {
+      if (!u[conv.id]) return u;
+      const next = { ...u };
+      delete next[conv.id];
+      return next;
+    });
     await fetchMessages(conv.id);
   };
 
@@ -349,6 +388,7 @@ const PublicChatTab = () => {
           <h1 className="text-2xl font-bold text-gray-900">Public Chat</h1>
           <p className="text-sm text-gray-500 mt-1">
             Website visitor conversations · {counts.open} open · {counts.escalated} awaiting a reply
+            {counts.unread > 0 && <> · {counts.unread} unread</>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -397,12 +437,18 @@ const PublicChatTab = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(conv => {
             const isClosed = conv.status === 'closed';
+            const unread = unreadCounts[conv.id] || 0;
             return (
               <button
                 key={conv.id}
                 onClick={() => openThread(conv)}
-                className="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow flex flex-col h-full"
+                className="relative text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow flex flex-col h-full"
               >
+                {unread > 0 && (
+                  <span className="absolute -top-2 -right-2 h-6 min-w-6 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-sm">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <MessagesSquare className={`h-4 w-4 flex-shrink-0 ${isClosed ? 'text-gray-400' : 'text-blue-500'}`} />
