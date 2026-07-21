@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import {
   MessagesSquare, Search, RefreshCw, Loader, X, AlertTriangle, Send,
   Headset, User, Mail, Phone, Clock, Globe, XCircle,
@@ -10,25 +11,30 @@ import { format, formatDistanceToNow } from 'date-fns';
  * PublicChatTab — superadmin view for conversations started from the public
  * website's ChatWidget.
  *
- * THIS REVISION ADDS:
- *   • VISITOR-TYPING INDICATOR — the thread endpoint now returns
- *     `visitor_typing` (fresh visitor_typing_at on the row); an animated
- *     "Visitor is typing…" bubble shows in the open thread.
- *   • AGENT TYPING PINGS — while the agent composes a reply the tab sends a
- *     throttled POST /superadmin/public-chats/:id/typing so the visitor's
- *     widget can show its typing bubble.
- *   • NEW-MESSAGE SOUND — a soft ding plays when (a) a new visitor message
- *     lands in the open thread, or (b) the silent list refresh finds more
- *     "Needs reply" conversations than before.
- *   • If the poll finds the conversation was closed elsewhere, the composer
- *     hides automatically.
+ * REALTIME REVISION — polling replaced with Supabase Realtime.
+ *
+ *   • Grid ("Needs reply" cards): subscribed to a single shared broadcast
+ *     channel `chat:admin:list`. The backend broadcasts a
+ *     'conversation_created' or 'conversation_updated' event to it every
+ *     time a conversation changes (new visitor message, agent reply, close).
+ *     The grid patches the one affected card in place — no more 15s poll
+ *     across every agent's browser.
+ *   • Open thread: subscribed to `chat:conversation:{id}` for
+ *     'messages_updated' events (replaces the 5s thread poll) and 'typing'
+ *     events broadcast directly by the visitor's widget.
+ *   • "Agent is typing" is sent the same way — a direct broadcast from this
+ *     tab, no backend round trip.
+ *   • A long (2 min) background refresh of the list stays as a safety net in
+ *     case a broadcast is ever missed — not the primary update path.
+ *
+ * SETUP REQUIRED: npm install @supabase/supabase-js; env vars
+ * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (same as the public widget).
  *
  * Backend endpoints (public_chat_routes.js):
  *   GET  /superadmin/public-chats
- *   GET  /superadmin/public-chats/:id/messages        -> + visitor_typing
- *   POST /superadmin/public-chats/:id/messages        { text }
- *   POST /superadmin/public-chats/:id/typing          (agent typing ping)
- *   POST /superadmin/public-chats/:id/close           { reason }
+ *   GET  /superadmin/public-chats/:id/messages
+ *   POST /superadmin/public-chats/:id/messages   { text }
+ *   POST /superadmin/public-chats/:id/close      { reason }
  */
 
 // ─── API base + superadmin-scoped fetch (self-contained) ─────────────────────
@@ -49,7 +55,6 @@ const pcFetch = async (url, options = {}) => {
     window.location.href = '/superadmin/login';
     throw new Error('Session expired');
   }
-  if (res.status === 204) return {};
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || err.error || `HTTP ${res.status}`);
@@ -57,9 +62,16 @@ const pcFetch = async (url, options = {}) => {
   return res.json();
 };
 
-const THREAD_POLL_MS = 5000;
-const LIST_POLL_MS = 15000;
-const TYPING_PING_MS = 2500; // min gap between "agent is typing" pings
+// ─── Supabase Realtime client ─────────────────────────────────────────────
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+const ADMIN_LIST_CHANNEL = 'chat:admin:list';
+const LIST_SAFETY_NET_MS = 120000; // background refresh, not the primary path
+const TYPING_BROADCAST_MS = 2000;
+const TYPING_STALE_MS = 5000;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const PublicChatTab = () => {
@@ -80,16 +92,17 @@ const PublicChatTab = () => {
   const [closeReason, setCloseReason] = useState('');
   const [showCloseForm, setShowCloseForm] = useState(false);
 
-  const pollRef = useRef(null);
   const bottomRef = useRef(null);
-
-  // Notification-sound bookkeeping
   const audioCtxRef = useRef(null);
-  const threadCountRef = useRef(0); // messages seen in the open thread
-  const escalatedBaselineRef = useRef(null); // "Needs reply" count baseline
-  const lastTypingPingRef = useRef(0);
+  const threadChannelRef = useRef(null);
+  const selectedIdRef = useRef(null);
+  const threadCountRef = useRef(0);
+  const lastTypingBroadcastRef = useRef(0);
+  const typingStaleTimerRef = useRef(null);
 
-  // ── Sound: soft ding when a visitor message lands ─────────────────────────
+  useEffect(() => { selectedIdRef.current = selected?.id ?? null; }, [selected]);
+
+  // ── Sound: soft ding on new visitor activity ──────────────────────────────
   const playPing = async () => {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -101,21 +114,19 @@ const PublicChatTab = () => {
       if (ctx.state === 'suspended') {
         try { await ctx.resume(); } catch { /* still locked */ }
       }
-      if (ctx.state !== 'running') return; // needs one user gesture first
+      if (ctx.state !== 'running') return; // needs one prior user gesture
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now); // A5 — distinct from the widget
+      osc.frequency.setValueAtTime(880, now); // A5 — distinct from the widget's tone
       gain.gain.setValueAtTime(0.22, now);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.55);
-    } catch {
-      /* audio must never break the dashboard */
-    }
+    } catch { /* audio must never break the dashboard */ }
   };
 
   // ── Conversation list ─────────────────────────────────────────────────────
@@ -126,13 +137,6 @@ const PublicChatTab = () => {
       const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
       setConversations(list);
       setError(null);
-
-      // Ding when the number of "Needs reply" conversations grows.
-      const escalated = list.filter(c => c.escalated && c.status !== 'closed').length;
-      if (escalatedBaselineRef.current !== null && escalated > escalatedBaselineRef.current) {
-        playPing();
-      }
-      escalatedBaselineRef.current = escalated;
     } catch (e) {
       if (!silent) setError(e.message || 'Failed to load public chats');
     } finally {
@@ -142,58 +146,40 @@ const PublicChatTab = () => {
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
-  // Silent list refresh so new visitor messages / badges show up live
+  // Long-interval safety net only — Realtime below is the primary path.
   useEffect(() => {
-    const id = setInterval(() => fetchConversations(true), LIST_POLL_MS);
+    const id = setInterval(() => fetchConversations(true), LIST_SAFETY_NET_MS);
     return () => clearInterval(id);
   }, [fetchConversations]);
 
-  // ── Open thread ───────────────────────────────────────────────────────────
-  const fetchMessages = useCallback(async (conversationId, silent = false) => {
-    if (!conversationId) return;
-    if (!silent) setThreadLoading(true);
-    try {
-      const data = await pcFetch(`/superadmin/public-chats/${conversationId}/messages`);
-      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.messages) ? data.messages : []);
-
-      // Ding for visitor messages that arrived since the last poll.
-      if (silent) {
-        const fresh = list.slice(threadCountRef.current);
-        if (fresh.some(m => m.sender === 'visitor')) playPing();
-      }
-      threadCountRef.current = list.length;
-
-      setMessages(list);
-      setVisitorTyping(Boolean(data?.visitor_typing) && data?.status !== 'closed');
-
-      // If it was closed elsewhere, hide the composer live.
-      if (data?.status === 'closed') {
-        setSelected(s => (s && s.id === conversationId ? { ...s, status: 'closed' } : s));
-        setVisitorTyping(false);
-      }
-    } catch (e) {
-      if (!silent) toast.error(e.message || 'Failed to load messages');
-    } finally {
-      if (!silent) setThreadLoading(false);
-    }
-  }, []);
-
-  // Poll the open thread every 5s so new visitor messages + typing appear live
+  // Live grid updates: one shared channel, patched in place per event.
   useEffect(() => {
-    if (!selected) return undefined;
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => fetchMessages(selected.id, true), THREAD_POLL_MS);
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, [selected, fetchMessages]);
+    const channel = supabase
+      .channel(ADMIN_LIST_CHANNEL)
+      .on('broadcast', { event: 'conversation_created' }, ({ payload }) => {
+        setConversations((prev) => [payload, ...prev.filter((c) => c.id !== payload.id)]);
+      })
+      .on('broadcast', { event: 'conversation_updated' }, ({ payload }) => {
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === payload.id);
+          if (idx === -1) return [payload, ...prev];
+          const next = [...prev];
+          const wasEscalated = next[idx].escalated;
+          next[idx] = payload;
+          // A brand-new "needs reply" (visitor message with no open thread)
+          // deserves a ding even if the thread isn't currently open.
+          if (!wasEscalated && payload.escalated && selectedIdRef.current !== payload.id) {
+            playPing();
+          }
+          return next;
+        });
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') fetchConversations(true); // resync after reconnect
+      });
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, visitorTyping]);
+    return () => supabase.removeChannel(channel);
+  }, [fetchConversations]);
 
   const counts = useMemo(() => ({
     open: conversations.filter(c => c.status !== 'closed').length,
@@ -216,6 +202,26 @@ const PublicChatTab = () => {
     });
   }, [conversations, search, filterStatus]);
 
+  // ── Open thread ───────────────────────────────────────────────────────────
+  const fetchMessages = useCallback(async (conversationId, silent = false) => {
+    if (!conversationId) return;
+    if (!silent) setThreadLoading(true);
+    try {
+      const data = await pcFetch(`/superadmin/public-chats/${conversationId}/messages`);
+      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.messages) ? data.messages : []);
+      threadCountRef.current = list.length;
+      setMessages(list);
+      if (data?.status === 'closed') {
+        setSelected((s) => (s && s.id === conversationId ? { ...s, status: 'closed' } : s));
+        setVisitorTyping(false);
+      }
+    } catch (e) {
+      if (!silent) toast.error(e.message || 'Failed to load messages');
+    } finally {
+      if (!silent) setThreadLoading(false);
+    }
+  }, []);
+
   const openThread = async (conv) => {
     setSelected(conv);
     setMessages([]);
@@ -223,9 +229,47 @@ const PublicChatTab = () => {
     setReply('');
     setShowCloseForm(false);
     setCloseReason('');
-    threadCountRef.current = 0; // first (non-silent) load sets the baseline
+    threadCountRef.current = 0;
     await fetchMessages(conv.id);
   };
+
+  // Subscribe to the open thread's channel; replaces the 5s thread poll.
+  useEffect(() => {
+    if (!selected) return undefined;
+
+    const channel = supabase
+      .channel(`chat:conversation:${selected.id}`)
+      .on('broadcast', { event: 'messages_updated' }, ({ payload }) => {
+        threadCountRef.current = payload.messages.length;
+        setMessages(payload.messages);
+        if (payload.status === 'closed') {
+          setSelected((s) => (s ? { ...s, status: 'closed' } : s));
+          setVisitorTyping(false);
+        }
+      })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload.sender !== 'visitor') return;
+        setVisitorTyping(true);
+        if (typingStaleTimerRef.current) clearTimeout(typingStaleTimerRef.current);
+        typingStaleTimerRef.current = setTimeout(() => setVisitorTyping(false), TYPING_STALE_MS);
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') fetchMessages(selected.id, true); // resync after reconnect
+      });
+
+    threadChannelRef.current = channel;
+
+    return () => {
+      if (typingStaleTimerRef.current) clearTimeout(typingStaleTimerRef.current);
+      supabase.removeChannel(channel);
+      threadChannelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, visitorTyping]);
 
   const closeModal = () => {
     setSelected(null);
@@ -234,22 +278,20 @@ const PublicChatTab = () => {
     setReply('');
     setShowCloseForm(false);
     setCloseReason('');
-    fetchConversations(true); // keep list badges in sync after replying
   };
 
-  // ── Agent typing pings (throttled) ───────────────────────────────────────
-  const sendTypingPing = () => {
-    if (!selected || selected.status === 'closed') return;
+  // ── Agent typing — direct broadcast, no backend round trip ────────────────
+  const broadcastTyping = () => {
+    if (!threadChannelRef.current || selected?.status === 'closed') return;
     const now = Date.now();
-    if (now - lastTypingPingRef.current < TYPING_PING_MS) return;
-    lastTypingPingRef.current = now;
-    pcFetch(`/superadmin/public-chats/${selected.id}/typing`, { method: 'POST' })
-      .catch(() => { /* best-effort */ });
+    if (now - lastTypingBroadcastRef.current < TYPING_BROADCAST_MS) return;
+    lastTypingBroadcastRef.current = now;
+    threadChannelRef.current.send({ type: 'broadcast', event: 'typing', payload: { sender: 'agent' } });
   };
 
   const handleReplyChange = (e) => {
     setReply(e.target.value);
-    if (e.target.value.trim()) sendTypingPing();
+    if (e.target.value.trim()) broadcastTyping();
   };
 
   const handleSendReply = async () => {
@@ -285,7 +327,6 @@ const PublicChatTab = () => {
       });
       toast.success('Conversation closed');
       closeModal();
-      fetchConversations();
     } catch (e) {
       toast.error(e.message || 'Failed to close conversation');
     } finally {
