@@ -17,37 +17,42 @@ import {
 /**
  * ChatWidget — visitor ↔ agent live chat for Umrah Market.
  *
- * REALTIME REVISION — polling replaced with Supabase Realtime.
+ * REALTIME REVISION 3 — direct P2P message delivery, same channel typing uses.
  *
- * WHY: the previous version polled GET /messages every 4s per open tab.
- * At scale that's constant wasted request volume (almost every poll finds
- * nothing new) and it's what pushed you toward rate-limit territory. This
- * version:
+ * Previously a sent message only reached the agent after a full round trip
+ * through the backend: REST call -> Postgres write -> backend broadcasts
+ * 'messages_updated'. That backend hop is exactly the thing that can stall
+ * (cold starts, spin-down, a dead cached socket) — see the REALTIME
+ * REVISION 2 notes in publicChat.js.
  *
- *   1. Still starts a conversation and sends messages over the REST API
- *      (unchanged) — writes need server-side validation, sanitization, and
- *      the closed-conversation check, so they stay on the server.
- *   2. After the server persists a message, it BROADCASTS the update over a
- *      Supabase Realtime channel named `chat:conversation:{id}`. Every
- *      client (this widget, the agent dashboard) subscribed to that channel
- *      receives it instantly — no polling loop.
- *   3. TYPING is fully client-to-client: this widget broadcasts a 'typing'
- *      event directly over the same channel when the visitor types. No
- *      round trip to the backend at all — typing is ephemeral, so there's
- *      nothing to persist or validate.
- *   4. A GET /messages fetch still happens (a) on first mount/restore, and
- *      (b) whenever the Realtime channel reconnects or the tab regains
- *      focus — a reconciliation safety net in case an event was missed
- *      while offline. This is occasional, not a loop.
+ * Typing never had this problem because it's a direct browser-to-browser
+ * broadcast that skips the backend entirely. This revision gives sent
+ * messages the same direct path:
+ *
+ *   1. On send, generate the message's id client-side (crypto.randomUUID)
+ *      and broadcast it immediately on `chat:conversation:{id}` as a
+ *      'message_sent' event — if the agent's thread is open, they see it
+ *      the instant it's sent, same as typing.
+ *   2. Also broadcast a lightweight 'visitor_message' event on the shared
+ *      `chat:admin:list` channel, so an agent WITHOUT the thread open still
+ *      gets an instant grid preview update + unread badge + ping.
+ *   3. The REST call to the backend still happens right after, unchanged
+ *      in spirit — it's what persists the message and is the source of
+ *      truth. It's passed the *same* id generated in step 1, so the
+ *      backend persists the message under that id instead of minting a
+ *      new one. That's what lets every path (direct broadcast, the
+ *      backend's own broadcast, a later reconcile fetch) recognize "this
+ *      is the same message" and never render it twice.
+ *
+ * The backend's 'messages_updated' broadcast and the reconciliation fetch
+ * are still very much in play — they're now the backup/confirming path
+ * instead of the only path. If the direct broadcast is somehow missed
+ * (a tab that was reconnecting right at that moment), the reconcile fetch
+ * on focus/reconnect still catches it.
  *
  * SETUP REQUIRED:
  *   - npm install @supabase/supabase-js
  *   - Env vars: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
- *   - The channel name is scoped by the conversation's UUID, which only the
- *     visitor (via sessionStorage) and authenticated agents ever see — same
- *     trust boundary the REST endpoints already relied on. If you want
- *     stronger guarantees, enable Supabase Realtime Authorization (private
- *     channels gated by a Supabase JWT) — happy to wire that up too.
  */
 
 // ─── API base (writes) ────────────────────────────────────────────────────
@@ -66,22 +71,31 @@ const apiFetch = async (url, options = {}) => {
   return data;
 };
 
-// ─── Supabase Realtime client (reads/subscriptions only — no service role) ──
+// ─── Supabase Realtime client (reads/subscriptions + direct broadcasts) ────
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-const BELL_DELAY_MS = 4000; // first welcome-bell attempt after mount
-const BELL_WINDOW_MS = 30000; // chime allowed only within this window
-const BELL_SESSION_KEY = 'um_chat_bell_played'; // once-per-visit flag
-const CONVERSATION_SESSION_KEY = 'um_chat_conversation'; // { id, name }
-const ICON_SWAP_MS = 5000; // launcher alternates icon <-> "MESSAGE US"
-const TYPING_BROADCAST_MS = 2000; // min gap between outgoing typing events
-const TYPING_STALE_MS = 5000; // hide "agent is typing" if no event refreshes it
+const ADMIN_LIST_CHANNEL = 'chat:admin:list';
+
+const BELL_DELAY_MS = 4000;
+const BELL_WINDOW_MS = 30000;
+const BELL_SESSION_KEY = 'um_chat_bell_played';
+const CONVERSATION_SESSION_KEY = 'um_chat_conversation';
+const ICON_SWAP_MS = 5000;
+const TYPING_BROADCAST_MS = 2000;
+const TYPING_STALE_MS = 5000;
 
 const PHONE_REGEX = /^\+?[0-9][0-9\s\-()]{6,18}[0-9]$/;
 const sanitizePhoneInput = (value) => value.replace(/[^\d\s+\-()]/g, '');
+
+/** Client-side message id, shared between the direct broadcast and the REST
+ *  persist call so both paths agree on "this is the same message." */
+const genId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const readStoredConversation = () => {
   try {
@@ -127,8 +141,10 @@ const ChatWidget = () => {
   const lastTypingBroadcastRef = useRef(0);
   const typingStaleTimerRef = useRef(null);
   const channelRef = useRef(null);
+  const adminChannelRef = useRef(null);
   const conversationIdRef = useRef(conversationId);
   const conversationClosedRef = useRef(false);
+  const notifiedAgentMsgIdsRef = useRef(new Set());
 
   useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
   useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
@@ -268,9 +284,25 @@ const ChatWidget = () => {
   const handlePhoneChange = (e) => setVisitorPhone(sanitizePhoneInput(e.target.value));
 
   /**
+   * Notify on an agent message exactly once, regardless of which path
+   * delivered it (direct 'message_sent' broadcast, or a fresh message
+   * surfaced by a 'messages_updated' full sync). Dedupe is by message id,
+   * not by count — count-based dedupe breaks the moment the direct
+   * broadcast and the backend sync disagree on ordering.
+   */
+  const maybeNotifyAgentMessage = useCallback((msg) => {
+    if (!msg || msg.sender !== 'agent') return;
+    if (notifiedAgentMsgIdsRef.current.has(msg.id)) return;
+    notifiedAgentMsgIdsRef.current.add(msg.id);
+    playMessagePing();
+    if (!isOpenRef.current) setUnreadCount((c) => c + 1);
+    setAgentTyping(false); // the reply superseded the typing indicator
+  }, []);
+
+  /**
    * Apply a fresh messages array (from the initial GET, a reconciliation
-   * fetch, or a Realtime broadcast payload — all three use this same shape).
-   * `dropIds` removes local optimistic bubbles once the server copy lands.
+   * fetch, or a Realtime 'messages_updated' broadcast — all three use this
+   * same shape).
    */
   const applyServerMessages = useCallback((serverMessages, dropIds = []) => {
     if (!Array.isArray(serverMessages)) return;
@@ -292,14 +324,9 @@ const ChatWidget = () => {
     }
 
     const fresh = serverMessages.slice(serverCountRef.current);
-    const newAgentReplies = fresh.filter((m) => m.sender === 'agent').length;
-    if (newAgentReplies > 0) {
-      playMessagePing();
-      if (!isOpenRef.current) setUnreadCount((c) => c + newAgentReplies);
-      setAgentTyping(false); // the reply superseded the typing indicator
-    }
+    fresh.filter((m) => m.sender === 'agent').forEach(maybeNotifyAgentMessage);
     serverCountRef.current = serverMessages.length;
-  }, []);
+  }, [maybeNotifyAgentMessage]);
 
   /** One-off reconciliation fetch — used on mount, reconnect, and focus. */
   const reconcile = useCallback(async () => {
@@ -313,7 +340,7 @@ const ChatWidget = () => {
   }, [applyServerMessages]);
 
   // ---------------------------------------------------------------
-  // Realtime subscription — replaces the old 4s polling loop
+  // Realtime subscription
   // ---------------------------------------------------------------
   useEffect(() => {
     if (!conversationId) return undefined;
@@ -327,6 +354,13 @@ const ChatWidget = () => {
         applyServerMessages(payload.messages);
         if (payload.status === 'closed') setConversationClosed(true);
       })
+      .on('broadcast', { event: 'message_sent' }, ({ payload }) => {
+        // Direct browser-to-browser delivery — same channel typing uses.
+        const msg = payload.message;
+        if (!msg) return;
+        setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+        maybeNotifyAgentMessage(msg);
+      })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload.sender !== 'agent') return;
         setAgentTyping(true);
@@ -334,12 +368,17 @@ const ChatWidget = () => {
         typingStaleTimerRef.current = setTimeout(() => setAgentTyping(false), TYPING_STALE_MS);
       })
       .subscribe((status) => {
-        // Reconnects (e.g. after a laptop sleeps or wifi drops) can miss
-        // events — resync once the channel is live again.
         if (status === 'SUBSCRIBED') reconcile();
       });
 
     channelRef.current = channel;
+
+    // A second, send-only channel to the shared admin-list topic — lets a
+    // visitor message reach the dashboard grid instantly even when no
+    // agent has this specific thread open (typing has no equivalent need,
+    // since a typing dot with nobody watching is meaningless).
+    const adminChannel = supabase.channel(ADMIN_LIST_CHANNEL).subscribe();
+    adminChannelRef.current = adminChannel;
 
     const onVisible = () => { if (document.visibilityState === 'visible') reconcile(); };
     window.addEventListener('focus', reconcile);
@@ -351,8 +390,10 @@ const ChatWidget = () => {
       if (typingStaleTimerRef.current) clearTimeout(typingStaleTimerRef.current);
       supabase.removeChannel(channel);
       channelRef.current = null;
+      supabase.removeChannel(adminChannel);
+      adminChannelRef.current = null;
     };
-  }, [conversationId, reconcile, applyServerMessages]);
+  }, [conversationId, reconcile, applyServerMessages, maybeNotifyAgentMessage]);
 
   // ---------------------------------------------------------------
   // Typing — pure client-to-client broadcast, no backend involved
@@ -419,31 +460,45 @@ const ChatWidget = () => {
   };
 
   // ---------------------------------------------------------------
-  // BACKEND: send a visitor message
-  // The server broadcasts the update to the agent side; our own bubble is
-  // applied immediately from the response, so we don't wait for the echo.
+  // Send a visitor message — direct broadcast first, backend persist second
   // ---------------------------------------------------------------
   const sendMessage = async (e) => {
     e?.preventDefault?.();
     const text = draft.trim();
     if (!text || !conversationId || conversationClosed) return;
 
-    const tempId = `local-${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      { id: tempId, sender: 'visitor', text, created_at: new Date().toISOString(), status: 'sending' },
-    ]);
+    const id = genId();
+    const localMsg = { id, sender: 'visitor', text, created_at: new Date().toISOString(), status: 'sending' };
+    setMessages((prev) => [...prev, localMsg]);
     setDraft('');
 
+    // 1. Direct delivery — same channel typing already uses. Reaches the
+    //    agent's open thread instantly, independent of the backend.
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'message_sent',
+      payload: { message: { id, sender: 'visitor', text, created_at: localMsg.created_at } },
+    });
+
+    // 2. Lightweight ping to the admin grid, for an agent without this
+    //    thread open.
+    adminChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'visitor_message',
+      payload: { id: conversationId, messageId: id, text, visitorName, createdAt: localMsg.created_at },
+    });
+
+    // 3. Persist — same id, so the backend's own copy and broadcasts are
+    //    recognized as the same message everywhere.
     try {
       const data = await apiFetch(`/chat/conversations/${conversationId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ id, text }),
       });
-      applyServerMessages(data.messages, [tempId]);
+      applyServerMessages(data.messages, [id]);
     } catch (err) {
       if (/closed/i.test(err.message || '')) setConversationClosed(true);
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m)));
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: 'failed' } : m)));
     }
   };
 
