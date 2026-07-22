@@ -827,26 +827,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                   <div className="space-y-1"><CheckCircle className="h-5 w-5 text-emerald-600 mx-auto" /><div className="text-xs font-medium text-gray-900">Best Price</div><div className="text-xs text-gray-500">Guaranteed</div></div>
                 </div>
               </div>
-
-              {/* Need help */}
-              <div className="mt-6 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6">
-                <div className="flex items-start mb-4">
-                  <Info className="h-5 w-5 text-emerald-600 mt-0.5 mr-2 flex-shrink-0" />
-                  <div><h3 className="font-bold text-gray-900 mb-1">Need assistance?</h3><p className="text-sm text-gray-600">Our Umrah experts are available 24/7</p></div>
-                </div>
-                <div className="space-y-3">
-                  <button className="w-full py-3 bg-white border border-emerald-600 text-emerald-600 font-medium rounded-lg hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2">
-                    <Phone className="h-4 w-4" />Call +966 12 345 6789
-                  </button>
-                  <button className="w-full py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
-                    <Mail className="h-4 w-4" />Email us
-                  </button>
-                </div>
-                <div className="mt-4 pt-4 border-t border-emerald-100 flex items-center text-sm text-gray-600">
-                  <Clock className="h-4 w-4 mr-2 text-emerald-600" />
-                  Response: <span className="font-medium text-emerald-700 ml-1">Under 5 minutes</span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
