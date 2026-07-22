@@ -353,7 +353,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   const [cardInfo,         setCardInfo]         = useState({ number: '', expiry: '', cvc: '', name: '' });
   const [mpesaPhone,       setMpesaPhone]       = useState('');
   const [mpesaPin,         setMpesaPin]         = useState(['', '', '', '']);
-  const [guests,           setGuests]           = useState({ adults: 2, children: 0 });
+  const [guests,           setGuests]           = useState({ adults: 1, children: 0 });
 
   const pinRefs = [useRef(), useRef(), useRef(), useRef()];
 
