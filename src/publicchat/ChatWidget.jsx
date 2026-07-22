@@ -17,38 +17,32 @@ import {
 /**
  * ChatWidget — visitor ↔ agent live chat for Umrah Market.
  *
- * REALTIME REVISION 3 — direct P2P message delivery, same channel typing uses.
+ * REALTIME REVISION 6 — resume by identity, doorbell sound.
  *
- * Previously a sent message only reached the agent after a full round trip
- * through the backend: REST call -> Postgres write -> backend broadcasts
- * 'messages_updated'. That backend hop is exactly the thing that can stall
- * (cold starts, spin-down, a dead cached socket) — see the REALTIME
- * REVISION 2 notes in publicChat.js.
+ * startConversation() on the backend now resumes an existing non-closed
+ * conversation for the same email+phone instead of always creating a new
+ * one. Nothing changes here on the frontend for that — the response shape
+ * is identical whether resumed or freshly created (conversation_id,
+ * status, messages), so the existing success handler in startConversation
+ * below just works either way. A `resumed` flag comes back too, in case
+ * you want to branch on it later (e.g. skip the bell), but it's not
+ * required for correctness.
  *
- * Typing never had this problem because it's a direct browser-to-browser
- * broadcast that skips the backend entirely. This revision gives sent
- * messages the same direct path:
+ * SOUND: playBell() (the one-time attention-getter shortly after the
+ * widget mounts) and playMessagePing() (fires on every new agent message)
+ * both now play the same synthesized "ding-dong" doorbell chime via
+ * playDoorbell(), instead of two different single-tone beeps. Same sound
+ * everywhere a notification fires, on both sides of the chat — see the
+ * matching change in PublicChatTab.jsx.
  *
- *   1. On send, generate the message's id client-side (crypto.randomUUID)
- *      and broadcast it immediately on `chat:conversation:{id}` as a
- *      'message_sent' event — if the agent's thread is open, they see it
- *      the instant it's sent, same as typing.
- *   2. Also broadcast a lightweight 'visitor_message' event on the shared
- *      `chat:admin:list` channel, so an agent WITHOUT the thread open still
- *      gets an instant grid preview update + unread badge + ping.
- *   3. The REST call to the backend still happens right after, unchanged
- *      in spirit — it's what persists the message and is the source of
- *      truth. It's passed the *same* id generated in step 1, so the
- *      backend persists the message under that id instead of minting a
- *      new one. That's what lets every path (direct broadcast, the
- *      backend's own broadcast, a later reconcile fetch) recognize "this
- *      is the same message" and never render it twice.
- *
- * The backend's 'messages_updated' broadcast and the reconciliation fetch
- * are still very much in play — they're now the backup/confirming path
- * instead of the only path. If the direct broadcast is somehow missed
- * (a tab that was reconnecting right at that moment), the reconcile fetch
- * on focus/reconnect still catches it.
+ * REALTIME REVISION 3 (still in effect) — direct P2P message delivery,
+ * same channel typing uses. On send: broadcast 'message_sent' directly on
+ * `chat:conversation:{id}` (instant if the agent's thread is open) and a
+ * lightweight 'visitor_message' on the shared `chat:admin:list` channel
+ * (instant grid/unread update even without the thread open), THEN persist
+ * via REST using the same client-generated id so every path — direct
+ * broadcast, the backend's own broadcast, a later reconcile fetch —
+ * recognizes it as the same message and never renders it twice.
  *
  * SETUP REQUIRED:
  *   - npm install @supabase/supabase-js
@@ -96,6 +90,47 @@ const genId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+/**
+ * Classic two-note "ding-dong" doorbell: a perfect fourth down (G5 -> D5),
+ * each note a sine fundamental plus a soft, quieter octave overtone for a
+ * bell-like timbre rather than a flat beep. Used for every notification
+ * sound in this widget — the one-time attention bell and every new-message
+ * ping — so there's one consistent sound instead of several different
+ * tones.
+ */
+const playDoorbell = (ctx) => {
+  const now = ctx.currentTime;
+  const notes = [
+    { freq: 784.0, start: 0.0, dur: 0.9, gain: 0.26 },   // "ding" — G5
+    { freq: 587.33, start: 0.26, dur: 1.1, gain: 0.24 },  // "dong" — D5
+  ];
+  notes.forEach(({ freq, start, dur, gain }) => {
+    const osc = ctx.createOscillator();
+    const overtone = ctx.createOscillator();
+    const g = ctx.createGain();
+    const og = ctx.createGain();
+
+    osc.type = 'sine';
+    overtone.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now + start);
+    overtone.frequency.setValueAtTime(freq * 2, now + start);
+
+    g.gain.setValueAtTime(0, now + start);
+    g.gain.linearRampToValueAtTime(gain, now + start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+
+    og.gain.setValueAtTime(0, now + start);
+    og.gain.linearRampToValueAtTime(gain * 0.15, now + start + 0.02);
+    og.gain.exponentialRampToValueAtTime(0.0001, now + start + dur * 0.6);
+
+    osc.connect(g); g.connect(ctx.destination);
+    overtone.connect(og); og.connect(ctx.destination);
+
+    osc.start(now + start); osc.stop(now + start + dur + 0.05);
+    overtone.start(now + start); overtone.stop(now + start + dur * 0.6 + 0.05);
+  });
+};
 
 const readStoredConversation = () => {
   try {
@@ -182,17 +217,7 @@ const ChatWidget = () => {
     const ctx = await getAudioCtx();
     if (!ctx) return;
     try {
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1046.5, now);
-      gain.gain.setValueAtTime(0.22, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.6);
+      playDoorbell(ctx);
     } catch { /* audio must never break the chat */ }
   };
 
@@ -211,24 +236,7 @@ const ChatWidget = () => {
     const ctx = await getAudioCtx();
     if (!ctx) return false;
     try {
-      const now = ctx.currentTime;
-      const master = ctx.createGain();
-      master.gain.setValueAtTime(0.35, now);
-      master.connect(ctx.destination);
-      [0, 0.28].forEach((offset) => {
-        [[1318.5, 0.3], [1975.5, 0.12]].forEach(([freq, vol]) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, now + offset);
-          gain.gain.setValueAtTime(vol, now + offset);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.9);
-          osc.connect(gain);
-          gain.connect(master);
-          osc.start(now + offset);
-          osc.stop(now + offset + 1);
-        });
-      });
+      playDoorbell(ctx);
       markBellPlayed();
       return true;
     } catch {
@@ -412,7 +420,8 @@ const ChatWidget = () => {
   };
 
   // ---------------------------------------------------------------
-  // BACKEND: start a conversation (unchanged — needs server validation)
+  // BACKEND: start (or resume) a conversation — needs server validation
+  // and the email+phone lookup, so this stays a REST call.
   // ---------------------------------------------------------------
   const startConversation = async (e) => {
     e?.preventDefault?.();
@@ -441,7 +450,9 @@ const ChatWidget = () => {
         }),
       });
 
-      hydratedRef.current = true; // greeting is the baseline, not "new"
+      // Response shape is identical whether the backend resumed an
+      // existing conversation or created a new one — no branching needed.
+      hydratedRef.current = true; // existing history is the baseline, not "new"
       serverCountRef.current = Array.isArray(data.messages) ? data.messages.length : 0;
       setMessages(Array.isArray(data.messages) ? data.messages : []);
       setConversationClosed(false);
