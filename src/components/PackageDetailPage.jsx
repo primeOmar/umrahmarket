@@ -1244,6 +1244,13 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
           pkg={bookingPkg}
           user={currentUser || userStore.get()}
           onClose={() => setBookingPkg(null)}
+          // Defense-in-depth backstop: BookingFlow itself checks for a
+          // valid user and calls this instead of proceeding if the session
+          // turned out to be invalid/expired by the time it mounted. Same
+          // recovery path as the normal guest “Book Now” click — open the
+          // auth modal, and onAuthSuccess below will call openBooking()
+          // again once login actually succeeds.
+          onRequireAuth={() => setShowAuthModal(true)}
           onSuccess={() => {
             // Signal the dashboard to open on the My Bookings tab.
             // BookingFlow will close itself after the face-photo step — don't

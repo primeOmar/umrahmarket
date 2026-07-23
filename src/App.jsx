@@ -360,6 +360,16 @@ function App() {
               <Footer />
             </>
           } />
+          {/* Fallback: if PESAPAL_CALLBACK_URL is ever misconfigured without the
+              packageId segment, still hit the verify page instead of falling
+              through to "*" → homepage. PaymentCallback already falls back to
+              the packageId stored in localStorage in this case. */}
+          <Route path="/payment/callback" element={
+            <>
+              <PaymentCallback />
+              <Footer />
+            </>
+          } />
 
           {/* ─────────────────────────────────────────────────────────────────── */}
           {/* SUPERADMIN ROUTES - Restricted Access                             */}

@@ -14,7 +14,7 @@ import {
   Dumbbell, Utensils, Tv, Wind, Droplets, Bed, Bath,
   Maximize2, Minus, Plus, Headphones, Loader2, Info
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { userStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
 import BookingFlow from './BookingFlow';
@@ -1370,6 +1370,7 @@ const MessagesView = ({ bookings, user, darkMode, onExplore }) => {
 // ==================== MAIN CLIENT DASHBOARD ====================
 const ClientDashboard = ({ user, onLogout }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toasts, showToast, removeToast } = useToast();
   const [activeTab, setActiveTab] = useState(() => {
     // If user was just redirected back from a successful payment, land on bookings
@@ -1523,25 +1524,63 @@ const ClientDashboard = ({ user, onLogout }) => {
   ];
 
   const handleViewPackage = (pkg) => navigate(`/package/${pkg.id}`);
-  const handleBookPackage  = (pkg) => {
-    // ── Auth guard: never allow booking when session is gone ──
-    if (!user?.id) {
-      showToast('Your session has expired. Please sign in to book.', 'error');
-      setTimeout(() => { onLogout?.(); navigate('/'); }, 1500);
+ const handleBookPackage = async (pkg) => {
+  if (!user?.id) {
+    showToast('Your session has expired. Please sign in to book.', 'error');
+    setTimeout(() => { onLogout?.(); navigate('/'); }, 1500);
+    return;
+  }
+
+  // Check if user already has a confirmed/pending booking
+  const existing = bookings.find(b =>
+    String(b.package_id) === String(pkg.id) &&
+    ['confirmed', 'pending'].includes(b.status?.toLowerCase())
+  );
+  if (existing) {
+    showToast('You have already booked this package', 'info');
+    return;
+  }
+
+  // ── PASSPORT VERIFICATION GATE ──────────────────────────────────────────
+  try {
+    const status = await getPassportStatus(pkg.id);
+    if (!status?.verified) {
+      // Not verified → show the passport modal
+      setVerificationPkg(pkg);
+      setShowPassportVerification(true);
       return;
     }
-    // Check if user already has a confirmed or pending booking for this package
-    const existingBooking = bookings.find(b => 
-      String(b.package_id) === String(pkg.id) && 
-      ['confirmed', 'pending'].includes(b.status?.toLowerCase())
-    );
-    if (existingBooking) {
-      showToast('You have already booked this package', 'info');
-      return;
-    }
-    setBookingPkg(pkg);
-  };
+  } catch (err) {
+    // If the API call fails, assume not verified and show the modal
+    console.warn('[Passport check] failed, showing modal', err.message);
+    setVerificationPkg(pkg);
+    setShowPassportVerification(true);
+    return;
+  }
+
+  // Already verified → proceed to payment
+  setBookingPkg(pkg);
+};
   const handleViewBooking = (booking) => navigate(`/package/${booking.package_id ?? booking.package?.id}`);
+
+  // ── Deep-link: HeroSection's "Book Now" sends guests here as
+  // /client/dashboard?bookPackage=<id> once they're logged in. Open the
+  // booking flow for that package as soon as it's available, then strip the
+  // param so refresh/back doesn't reopen it.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const pkgId = params.get('bookPackage');
+    if (!pkgId || packagesLoading || !availablePackages?.length) return;
+
+    const pkg = availablePackages.find(p => String(p.id) === String(pkgId));
+    navigate(location.pathname, { replace: true }); // strip the query param either way
+
+    if (pkg) {
+      handleBookPackage(pkg);
+    } else {
+      showToast('That package could not be found.', 'error');
+    }
+  }, [location.search, packagesLoading, availablePackages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // isFavourited — checks by id (compare as strings to handle mixed types)
   const isFavourited = (pkgId) =>
