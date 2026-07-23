@@ -1,43 +1,65 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import {
   MessagesSquare, Search, RefreshCw, Loader, X, AlertTriangle, Send,
-  Headset, User, Mail, Clock, Globe, XCircle,
+  Headset, User, Mail, Phone, Clock, Globe, XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 
 /**
  * PublicChatTab — superadmin view for conversations started from the public
- * website's ChatWidget (visitor ↔ FAQ bot ↔ human agent).
+ * website's ChatWidget.
  *
- * Conversation shape expected from the backend:
- *   { id, visitorName, visitorEmail, status ('open'|'closed'), escalated,
- *     messageCount, lastMessage, lastActivity, pageUrl, createdAt }
+ * REALTIME REVISION 4 — unread badge is DB-backed, not per-browser state.
  *
- * Message shape:
- *   { id, sender ('visitor'|'agent'|'system'), text, created_at }
- *   (matches the public ChatWidget's message shape exactly)
+ * Previously `unreadCounts` was local React state, built up only from
+ * broadcasts a given tab happened to see. A second agent window, or a
+ * refreshed tab, started blank — there was no unread history to replay.
  *
- * BACKEND endpoints (TODO — implement in superadmin_routes.js; these pair
- * with the public widget's /api/chat/* touchpoints):
+ * Now each conversation's unread count comes from the server (`unreadCount`
+ * on the row, backed by a real `unread_count` column — see
+ * public_chat_unread_migration.sql). Every card just renders
+ * `conv.unreadCount` directly:
+ *   - On first load / refresh, it comes from `listConversations`.
+ *   - On a visitor message, the direct 'visitor_message' broadcast
+ *     optimistically bumps it by 1 for instant feedback, and the backend's
+ *     'conversation_updated' broadcast (which now carries the
+ *     authoritative DB value) overwrites it moments later — self-healing
+ *     if the two ever disagree.
+ *   - Opening a thread calls the new `/superadmin/public-chats/:id/read`
+ *     endpoint, which resets it to 0 in the DB and broadcasts that reset —
+ *     so every other agent window sees the badge clear too, not just the
+ *     one that opened it.
+ *
+ * `pingedMsgIdsRef` still exists, but now it only dedupes the notification
+ * *sound* (so the same message never chimes twice across the two delivery
+ * paths) — it no longer has anything to do with the badge's number.
+ *
+ * REALTIME REVISION 3 (still in effect) — a reply broadcasts directly to
+ * the visitor's widget the instant it's sent, over the same
+ * `chat:conversation:{id}` channel typing already uses; the backend
+ * REST + broadcast path is the durable/reconciling backup.
+ *
+ * SETUP REQUIRED: npm install @supabase/supabase-js; env vars
+ * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (same as the public widget).
+ *
+ * Backend endpoints (public_chat_routes.js):
  *   GET  /superadmin/public-chats
  *   GET  /superadmin/public-chats/:id/messages
- *   POST /superadmin/public-chats/:id/messages   { text }   -> stored as sender 'agent'
+ *   POST /superadmin/public-chats/:id/messages   { text, id? }
  *   POST /superadmin/public-chats/:id/close      { reason }
- *
- * While a thread is open, messages are polled every 5s (same pattern as
- * the booking ChatsTab). Until the routes exist, the tab shows a friendly
- * "backend not wired" notice. Token refresh is owned by the main
- * dashboard's saFetch; here a 401 simply bounces to the superadmin login.
+ *   POST /superadmin/public-chats/:id/read
  */
 
 // ─── API base + superadmin-scoped fetch (self-contained) ─────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-const BASE_API = _base.endsWith('/api') ? _base : `${_base}/api`;
+const BASE_API = _base.endsWith('/api/publicchat') ? _base : `${_base}/api/publicchat`;
 
 const pcFetch = async (url, options = {}) => {
   const res = await fetch(`${BASE_API}${url}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
@@ -55,7 +77,23 @@ const pcFetch = async (url, options = {}) => {
   return res.json();
 };
 
-const POLL_MS = 5000;
+// ─── Supabase Realtime client ─────────────────────────────────────────────
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+const ADMIN_LIST_CHANNEL = 'chat:admin:list';
+const LIST_SAFETY_NET_MS = 120000; // background refresh, not the primary path
+const TYPING_BROADCAST_MS = 2000;
+const TYPING_STALE_MS = 5000;
+
+/** Client-side message id, shared between the direct broadcast and the
+ *  REST persist call so both paths agree on "this is the same message." */
+const genId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const PublicChatTab = () => {
@@ -69,64 +107,137 @@ const PublicChatTab = () => {
   const [selected, setSelected] = useState(null); // conversation or null
   const [messages, setMessages] = useState([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [visitorTyping, setVisitorTyping] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeReason, setCloseReason] = useState('');
   const [showCloseForm, setShowCloseForm] = useState(false);
 
-  const pollRef = useRef(null);
   const bottomRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const threadChannelRef = useRef(null);
+  const selectedIdRef = useRef(null);
+  const threadCountRef = useRef(0);
+  const lastTypingBroadcastRef = useRef(0);
+  const typingStaleTimerRef = useRef(null);
+  // Dedupes the notification *sound* only — the badge number itself comes
+  // straight from the server's unread_count via conv.unreadCount.
+  const pingedMsgIdsRef = useRef(new Set());
 
-  const fetchConversations = useCallback(async () => {
-    setLoading(true);
+  useEffect(() => { selectedIdRef.current = selected?.id ?? null; }, [selected]);
+
+  // ── Sound: soft ding on new visitor activity ──────────────────────────────
+  const playPing = async () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch { /* still locked */ }
+      }
+      if (ctx.state !== 'running') return; // needs one prior user gesture
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now); // A5 — distinct from the widget's tone
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.55);
+    } catch { /* audio must never break the dashboard */ }
+  };
+
+  /** Play the ping at most once per distinct message id, whichever path
+   *  (direct broadcast or backend event) reports it first. */
+  const maybePing = useCallback((conversationId, messageId) => {
+    if (!messageId) return;
+    if (pingedMsgIdsRef.current.has(messageId)) return;
+    pingedMsgIdsRef.current.add(messageId);
+    if (selectedIdRef.current === conversationId) return; // already looking at it
+    playPing();
+  }, []);
+
+  // ── Conversation list ─────────────────────────────────────────────────────
+  const fetchConversations = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await pcFetch('/superadmin/public-chats');
-      setConversations(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []));
+      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+      setConversations(list);
       setError(null);
     } catch (e) {
-      setError(e.message || 'Failed to load public chats');
+      if (!silent) setError(e.message || 'Failed to load public chats');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
-  const fetchMessages = useCallback(async (conversationId, silent = false) => {
-    if (!conversationId) return;
-    if (!silent) setThreadLoading(true);
-    try {
-      const data = await pcFetch(`/superadmin/public-chats/${conversationId}/messages`);
-      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.messages) ? data.messages : []);
-      setMessages(list);
-    } catch (e) {
-      if (!silent) toast.error(e.message || 'Failed to load messages');
-    } finally {
-      if (!silent) setThreadLoading(false);
-    }
-  }, []);
-
-  // Poll the open thread every 5s so new visitor messages appear live
+  // Long-interval safety net only — Realtime below is the primary path.
   useEffect(() => {
-    if (!selected) return undefined;
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => fetchMessages(selected.id, true), POLL_MS);
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, [selected, fetchMessages]);
+    const id = setInterval(() => fetchConversations(true), LIST_SAFETY_NET_MS);
+    return () => clearInterval(id);
+  }, [fetchConversations]);
 
+  // Live grid updates: one shared channel, patched in place per event.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const channel = supabase
+      .channel(ADMIN_LIST_CHANNEL)
+      .on('broadcast', { event: 'conversation_created' }, ({ payload }) => {
+        setConversations((prev) => [payload, ...prev.filter((c) => c.id !== payload.id)]);
+      })
+      .on('broadcast', { event: 'visitor_message' }, ({ payload }) => {
+        // Direct signal from the visitor's widget — instant, independent
+        // of the backend. Optimistically bumps the preview and unread
+        // count; the matching 'conversation_updated' event below arrives
+        // shortly after carrying the authoritative DB unread_count and
+        // overwrites this, correcting any drift.
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === payload.id);
+          if (idx === -1) return prev; // unknown conversation — the backend event will create the card
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            lastMessage: payload.text,
+            lastSender: 'visitor',
+            lastActivity: payload.createdAt,
+            messageCount: (next[idx].messageCount || 0) + 1,
+            unreadCount: (next[idx].unreadCount || 0) + 1,
+            escalated: true,
+          };
+          return next;
+        });
+        maybePing(payload.id, payload.messageId);
+      })
+      .on('broadcast', { event: 'conversation_updated' }, ({ payload }) => {
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === payload.id);
+          if (idx === -1) return [payload, ...prev];
+          const next = [...prev];
+          next[idx] = payload; // authoritative — includes the real unreadCount from the DB
+          return next;
+        });
+        if (payload.lastSender === 'visitor') maybePing(payload.id, payload.lastMessageId);
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') fetchConversations(true); // resync after reconnect
+      });
+
+    return () => supabase.removeChannel(channel);
+  }, [fetchConversations, maybePing]);
 
   const counts = useMemo(() => ({
     open: conversations.filter(c => c.status !== 'closed').length,
     escalated: conversations.filter(c => c.escalated && c.status !== 'closed').length,
+    unread: conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
   }), [conversations]);
 
   const filtered = useMemo(() => {
@@ -139,41 +250,149 @@ const PublicChatTab = () => {
       return (
         c.visitorName?.toLowerCase().includes(q) ||
         c.visitorEmail?.toLowerCase().includes(q) ||
+        c.visitorPhone?.toLowerCase().includes(q) ||
         c.lastMessage?.toLowerCase().includes(q)
       );
     });
   }, [conversations, search, filterStatus]);
 
+  // ── Open thread ───────────────────────────────────────────────────────────
+  const fetchMessages = useCallback(async (conversationId, silent = false) => {
+    if (!conversationId) return;
+    if (!silent) setThreadLoading(true);
+    try {
+      const data = await pcFetch(`/superadmin/public-chats/${conversationId}/messages`);
+      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.messages) ? data.messages : []);
+      threadCountRef.current = list.length;
+      setMessages(list);
+      if (data?.status === 'closed') {
+        setSelected((s) => (s && s.id === conversationId ? { ...s, status: 'closed' } : s));
+        setVisitorTyping(false);
+      }
+    } catch (e) {
+      if (!silent) toast.error(e.message || 'Failed to load messages');
+    } finally {
+      if (!silent) setThreadLoading(false);
+    }
+  }, []);
+
   const openThread = async (conv) => {
     setSelected(conv);
     setMessages([]);
+    setVisitorTyping(false);
     setReply('');
     setShowCloseForm(false);
     setCloseReason('');
+    threadCountRef.current = 0;
+
+    // Optimistic local clear for instant feedback…
+    setConversations((prev) => prev.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c)));
+    // …and the real, DB-backed clear, broadcast to every other agent window.
+    pcFetch(`/superadmin/public-chats/${conv.id}/read`, { method: 'POST' }).catch(() => {
+      /* best-effort — the safety-net refresh will still pick up the true count */
+    });
+
     await fetchMessages(conv.id);
   };
+
+  // Subscribe to the open thread's channel; replaces the 5s thread poll.
+  useEffect(() => {
+    if (!selected) return undefined;
+
+    const channel = supabase
+      .channel(`chat:conversation:${selected.id}`)
+      .on('broadcast', { event: 'messages_updated' }, ({ payload }) => {
+        threadCountRef.current = payload.messages.length;
+        setMessages(payload.messages);
+        if (payload.status === 'closed') {
+          setSelected((s) => (s ? { ...s, status: 'closed' } : s));
+          setVisitorTyping(false);
+        }
+      })
+      .on('broadcast', { event: 'message_sent' }, ({ payload }) => {
+        // Direct browser-to-browser delivery — same channel typing uses.
+        const msg = payload.message;
+        if (!msg) return;
+        setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+        if (msg.sender === 'visitor') setVisitorTyping(false);
+      })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload.sender !== 'visitor') return;
+        setVisitorTyping(true);
+        if (typingStaleTimerRef.current) clearTimeout(typingStaleTimerRef.current);
+        typingStaleTimerRef.current = setTimeout(() => setVisitorTyping(false), TYPING_STALE_MS);
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') fetchMessages(selected.id, true); // resync after reconnect
+      });
+
+    threadChannelRef.current = channel;
+
+    return () => {
+      if (typingStaleTimerRef.current) clearTimeout(typingStaleTimerRef.current);
+      supabase.removeChannel(channel);
+      threadChannelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, visitorTyping]);
 
   const closeModal = () => {
     setSelected(null);
     setMessages([]);
+    setVisitorTyping(false);
     setReply('');
     setShowCloseForm(false);
     setCloseReason('');
   };
 
+  // ── Agent typing — direct broadcast, no backend round trip ────────────────
+  const broadcastTyping = () => {
+    if (!threadChannelRef.current || selected?.status === 'closed') return;
+    const now = Date.now();
+    if (now - lastTypingBroadcastRef.current < TYPING_BROADCAST_MS) return;
+    lastTypingBroadcastRef.current = now;
+    threadChannelRef.current.send({ type: 'broadcast', event: 'typing', payload: { sender: 'agent' } });
+  };
+
+  const handleReplyChange = (e) => {
+    setReply(e.target.value);
+    if (e.target.value.trim()) broadcastTyping();
+  };
+
+  // ── Send a reply — direct broadcast first, backend persist second ─────────
   const handleSendReply = async () => {
     const text = reply.trim();
     if (!text || !selected) return;
+
+    const id = genId();
+    const localMsg = { id, sender: 'agent', text, created_at: new Date().toISOString() };
+    setMessages((prev) => [...prev, localMsg]);
+    setReply('');
+
+    // Direct delivery — same channel typing already uses. Reaches the
+    // visitor's widget the instant it's sent, independent of the backend.
+    threadChannelRef.current?.send({ type: 'broadcast', event: 'message_sent', payload: { message: localMsg } });
+
     setSending(true);
     try {
-      await pcFetch(`/superadmin/public-chats/${selected.id}/messages`, {
+      const data = await pcFetch(`/superadmin/public-chats/${selected.id}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ id, text }),
       });
-      setReply('');
-      await fetchMessages(selected.id, true);
+      if (Array.isArray(data?.messages)) {
+        threadCountRef.current = data.messages.length;
+        setMessages(data.messages);
+      } else {
+        await fetchMessages(selected.id, true);
+      }
     } catch (e) {
       toast.error(e.message || 'Failed to send reply');
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setReply(text);
     } finally {
       setSending(false);
     }
@@ -189,7 +408,6 @@ const PublicChatTab = () => {
       });
       toast.success('Conversation closed');
       closeModal();
-      fetchConversations();
     } catch (e) {
       toast.error(e.message || 'Failed to close conversation');
     } finally {
@@ -211,7 +429,8 @@ const PublicChatTab = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Public Chat</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Website visitor conversations · {counts.open} open · {counts.escalated} awaiting a human reply
+            Website visitor conversations · {counts.open} open · {counts.escalated} awaiting a reply
+            {counts.unread > 0 && <> · {counts.unread} unread</>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -232,11 +451,11 @@ const PublicChatTab = () => {
           >
             <option value="all">All</option>
             <option value="open">Open</option>
-            <option value="escalated">Escalated</option>
+            <option value="escalated">Needs reply</option>
             <option value="closed">Closed</option>
           </select>
           <button
-            onClick={fetchConversations}
+            onClick={() => fetchConversations()}
             className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm bg-white hover:bg-gray-50 text-gray-700 transition-colors"
           >
             <RefreshCw className="h-4 w-4" /> Refresh
@@ -247,13 +466,7 @@ const PublicChatTab = () => {
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-2 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium">Could not load public chats: {error}</p>
-            <p className="text-xs mt-1">
-              If the backend route <code>/superadmin/public-chats</code> is not implemented yet, this is
-              expected — the tab will work as soon as it is.
-            </p>
-          </div>
+          <p className="font-medium">Could not load public chats: {error}</p>
         </div>
       )}
 
@@ -262,48 +475,56 @@ const PublicChatTab = () => {
           <Loader className="h-6 w-6 animate-spin text-blue-600" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3">
+        /* THREE cards per row on xl screens (1 on mobile, 2 on md) */
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(conv => {
             const isClosed = conv.status === 'closed';
+            const unread = conv.unreadCount || 0;
             return (
               <button
                 key={conv.id}
                 onClick={() => openThread(conv)}
-                className="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow w-full"
+                className="relative text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow flex flex-col h-full"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <MessagesSquare className={`h-4 w-4 flex-shrink-0 ${isClosed ? 'text-gray-400' : 'text-blue-500'}`} />
-                      <p className="font-semibold text-gray-900 truncate">{conv.visitorName || 'Visitor'}</p>
-                      {conv.escalated && !isClosed && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                          <AlertTriangle className="h-3 w-3" /> Needs human reply
-                        </span>
-                      )}
-                    </div>
-                    {conv.lastMessage && (
-                      <p className="text-sm text-gray-600 mt-1.5 line-clamp-1">{conv.lastMessage}</p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-400">
-                      {conv.visitorEmail && (
-                        <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {conv.visitorEmail}</span>
-                      )}
-                      <span>{conv.messageCount ?? 0} messages</span>
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {conv.lastActivity ? formatDistanceToNow(new Date(conv.lastActivity)) + ' ago' : '—'}
-                      </span>
-                      {conv.pageUrl && (
-                        <span className="inline-flex items-center gap-1 truncate max-w-[220px]">
-                          <Globe className="h-3 w-3" /> {conv.pageUrl}
-                        </span>
-                      )}
-                    </div>
+                {unread > 0 && (
+                  <span className="absolute -top-2 -right-2 h-6 min-w-6 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-sm">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <MessagesSquare className={`h-4 w-4 flex-shrink-0 ${isClosed ? 'text-gray-400' : 'text-blue-500'}`} />
+                    <p className="font-semibold text-gray-900 truncate">{conv.visitorName || 'Visitor'}</p>
                   </div>
-                  <div className="flex-shrink-0">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${isClosed ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
-                      {isClosed ? 'Closed' : 'Open'}
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${isClosed ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
+                    {isClosed ? 'Closed' : 'Open'}
+                  </span>
+                </div>
+
+                {conv.escalated && !isClosed && (
+                  <span className="mt-2 self-start inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                    <AlertTriangle className="h-3 w-3" /> Needs reply
+                  </span>
+                )}
+
+                {conv.lastMessage && (
+                  <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                    {conv.lastSender === 'agent' ? 'You: ' : ''}{conv.lastMessage}
+                  </p>
+                )}
+
+                <div className="mt-auto pt-3 flex flex-col gap-1 text-xs text-gray-400">
+                  {conv.visitorPhone && (
+                    <span className="inline-flex items-center gap-1 truncate"><Phone className="h-3 w-3 flex-shrink-0" /> {conv.visitorPhone}</span>
+                  )}
+                  {conv.visitorEmail && (
+                    <span className="inline-flex items-center gap-1 truncate"><Mail className="h-3 w-3 flex-shrink-0" /> {conv.visitorEmail}</span>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{conv.messageCount ?? 0} messages</span>
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {conv.lastActivity ? formatDistanceToNow(new Date(conv.lastActivity)) + ' ago' : '—'}
                     </span>
                   </div>
                 </div>
@@ -311,7 +532,7 @@ const PublicChatTab = () => {
             );
           })}
           {filtered.length === 0 && !error && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+            <div className="col-span-full bg-white rounded-2xl border border-gray-100 p-10 text-center">
               <p className="text-sm text-gray-400">
                 {search || filterStatus !== 'all' ? 'No conversations match your filters' : 'No public chat conversations yet'}
               </p>
@@ -334,6 +555,7 @@ const PublicChatTab = () => {
                   <div>
                     <p className="text-sm text-gray-600">Visitor</p>
                     <p className="text-base font-semibold text-gray-900">{selected.visitorName || 'Visitor'}</p>
+                    {selected.visitorPhone && <p className="text-sm text-gray-500">{selected.visitorPhone}</p>}
                     {selected.visitorEmail && <p className="text-sm text-gray-500">{selected.visitorEmail}</p>}
                   </div>
                   <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${selected.status === 'closed' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
@@ -341,9 +563,13 @@ const PublicChatTab = () => {
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                  <span>{selected.messageCount ?? messages.length} messages</span>
+                  <span>{messages.length || selected.messageCount || 0} messages</span>
                   <span>Started {selected.createdAt ? format(new Date(selected.createdAt), 'MMM d, yyyy HH:mm') : '—'}</span>
-                  {selected.pageUrl && <span className="truncate max-w-full">From: {selected.pageUrl}</span>}
+                  {selected.pageUrl && (
+                    <span className="inline-flex items-center gap-1 truncate max-w-full">
+                      <Globe className="h-3 w-3 flex-shrink-0" /> {selected.pageUrl}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -376,6 +602,27 @@ const PublicChatTab = () => {
                     </div>
                   );
                 })}
+
+                {/* Visitor is typing… */}
+                {!threadLoading && visitorTyping && selected.status !== 'closed' && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[80%] rounded-2xl p-3 bg-slate-100">
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <User className="h-3 w-3" />
+                        <span>{selected.visitorName || 'Visitor'} is typing</span>
+                        <span className="flex items-center gap-1">
+                          {[0, 1, 2].map(i => (
+                            <span
+                              key={i}
+                              className="h-1 w-1 rounded-full bg-slate-400 animate-bounce"
+                              style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.9s' }}
+                            />
+                          ))}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div ref={bottomRef} />
               </div>
             </div>
@@ -387,7 +634,7 @@ const PublicChatTab = () => {
                   <textarea
                     rows={1}
                     value={reply}
-                    onChange={e => setReply(e.target.value)}
+                    onChange={handleReplyChange}
                     onKeyDown={handleReplyKeyDown}
                     placeholder="Reply to the visitor as an agent…"
                     className="flex-1 resize-none max-h-28 px-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

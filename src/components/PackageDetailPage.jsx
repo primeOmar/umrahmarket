@@ -354,7 +354,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   const [cardInfo,         setCardInfo]         = useState({ number: '', expiry: '', cvc: '', name: '' });
   const [mpesaPhone,       setMpesaPhone]       = useState('');
   const [mpesaPin,         setMpesaPin]         = useState(['', '', '', '']);
-  const [guests,           setGuests]           = useState({ adults: 2, children: 0 });
+  const [guests,           setGuests]           = useState({ adults: 1, children: 0 });
 
   const pinRefs = [useRef(), useRef(), useRef(), useRef()];
 
@@ -839,8 +839,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                   <div className="space-y-1"><CheckCircle className="h-5 w-5 text-emerald-600 mx-auto" /><div className="text-xs font-medium text-gray-900">Best Price</div><div className="text-xs text-gray-500">Guaranteed</div></div>
                 </div>
               </div>
-
-             
             </div>
           </div>
         </div>
