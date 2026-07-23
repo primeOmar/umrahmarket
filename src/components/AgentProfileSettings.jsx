@@ -12,7 +12,7 @@ const SUGGESTED_SPECIALTIES = [
   'Luxury Umrah', 'Budget Umrah', 'Visa Assistance', 'Ziyarah Tours',
 ];
 
-const AgentProfileSettings = () => {
+const AgentProfileSettings = ({ logoUrl: logoUrlProp, onLogoUpdated } = {}) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -26,7 +26,7 @@ const AgentProfileSettings = () => {
     specialties: [],
     websiteUrl: '',
     officeMapsUrl: '',
-    logoUrl: '',
+    logoUrl: logoUrlProp || '',
   });
   const [specialtyInput, setSpecialtyInput] = useState('');
 
@@ -56,6 +56,16 @@ const AgentProfileSettings = () => {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Keep in sync with the dashboard: if the logo is changed elsewhere
+  // (e.g. the sidebar/topbar avatar), reflect it here too. Guarded by
+  // the inequality check so this never fights with this component's
+  // own optimistic update while an upload from *this* form is in flight.
+  useEffect(() => {
+    if (logoUrlProp && logoUrlProp !== form.logoUrl) {
+      setForm((f) => ({ ...f, logoUrl: logoUrlProp }));
+    }
+  }, [logoUrlProp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -87,18 +97,27 @@ const AgentProfileSettings = () => {
     }
 
     // Optimistic local preview while the upload is in flight
+    const prevLogoUrl = form.logoUrl;
     const previewUrl = URL.createObjectURL(file);
     setForm((f) => ({ ...f, logoUrl: previewUrl }));
+    onLogoUpdated?.(previewUrl);
 
     setUploadingLogo(true);
     setBanner(null);
     try {
+      // POST /agents/me/logo persists logo_url onto the profile row itself
+      // (see agent_profile.routes.js) — no follow-up save call needed.
       const res = await uploadAgentLogo(file);
       const logoUrl = res?.logoUrl;
-      if (logoUrl) setForm((f) => ({ ...f, logoUrl }));
+      if (!logoUrl) throw new Error('Upload did not return a logo URL');
+
+      setForm((f) => ({ ...f, logoUrl }));
+      onLogoUpdated?.(logoUrl);
       setBanner({ type: 'success', message: 'Logo updated.' });
     } catch (err) {
       console.error('[AgentProfileSettings] logo upload failed:', err?.message);
+      setForm((f) => ({ ...f, logoUrl: prevLogoUrl }));
+      onLogoUpdated?.(prevLogoUrl);
       setBanner({ type: 'error', message: 'Logo upload failed. Please try again.' });
     } finally {
       setUploadingLogo(false);
@@ -116,6 +135,10 @@ const AgentProfileSettings = () => {
         specialties: form.specialties,
         websiteUrl: form.websiteUrl,
         officeMapsUrl: form.officeMapsUrl,
+        // Skip sending a transient blob: preview URL if Save is clicked
+        // while a logo upload is still in flight — that's not a real,
+        // durable URL and would corrupt the saved profile.
+        ...(form.logoUrl && !form.logoUrl.startsWith('blob:') ? { logoUrl: form.logoUrl } : {}),
       });
       setBanner({ type: 'success', message: 'Profile updated — clients will see these changes on your agency page.' });
     } catch (err) {

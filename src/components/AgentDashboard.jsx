@@ -23,7 +23,7 @@ import AgentAccountingTab from './AgentAccountingTab';
 import OfficeLocationModal from './OfficeLocationModal';
 import AgentProfileSettings from './AgentProfileSettings';
 import { useBookingNotifications } from '../hooks/useBookingNotifications';
-import { getAgentVerificationStatus, requestDocumentReview, getMe } from '../api';
+import { getAgentVerificationStatus, requestDocumentReview, getMe, uploadAgentLogo } from '../api';
 import umLogo from '../assets/umramarket.png';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
@@ -464,7 +464,7 @@ const HAJJ_REQS = [
 ];
 
 // ── Single client row inside a package group ──────────────────────────────────
-const ClientRow = ({ client, onMessage, onIdCard }) => {
+const ClientRow = ({ client, onMessage, onIdCard, selectMode, selected, onToggleSelect }) => {
   const [open, setOpen] = useState(false);
   const [checks, setChecks] = useState({});
   const reqs = client.packageType === 'hajj' ? HAJJ_REQS : UMRAH_REQS;
@@ -483,31 +483,50 @@ const ClientRow = ({ client, onMessage, onIdCard }) => {
 
   return (
     <div className="border-b border-gray-100 last:border-0">
-      {/* Row header — click to expand */}
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
-      >
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-          {client.name.charAt(0)}
+      {/* Row header — click to expand (checkbox, when in select mode, sits alongside it) */}
+      <div className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
+        {selectMode && (
+          <button
+            type="button"
+            onClick={() => client.passportVerified && onToggleSelect(client)}
+            disabled={!client.passportVerified}
+            title={client.passportVerified ? 'Select for batch ID card' : 'Passport not verified yet'}
+            className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+              !client.passportVerified ? 'border-gray-200 bg-gray-50 cursor-not-allowed' :
+              selected ? 'border-emerald-600 bg-emerald-600' : 'border-gray-300 hover:border-emerald-400'
+            }`}
+          >
+            {selected && <Check className="h-3 w-3 text-white" />}
+          </button>
+        )}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpen(v => !v)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setOpen(v => !v); }}
+          className="flex-1 flex items-center gap-3 min-w-0 cursor-pointer text-left"
+        >
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+            {client.name.charAt(0)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">{client.name}</p>
+            <p className="text-xs text-gray-400 truncate">{client.email}</p>
+          </div>
+          {/* prep progress pill */}
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+            allDone ? 'bg-emerald-100 text-emerald-700' : checkedCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
+          }`}>
+            {checkedCount}/{reqs.length} docs
+          </span>
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+            client.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
+            client.status === 'pending'   ? 'bg-amber-100 text-amber-700' :
+            client.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+          }`}>{client.status}</span>
+          <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{client.name}</p>
-          <p className="text-xs text-gray-400 truncate">{client.email}</p>
-        </div>
-        {/* prep progress pill */}
-        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
-          allDone ? 'bg-emerald-100 text-emerald-700' : checkedCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
-        }`}>
-          {checkedCount}/{reqs.length} docs
-        </span>
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
-          client.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
-          client.status === 'pending'   ? 'bg-amber-100 text-amber-700' :
-          client.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
-        }`}>{client.status}</span>
-        <ChevronDown className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+      </div>
 
       {/* Expanded drawer */}
       {open && (
@@ -609,9 +628,11 @@ const ClientRow = ({ client, onMessage, onIdCard }) => {
 };
 
 // ── Package group with clients list ───────────────────────────────────────────
-const PackageGroup = ({ packageName, packageType, departure, duration, clients, onMessage, onManifest, onIdCard }) => {
+const PackageGroup = ({ packageName, packageType, departure, duration, clients, onMessage, onManifest, onIdCard, selectMode, selectedIds, onToggleSelect, onSelectAllInGroup }) => {
   const [collapsed, setCollapsed] = useState(false);
   const confirmedCount = clients.filter(c => c.status === 'confirmed').length;
+  const eligibleClients = clients.filter(c => c.passportVerified);
+  const allGroupSelected = selectMode && eligibleClients.length > 0 && eligibleClients.every(c => selectedIds.has(c.bookingId));
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -641,6 +662,14 @@ const PackageGroup = ({ packageName, packageType, departure, duration, clients, 
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-gray-500 font-medium">{confirmedCount}/{clients.length} confirmed</span>
+          {selectMode && eligibleClients.length > 0 && (
+            <button
+              onClick={() => onSelectAllInGroup(eligibleClients, !allGroupSelected)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <CreditCard className="h-3.5 w-3.5" /> {allGroupSelected ? 'Deselect group' : `Select all (${eligibleClients.length})`}
+            </button>
+          )}
           <button
             onClick={() => onManifest(packageName, packageType, departure, duration, clients)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
@@ -660,7 +689,15 @@ const PackageGroup = ({ packageName, packageType, departure, duration, clients, 
             <p className="text-xs text-gray-400 text-center py-6">No clients for this package yet</p>
           ) : (
             clients.map(client => (
-              <ClientRow key={client.bookingId} client={client} onMessage={onMessage} onIdCard={onIdCard} />
+              <ClientRow
+                key={client.bookingId}
+                client={client}
+                onMessage={onMessage}
+                onIdCard={onIdCard}
+                selectMode={selectMode}
+                selected={selectMode && selectedIds.has(client.bookingId)}
+                onToggleSelect={onToggleSelect}
+              />
             ))
           )}
         </div>
@@ -682,254 +719,271 @@ const UM_BRAND = {
   inkSoft:    '#6B6456',
 };
 
-// ── Umrah ID Card modal ───────────────────────────────────────────────────────
-// World-class pilgrim ID — correct photo framing, CR80 wallet card format.
-//
-// PHOTO RULES (fixes the "trimmed badly" bug):
-//  • Screen preview: 72×96px portrait slot, object-cover + object-center so
-//    the face is never clipped to just the top of the head.
-//  • PDF: the cover-fit renders onto an offscreen canvas at 3× for print
-//    sharpness. Vertical anchor is centred (dy = (boxH - dh) / 2) rather than
-//    pinned to the top, so a full-face shot isn't decapitated.
-//  • A thin gold border + subtle inner shadow frame the photo slot.
-//
+// ── Shared image loader for PDF generation ───────────────────────────────────
+// fetch()'s the URL as a blob first, then draws it onto a canvas via an
+// object-URL. This sidesteps the crossOrigin='anonymous' + canvas-taint
+// problem that silently breaks R2 presigned/public URLs (their CORS policy
+// doesn't echo Access-Control-Allow-Origin for every origin, so `img.crossOrigin
+// = 'anonymous'` fails). Data URIs (bundled logos) skip the fetch entirely.
+const loadImageForPdf = async (src) => {
+  if (!src) return null;
+  try {
+    const isData = src.startsWith('data:');
+    let objectUrl = src;
+    if (!isData) {
+      const resp = await fetch(src, { cache: 'no-store' });
+      if (!resp.ok) return null;
+      const blob = await resp.blob();
+      objectUrl = URL.createObjectURL(blob);
+    }
+    return await new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width  = img.naturalWidth  || 256;
+          c.height = img.naturalHeight || 256;
+          c.getContext('2d').drawImage(img, 0, 0);
+          const dataUrl = c.toDataURL('image/png');
+          if (!isData) URL.revokeObjectURL(objectUrl);
+          resolve({ dataUrl, w: c.width, h: c.height });
+        } catch { resolve(null); }
+      };
+      img.onerror = () => { if (!isData) URL.revokeObjectURL(objectUrl); resolve(null); };
+      img.src = objectUrl;
+    });
+  } catch { return null; }
+};
+
+// ── Shared pilgrim ID card renderer ───────────────────────────────────────────
+// Draws one portrait pilgrim badge onto a jsPDF doc at (x, y) sized (w, h).
+// Used by both the single-card download and the batch/print-sheet download,
+// so the two are always visually identical. All font sizes and strokes scale
+// off `s = w / 153` (153pt is the reference CR80-portrait width), so the same
+// function works whether it's rendering one full-size card or a smaller
+// tiled card on a print sheet.
+function drawPilgrimIdCard(doc, {
+  x, y, w, h, client, agent, logoImg, faceImg,
+  groupLabel, expiryLabel, emergencyPhone, cardRef,
+}) {
+  const s = w / 153;
+  const E    = [6, 78, 59];
+  const E7   = [11, 107, 79];
+  const G    = [201, 162, 39];
+  const GS   = [230, 203, 107];
+  const CR   = [250, 247, 239];
+  const INK  = [28, 27, 23];
+  const INKS = [107, 100, 86];
+
+  // Card background + hairline border
+  doc.setFillColor(...CR);
+  doc.rect(x, y, w, h, 'F');
+  doc.setDrawColor(225, 219, 200);
+  doc.setLineWidth(0.6 * s);
+  doc.rect(x, y, w, h, 'S');
+
+  // ── Header band — agency branding (not UmrahMarket) ──
+  const headerH = h * 0.155;
+  doc.setFillColor(...E);
+  doc.rect(x, y, w, headerH, 'F');
+  doc.setFillColor(...G);
+  doc.rect(x, y + headerH, w, 1.2 * s, 'F');
+
+  const logoBox = headerH * 0.62;
+  const logoX = x + 6 * s;
+  const logoY = y + (headerH - logoBox) / 2;
+  doc.setFillColor(255, 255, 255);
+  doc.rect(logoX, logoY, logoBox, logoBox, 'F');
+  if (logoImg) {
+    const pad = 2 * s;
+    const ratio = Math.min((logoBox - pad * 2) / logoImg.w, (logoBox - pad * 2) / logoImg.h);
+    const lw = logoImg.w * ratio, lh = logoImg.h * ratio;
+    doc.addImage(logoImg.dataUrl, 'PNG', logoX + (logoBox - lw) / 2, logoY + (logoBox - lh) / 2, lw, lh);
+  } else {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9 * s);
+    doc.setTextColor(...E);
+    doc.text((agent?.agencyName || 'A').charAt(0).toUpperCase(), logoX + logoBox / 2, logoY + logoBox / 2 + 3 * s, { align: 'center' });
+  }
+
+  const nameX = logoX + logoBox + 5 * s;
+  const nameW = x + w - 6 * s - nameX;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5 * s);
+  doc.setTextColor(255, 255, 255);
+  const agencyLines = doc.splitTextToSize((agent?.agencyName || 'Travel Agency').toUpperCase(), nameW).slice(0, 2);
+  let ny = y + headerH / 2 - (agencyLines.length > 1 ? 4.5 * s : -1 * s);
+  agencyLines.forEach(line => { doc.text(line, nameX, ny); ny += 7.5 * s; });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(4.8 * s);
+  doc.setTextColor(...GS);
+  doc.text('PILGRIM IDENTIFICATION', nameX, y + headerH - 4 * s);
+
+  // ── Photo — centred circle, cover-fit so faces are never cropped to the top ──
+  const bodyTop = y + headerH + 7 * s;
+  const photoD = w * 0.46;
+  const photoCX = x + w / 2;
+  const photoCY = bodyTop + photoD / 2;
+
+  // Soft decorative wedges flanking the photo (echoes the mission-badge look)
+  doc.setFillColor(230, 242, 237);
+  doc.triangle(x, bodyTop - 3 * s, x + w * 0.22, bodyTop - 3 * s, x, photoCY + photoD * 0.35, 'F');
+  doc.triangle(x + w, bodyTop - 3 * s, x + w - w * 0.22, bodyTop - 3 * s, x + w, photoCY + photoD * 0.35, 'F');
+
+  doc.setDrawColor(...G);
+  doc.setLineWidth(1.4 * s);
+  doc.circle(photoCX, photoCY, photoD / 2 + 1 * s, 'S');
+
+  if (faceImg) {
+    const SCALE = 3;
+    const dpx = photoD * SCALE;
+    const clip = document.createElement('canvas');
+    clip.width = dpx; clip.height = dpx;
+    const ctx = clip.getContext('2d');
+    ctx.beginPath();
+    ctx.arc(dpx / 2, dpx / 2, dpx / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, dpx, dpx);
+    const fitRatio = Math.max(dpx / faceImg.w, dpx / faceImg.h);
+    const dw = faceImg.w * fitRatio, dh = faceImg.h * fitRatio;
+    const dx = (dpx - dw) / 2, dy = (dpx - dh) / 2;
+    const fi = new window.Image();
+    fi.src = faceImg.dataUrl;
+    ctx.drawImage(fi, dx, dy, dw, dh);
+    doc.addImage(clip.toDataURL('image/jpeg', 0.95), 'JPEG', photoCX - photoD / 2, photoCY - photoD / 2, photoD, photoD);
+  } else {
+    doc.setFillColor(255, 255, 255);
+    doc.circle(photoCX, photoCY, photoD / 2, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.5 * s);
+    doc.setTextColor(...INKS);
+    doc.text('Photo', photoCX, photoCY - 2 * s, { align: 'center' });
+    doc.text('pending', photoCX, photoCY + 4 * s, { align: 'center' });
+  }
+
+  let cy = photoCY + photoD / 2 + 13 * s;
+
+  // Name
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5 * s);
+  doc.setTextColor(...E);
+  const nameLines = doc.splitTextToSize((client.name || '').toUpperCase(), w - 12 * s).slice(0, 2);
+  nameLines.forEach(line => { doc.text(line, x + w / 2, cy, { align: 'center' }); cy += 10 * s; });
+  cy += 1 * s;
+
+  // Passport number
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6 * s);
+  doc.setTextColor(...INKS);
+  doc.text(`Passport No: ${client.passportNumber || '—'}`, x + w / 2, cy, { align: 'center' });
+  cy += 10 * s;
+
+  // Divider
+  doc.setDrawColor(...G);
+  doc.setLineWidth(0.6 * s);
+  doc.line(x + 16 * s, cy, x + w - 16 * s, cy);
+  cy += 10 * s;
+
+  // Contact rows — Emergency (optional, agent-supplied) + WhatsApp (agent phone)
+  const contactRow = (label, value) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.5 * s);
+    doc.setTextColor(...INKS);
+    doc.text(label, x + 14 * s, cy);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5 * s);
+    doc.setTextColor(...INK);
+    doc.text(String(value), x + w - 14 * s, cy, { align: 'right' });
+    cy += 9.5 * s;
+  };
+  if (emergencyPhone) contactRow('Emergency No:', emergencyPhone);
+  contactRow('WhatsApp No:', agent?.phone || '—');
+
+  cy += 3 * s;
+
+  // Group + expiry
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8 * s);
+  doc.setTextColor(...E7);
+  const groupLines = doc.splitTextToSize(groupLabel.toUpperCase(), w - 12 * s).slice(0, 2);
+  groupLines.forEach(line => { doc.text(line, x + w / 2, cy, { align: 'center' }); cy += 8.5 * s; });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.5 * s);
+  doc.setTextColor(...INKS);
+  doc.text(`Expire: ${expiryLabel}`, x + w / 2, cy, { align: 'center' });
+
+  // ── Footer — small "generated via umrahmarket.net" credit line ──
+  const footH = h * 0.07;
+  doc.setFillColor(...E);
+  doc.rect(x, y + h - footH, w, footH, 'F');
+  doc.setFillColor(...G);
+  doc.rect(x, y + h - footH, w, 1 * s, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(4.5 * s);
+  doc.setTextColor(...GS);
+  doc.text('Generated via umrahmarket.net', x + w / 2, y + h - footH / 2 + 1.5 * s, { align: 'center' });
+
+  doc.setFontSize(4 * s);
+  doc.setTextColor(200, 220, 210);
+  doc.text(cardRef, x + 6 * s, y + h - 3 * s);
+}
+
+// Fixed CR80-portrait size used everywhere a badge is drawn (single or batch),
+// in points: 2.125in × 3.375in ≈ 153 × 243pt.
+const PILGRIM_CARD_W = 153;
+const PILGRIM_CARD_H = 243;
+
+// Derives the group label + expiry shown on a card from a client record.
+// Expiry prefers the trip's return date (departure + duration); falls back
+// to the passport expiry, then to a dash.
+function pilgrimCardMeta(client, fmtDate) {
+  const tripEnd = client.availableFrom && client.duration
+    ? new Date(new Date(client.availableFrom).getTime() + Number(client.duration) * 86400000)
+    : null;
+  const expiryDate = tripEnd || (client.passportExpiry ? new Date(client.passportExpiry) : null);
+  return {
+    groupLabel: `${client.packageName || (client.packageType === 'hajj' ? 'Hajj' : 'Umrah')} Group`,
+    expiryLabel: expiryDate ? fmtDate(expiryDate) : '—',
+  };
+}
+
+// ── Pilgrim ID Card modal (single) ────────────────────────────────────────────
+// Portrait pilgrim badge — agency-branded header/footer, centred photo,
+// name, passport no., emergency/WhatsApp contact rows, group + expiry.
+// A small "Generated via umrahmarket.net" credit sits in the footer only.
 const UmrahIdCardModal = ({ client, agent, onClose }) => {
   const [downloading, setDownloading] = useState(false);
+  // TODO: replace with a real "emergency / in-Kingdom contact" field once one
+  // exists on the agent profile. Prefilled with a placeholder for now so the
+  // card isn't printed with a blank field — agents should edit before saving.
+  const [emergencyPhone, setEmergencyPhone] = useState('+966 500 000 000');
   if (!client) return null;
 
   const fmtDate = (d) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
   const cardRef = `UM-ID-${(client.bookingId || Date.now().toString(36)).slice(0, 16).toUpperCase()}`;
+  const { groupLabel, expiryLabel } = pilgrimCardMeta(client, fmtDate);
 
-  // ── PDF generation ─────────────────────────────────────────────────────────
   const handleDownloadPDF = async () => {
     setDownloading(true);
     try {
       const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt', format: [PILGRIM_CARD_W, PILGRIM_CARD_H], orientation: 'portrait' });
 
-      // Colour palettes as [R,G,B]
-      const E  = [6,   78,  59];   // emerald900
-      const E7 = [11,  107, 79];   // emerald700
-      const G  = [201, 162, 39];   // gold
-      const GS = [230, 203, 107];  // goldSoft
-      const CR = [250, 247, 239];  // cream
-      const INK  = [28,  27,  23];
-      const INKS = [107, 100, 86];
-
-      // CR80 landscape (3.375 × 2.125 in at 72 dpi = 243 × 153 pt).
-      // orientation:'landscape' is required — without it jsPDF re-interprets
-      // [243,153] as portrait [153×243], squishing all content into the top
-      // 63% of a taller page and leaving a blank white strip below.
-      const doc = new jsPDF({ unit: 'pt', format: [243, 153], orientation: 'landscape' });
-      const W = 243, H = 153;
-      const M = 11; // margin
-
-      // ── Background ──
-      doc.setFillColor(...CR);
-      doc.rect(0, 0, W, H, 'F');
-
-      // Subtle gradient-feel: lighter cream strip across the middle body
-      doc.setFillColor(252, 250, 244);
-      doc.rect(0, 36, W, H - 36 - 28, 'F');
-
-      // ── Header band ──
-      doc.setFillColor(...E);
-      doc.rect(0, 0, W, 34, 'F');
-      // Gold accent line
-      doc.setFillColor(...G);
-      doc.rect(0, 34, W, 1.5, 'F');
-
-      // Helper: load image → { dataUrl, w, h } or null.
-      //
-      // Strategy: fetch() the URL as a blob first, convert to an object-URL,
-      // then draw onto canvas. This avoids the crossOrigin = 'anonymous' +
-      // canvas-taint problem that causes R2 presigned/public URLs to silently
-      // fail (img.onerror fires) because the R2 bucket's CORS policy doesn't
-      // echo back Access-Control-Allow-Origin for every origin.
-      //
-      // fetch() itself doesn't taint the canvas — only the crossOrigin img
-      // attribute does. The blob → object URL path sidesteps that entirely.
-      const loadImg = async (src) => {
-        try {
-          // For data: URIs (e.g. the bundled logo) skip the fetch and go
-          // straight to the Image path — no network, no CORS.
-          const isData = src.startsWith('data:');
-          let objectUrl = src;
-
-          if (!isData) {
-            const resp = await fetch(src, { cache: 'no-store' });
-            if (!resp.ok) return null;
-            const blob = await resp.blob();
-            objectUrl = URL.createObjectURL(blob);
-          }
-
-          return await new Promise((resolve) => {
-            const img = new window.Image();
-            img.onload = () => {
-              try {
-                const c = document.createElement('canvas');
-                c.width  = img.naturalWidth  || 256;
-                c.height = img.naturalHeight || 256;
-                c.getContext('2d').drawImage(img, 0, 0);
-                const dataUrl = c.toDataURL('image/png');
-                if (!isData) URL.revokeObjectURL(objectUrl);
-                resolve({ dataUrl, w: c.width, h: c.height });
-              } catch { resolve(null); }
-            };
-            img.onerror = () => { if (!isData) URL.revokeObjectURL(objectUrl); resolve(null); };
-            img.src = objectUrl;
-          });
-        } catch { return null; }
-      };
-
-      const [logo, face] = await Promise.all([
-        loadImg(umLogo),
-        client.facePhotoUrl ? loadImg(client.facePhotoUrl) : Promise.resolve(null),
+      const [logoImg, faceImg] = await Promise.all([
+        loadImageForPdf(agent?.logoUrl || umLogo),
+        client.facePhotoUrl ? loadImageForPdf(client.facePhotoUrl) : Promise.resolve(null),
       ]);
 
-      // ── Logo + branding ──
-      if (logo) {
-        const box = 22, ratio = Math.min(box / logo.w, box / logo.h);
-        const lw = logo.w * ratio, lh = logo.h * ratio;
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(M, 6, box, box, 3, 3, 'F');
-        doc.addImage(logo.dataUrl, 'PNG', M + (box - lw) / 2, 6 + (box - lh) / 2, lw, lh);
-      }
-      doc.setFont('times', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(255, 255, 255);
-      doc.text('UmraMarket', M + 28, 16);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6);
-      doc.setTextColor(...GS);
-      doc.text('PILGRIM IDENTIFICATION', M + 28, 25);
-
-      // Package type badge (top right)
-      const pkgLabel = client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH';
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(255, 255, 255);
-      doc.text(pkgLabel, W - M, 16, { align: 'right' });
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(5.5);
-      doc.setTextColor(...GS);
-      doc.text(cardRef, W - M, 26, { align: 'right' });
-
-      // ── Photo box ──
-      // Matches preview exactly: left-flush to body, 30% of card width,
-      // full body height (header=34pt + gold line=1.5pt, footer starts at H-28).
-      const bodyTop  = 34 + 1.5;           // 35.5pt — just below gold accent line
-      const bodyBot  = H - 28;             // 125pt  — top of footer
-      const photoX = M;
-      const photoY = bodyTop;              // flush to body top, no gap
-      const photoW = Math.round(W * 0.30); // 73pt ≈ 30% of card width
-      const photoH = bodyBot - bodyTop;    // 89.5pt — full body height
-
-      // Gold border rect
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(photoX, photoY, photoW, photoH, 4, 4, 'F');
-      doc.setDrawColor(...G);
-      doc.setLineWidth(1);
-      doc.roundedRect(photoX, photoY, photoW, photoH, 4, 4, 'S');
-
-      if (face) {
-        // Render at 3× for print-quality sharpness
-        const SCALE = 3;
-        const bpxW = photoW * SCALE;
-        const bpxH = photoH * SCALE;
-        const clip = document.createElement('canvas');
-        clip.width  = bpxW;
-        clip.height = bpxH;
-        const ctx = clip.getContext('2d');
-
-        // Rounded-rect clip path
-        const r = 4 * SCALE;
-        ctx.beginPath();
-        ctx.moveTo(r, 0);
-        ctx.lineTo(bpxW - r, 0); ctx.quadraticCurveTo(bpxW, 0, bpxW, r);
-        ctx.lineTo(bpxW, bpxH - r); ctx.quadraticCurveTo(bpxW, bpxH, bpxW - r, bpxH);
-        ctx.lineTo(r, bpxH); ctx.quadraticCurveTo(0, bpxH, 0, bpxH - r);
-        ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
-        ctx.closePath();
-        ctx.clip();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, bpxW, bpxH);
-
-        // ── COVER-FIT centred — the key fix ──────────────────────────────────
-        // Previously dy = 0 (pinned to top) which decapitated tall portraits.
-        // Now we centre both axes so the face is always fully visible.
-        const fitRatio = Math.max(bpxW / face.w, bpxH / face.h);
-        const dw = face.w * fitRatio;
-        const dh = face.h * fitRatio;
-        const dx = (bpxW - dw) / 2;   // centre horizontally
-        const dy = (bpxH - dh) / 2;   // centre vertically  ← was 0
-        // ─────────────────────────────────────────────────────────────────────
-
-        const fi = new window.Image();
-        fi.src = face.dataUrl;
-        ctx.drawImage(fi, dx, dy, dw, dh);
-
-        doc.addImage(clip.toDataURL('image/jpeg', 0.97), 'JPEG', photoX, photoY, photoW, photoH);
-      } else {
-        // Placeholder
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.5);
-        doc.setTextColor(...INKS);
-        doc.text('Photo', photoX + photoW / 2, photoY + photoH / 2 - 3, { align: 'center' });
-        doc.text('pending', photoX + photoW / 2, photoY + photoH / 2 + 4, { align: 'center' });
-      }
-
-      // ── Details, right of photo ──
-      const detX = photoX + photoW + 8;
-      const detW = W - M - detX;
-      let detY = photoY + 6;
-
-      const row = (label, value) => {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5);
-        doc.setTextColor(...INKS);
-        doc.text(label.toUpperCase(), detX, detY);
-        detY += 7;
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(...INK);
-        const lines = doc.splitTextToSize(String(value || '—'), detW);
-        doc.text(lines[0], detX, detY);
-        detY += 13;
-      };
-
-      row('Name',            client.name);
-      row('Passport No.',    client.passportNumber);
-      row('Nationality / DOB',
-        [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null]
-          .filter(Boolean).join('  ·  ') || '—');
-      row('Passport Expiry', client.passportExpiry ? fmtDate(client.passportExpiry) : '—');
-
-      // ── Footer strip ──
-      const footY = H - 28;
-      doc.setFillColor(...E);
-      doc.rect(0, footY, W, 28, 'F');
-      doc.setFillColor(...G);
-      doc.rect(0, footY, W, 1.5, 'F');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(5);
-      doc.setTextColor(...GS);
-      doc.text('IF FOUND, PLEASE CONTACT', M, footY + 9);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(255, 255, 255);
-      const agencyLine = `${agent?.agencyName || 'Travel Agency'}  ·  ${agent?.phone || agent?.email || '—'}`;
-      doc.text(agencyLine, M, footY + 20);
-
-      if (agent?.agentName || agent?.name) {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.5);
-        doc.setTextColor(200, 220, 210);
-        doc.text(`Agent: ${agent.agentName || agent.name}`, W - M, footY + 20, { align: 'right' });
-      }
+      drawPilgrimIdCard(doc, {
+        x: 0, y: 0, w: PILGRIM_CARD_W, h: PILGRIM_CARD_H,
+        client, agent, logoImg, faceImg,
+        groupLabel, expiryLabel,
+        emergencyPhone: emergencyPhone.trim(),
+        cardRef,
+      });
 
       doc.save(`Umrah-ID-${client.name.replace(/\s+/g, '-')}.pdf`);
     } catch (err) {
@@ -940,16 +994,12 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
     }
   };
 
-  // ── On-screen card preview ────────────────────────────────────────────────
-  // Proportions match the PDF exactly (243:153 ≈ 8:5).
-  // Photo slot: 72px wide, full height of the body area, object-cover
-  // object-center so the face is centred — not cropped to the top.
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden">
 
         {/* Modal header */}
         <div
@@ -957,7 +1007,7 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
           style={{ backgroundColor: UM_BRAND.emerald900 }}
         >
           <div>
-            <p className="text-sm font-bold text-white tracking-wide">Umrah ID Card</p>
+            <p className="text-sm font-bold text-white tracking-wide">Pilgrim ID Card</p>
             <p className="text-[11px] mt-0.5" style={{ color: UM_BRAND.goldSoft }}>{client.name}</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 transition-colors">
@@ -965,67 +1015,45 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
           </button>
         </div>
 
-        {/* Card preview */}
+        {/* Card preview — portrait badge, 153:243 (matches the PDF exactly) */}
         <div className="p-5" style={{ background: `linear-gradient(160deg, ${UM_BRAND.parchment}, ${UM_BRAND.creamDeep})` }}>
           <div
-            className="mx-auto w-full rounded-xl overflow-hidden shadow-xl"
-            style={{ aspectRatio: '243 / 153', backgroundColor: UM_BRAND.cream, position: 'relative' }}
+            className="mx-auto shadow-xl overflow-hidden"
+            style={{
+              width: '100%', maxWidth: 210, aspectRatio: '153 / 243',
+              backgroundColor: UM_BRAND.cream, position: 'relative',
+              border: `1px solid ${UM_BRAND.parchment}`,
+            }}
           >
-            {/* ── Header band ── */}
+            {/* Header — agency logo + name (not UmrahMarket) */}
             <div
-              className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2"
-              style={{
-                height: '22%',
-                background: `linear-gradient(120deg, ${UM_BRAND.emerald900} 0%, ${UM_BRAND.emerald700} 100%)`,
-              }}
+              className="absolute top-0 left-0 right-0 flex items-center gap-2 px-2.5"
+              style={{ height: '15.5%', backgroundColor: UM_BRAND.emerald900 }}
             >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className="w-5 h-5 rounded bg-white flex-shrink-0 flex items-center justify-center overflow-hidden">
-                  <img src={umLogo} alt="" className="w-full h-full object-contain" />
-                </div>
-                <div className="leading-tight min-w-0">
-                  <p className="text-[11px] font-bold text-white truncate" style={{ fontFamily: 'Georgia,serif' }}>UmraMarket</p>
-                  <p className="text-[6px] font-bold uppercase tracking-wider" style={{ color: UM_BRAND.goldSoft }}>Pilgrim ID</p>
-                </div>
+              <div className="w-7 h-7 rounded bg-white flex-shrink-0 flex items-center justify-center overflow-hidden">
+                {agent?.logoUrl ? (
+                  <img src={agent.logoUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-[11px] font-bold" style={{ color: UM_BRAND.emerald900 }}>
+                    {(agent?.agencyName || 'A').charAt(0).toUpperCase()}
+                  </span>
+                )}
               </div>
-              <div className="text-right leading-tight flex-shrink-0 ml-2">
-                <p className="text-[9px] font-bold text-white">{client.packageType === 'hajj' ? 'HAJJ' : 'UMRAH'}</p>
-                <p className="text-[6px]" style={{ color: UM_BRAND.goldSoft }}>{cardRef}</p>
+              <div className="leading-tight min-w-0">
+                <p className="text-[9px] font-bold text-white uppercase truncate">{agent?.agencyName || 'Travel Agency'}</p>
+                <p className="text-[5.5px] font-bold uppercase tracking-wider" style={{ color: UM_BRAND.goldSoft }}>Pilgrim Identification</p>
               </div>
             </div>
+            <div className="absolute left-0 right-0" style={{ top: '15.5%', height: '1.2px', backgroundColor: UM_BRAND.gold }} />
 
-            {/* Gold accent line */}
-            <div
-              className="absolute left-0 right-0"
-              style={{ top: '22%', height: '1.5px', backgroundColor: UM_BRAND.gold }}
-            />
-
-            {/* ── Body ── */}
-            <div
-              className="absolute left-0 right-0 flex gap-2.5 px-3"
-              style={{ top: 'calc(22% + 2px)', bottom: '18%' }}
-            >
-              {/* Photo slot — object-center centres the face, no top-crop */}
+            {/* Photo circle + details */}
+            <div className="absolute left-0 right-0 flex flex-col items-center" style={{ top: 'calc(15.5% + 10px)' }}>
               <div
-                className="flex-shrink-0 rounded-lg overflow-hidden bg-white"
-                style={{
-                  width: '30%',
-                  border: `2px solid ${UM_BRAND.gold}`,
-                  boxShadow: `inset 0 0 0 1px rgba(201,162,39,0.15)`,
-                }}
+                className="rounded-full overflow-hidden bg-white flex-shrink-0"
+                style={{ width: '46%', aspectRatio: '1 / 1', border: `2.5px solid ${UM_BRAND.gold}`, boxShadow: `0 0 0 1px rgba(201,162,39,0.15)` }}
               >
                 {client.facePhotoUrl ? (
-                  <img
-                    src={client.facePhotoUrl}
-                    alt={client.name}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      objectPosition: 'center center',  // ← was "top" — this was the bug
-                      display: 'block',
-                    }}
-                  />
+                  <img src={client.facePhotoUrl} alt={client.name} className="w-full h-full object-cover object-center" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <span className="text-[6px] text-center px-1" style={{ color: UM_BRAND.inkSoft }}>Photo{'\n'}pending</span>
@@ -1033,47 +1061,57 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
                 )}
               </div>
 
-              {/* Details */}
-              <div className="flex-1 min-w-0 flex flex-col justify-center gap-[5px] py-1">
-                {[
-                  ['Name',            client.name],
-                  ['Passport No.',    client.passportNumber],
-                  ['Nationality / DOB',
-                    [client.nationality, client.dateOfBirth ? fmtDate(client.dateOfBirth) : null]
-                      .filter(Boolean).join(' · ') || '—'],
-                  ['Passport Expiry', client.passportExpiry ? fmtDate(client.passportExpiry) : '—'],
-                ].map(([label, value]) => (
-                  <div key={label} className="min-w-0">
-                    <p
-                      className="text-[6px] font-bold uppercase tracking-wide leading-none mb-0.5"
-                      style={{ color: UM_BRAND.inkSoft }}
-                    >{label}</p>
-                    <p
-                      className="text-[10px] font-bold truncate leading-tight"
-                      style={{ color: UM_BRAND.ink }}
-                    >{value || '—'}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+              <p className="text-[11px] font-extrabold text-center mt-2 px-2 leading-tight" style={{ color: UM_BRAND.emerald900 }}>
+                {client.name}
+              </p>
+              <p className="text-[7px] mt-0.5" style={{ color: UM_BRAND.inkSoft }}>
+                Passport No: {client.passportNumber || '—'}
+              </p>
 
-            {/* ── Footer strip ── */}
-            <div
-              className="absolute bottom-0 left-0 right-0 px-3 flex flex-col justify-center"
-              style={{
-                height: '18%',
-                backgroundColor: UM_BRAND.emerald900,
-                borderTop: `1.5px solid ${UM_BRAND.gold}`,
-              }}
-            >
-              <p
-                className="text-[5.5px] font-bold uppercase tracking-wide leading-none mb-0.5"
-                style={{ color: UM_BRAND.goldSoft }}
-              >If found, please contact</p>
-              <p className="text-[8px] font-bold text-white truncate leading-tight">
-                {agent?.agencyName || 'Travel Agency'} · {agent?.phone || agent?.email || '—'}
+              <div className="w-[75%] h-px my-1.5" style={{ backgroundColor: UM_BRAND.gold, opacity: 0.5 }} />
+
+              <div className="w-[85%] space-y-0.5">
+                {emergencyPhone && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[6px] font-bold" style={{ color: UM_BRAND.inkSoft }}>Emergency No:</span>
+                    <span className="text-[7px] font-bold" style={{ color: UM_BRAND.ink }}>{emergencyPhone}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-[6px] font-bold" style={{ color: UM_BRAND.inkSoft }}>WhatsApp No:</span>
+                  <span className="text-[7px] font-bold" style={{ color: UM_BRAND.ink }}>{agent?.phone || '—'}</span>
+                </div>
+              </div>
+
+              <p className="text-[9px] font-extrabold text-center mt-2 px-2 leading-tight" style={{ color: UM_BRAND.emerald700 }}>
+                {groupLabel.toUpperCase()}
+              </p>
+              <p className="text-[6px] mt-0.5" style={{ color: UM_BRAND.inkSoft }}>
+                Expire: {expiryLabel}
               </p>
             </div>
+
+            {/* Footer — small umrahmarket.net credit, not the primary brand */}
+            <div
+              className="absolute bottom-0 left-0 right-0 flex items-center justify-center"
+              style={{ height: '7%', backgroundColor: UM_BRAND.emerald900, borderTop: `1px solid ${UM_BRAND.gold}` }}
+            >
+              <p className="text-[5.5px] font-medium" style={{ color: UM_BRAND.goldSoft }}>
+                Generated via umrahmarket.net
+              </p>
+            </div>
+          </div>
+
+          {/* Emergency contact — optional, printed on this card only */}
+          <div className="mt-4">
+            <label className="text-xs font-semibold text-gray-600">Emergency contact (optional)</label>
+            <input
+              type="text"
+              value={emergencyPhone}
+              onChange={e => setEmergencyPhone(e.target.value)}
+              placeholder="e.g. +966 5XX XXX XXX"
+              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
           </div>
 
           {/* Missing-photo warning */}
@@ -1100,7 +1138,136 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
             {downloading ? 'Preparing…' : 'Download ID card (PDF)'}
           </button>
           <p className="text-[11px] text-gray-400 text-center mt-2">
-            Wallet-sized card · print and laminate, or share digitally.
+            CR80 wallet card · print and laminate, or share digitally.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Batch ID Cards modal ──────────────────────────────────────────────────────
+// Lets an agent pick several verified clients from the list view and download
+// one print-ready A4 PDF sheet — cards tiled at true CR80 size with dashed
+// cut-guides around each, ready to print, cut, and laminate.
+const BulkIdCardsModal = ({ clients, agent, onClose }) => {
+  const [downloading, setDownloading] = useState(false);
+  // Same placeholder-until-real-field approach as the single-card modal.
+  const [emergencyPhone, setEmergencyPhone] = useState('+966 500 000 000');
+  if (!clients || clients.length === 0) return null;
+
+  const fmtDate = (d) =>
+    d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+
+      const [logoImg, ...faceImgs] = await Promise.all([
+        loadImageForPdf(agent?.logoUrl || umLogo),
+        ...clients.map(c => c.facePhotoUrl ? loadImageForPdf(c.facePhotoUrl) : Promise.resolve(null)),
+      ]);
+
+      const GAP = 10, PAGE_MARGIN = 20;
+      const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+      const PAGE_W = doc.internal.pageSize.getWidth();
+      const PAGE_H = doc.internal.pageSize.getHeight();
+      const cols = Math.max(1, Math.floor((PAGE_W - PAGE_MARGIN * 2 + GAP) / (PILGRIM_CARD_W + GAP)));
+      const rows = Math.max(1, Math.floor((PAGE_H - PAGE_MARGIN * 2 + GAP) / (PILGRIM_CARD_H + GAP)));
+      const perPage = cols * rows;
+      const gridW = cols * PILGRIM_CARD_W + (cols - 1) * GAP;
+      const gridH = rows * PILGRIM_CARD_H + (rows - 1) * GAP;
+      const offsetX = (PAGE_W - gridW) / 2;
+      const offsetY = (PAGE_H - gridH) / 2;
+
+      clients.forEach((client, i) => {
+        const posInPage = i % perPage;
+        if (i > 0 && posInPage === 0) doc.addPage();
+        const col = posInPage % cols;
+        const row = Math.floor(posInPage / cols);
+        const cx = offsetX + col * (PILGRIM_CARD_W + GAP);
+        const cy = offsetY + row * (PILGRIM_CARD_H + GAP);
+
+        // Dashed cut-guide around each card
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.5);
+        if (doc.setLineDashPattern) doc.setLineDashPattern([2, 2], 0);
+        doc.rect(cx - 3, cy - 3, PILGRIM_CARD_W + 6, PILGRIM_CARD_H + 6, 'S');
+        if (doc.setLineDashPattern) doc.setLineDashPattern([], 0);
+
+        const { groupLabel, expiryLabel } = pilgrimCardMeta(client, fmtDate);
+
+        drawPilgrimIdCard(doc, {
+          x: cx, y: cy, w: PILGRIM_CARD_W, h: PILGRIM_CARD_H,
+          client, agent, logoImg,
+          faceImg: faceImgs[i],
+          groupLabel, expiryLabel,
+          emergencyPhone: emergencyPhone.trim(),
+          cardRef: `UM-ID-${(client.bookingId || i).toString().slice(0, 12).toUpperCase()}`,
+        });
+      });
+
+      doc.save(`Umrah-ID-Cards-Batch-${clients.length}.pdf`);
+    } catch (err) {
+      console.error('[BulkIdCardsModal] PDF generation failed:', err);
+      alert('Could not generate the batch PDF. Make sure "jspdf" is installed.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5" style={{ backgroundColor: UM_BRAND.emerald900 }}>
+          <div>
+            <p className="text-sm font-bold text-white tracking-wide">Batch ID Cards</p>
+            <p className="text-[11px] mt-0.5" style={{ color: UM_BRAND.goldSoft }}>
+              {clients.length} pilgrim{clients.length === 1 ? '' : 's'} selected
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 transition-colors">
+            <X className="h-5 w-5 text-white/70" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="max-h-40 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50">
+            {clients.map(c => (
+              <div key={c.bookingId} className="flex items-center justify-between px-3 py-2 text-xs">
+                <span className="font-medium text-gray-700 truncate">{c.name}</span>
+                <span className="text-gray-400">{c.passportNumber || '—'}</span>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600">Emergency contact (optional)</label>
+            <input
+              type="text"
+              value={emergencyPhone}
+              onChange={e => setEmergencyPhone(e.target.value)}
+              placeholder="e.g. +966 5XX XXX XXX"
+              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">Printed on every card in this batch, next to your WhatsApp number.</p>
+          </div>
+
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm shadow-md hover:shadow-lg hover:brightness-105 transition-all disabled:opacity-60"
+            style={{ background: `linear-gradient(135deg, ${UM_BRAND.gold}, ${UM_BRAND.goldSoft})`, color: UM_BRAND.ink }}
+          >
+            {downloading ? <Loader className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {downloading ? 'Preparing…' : `Download ${clients.length} ID cards (PDF)`}
+          </button>
+          <p className="text-[11px] text-gray-400 text-center">
+            Print-ready A4 sheet with cut guides · CR80 card size (54×86mm)
           </p>
         </div>
       </div>
@@ -1666,6 +1833,55 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [agentProfile, setAgentProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
+  // ── Profile picture (agency logo) ──────────────────────────────
+  // Editable straight from the dashboard (sidebar/topbar avatar), and
+  // kept in sync when it's changed instead from the Settings tab via
+  // AgentProfileSettings' onLogoUpdated callback below.
+  const avatarFileInputRef = useRef(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const applyLogoUrl = (logoUrl) => {
+    setAgentProfile((prev) => ({ ...(prev || {}), logoUrl }));
+  };
+
+  const handleAvatarPick = () => avatarFileInputRef.current?.click();
+
+  const handleAvatarFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+
+    if (!/^image\/(png|jpe?g|webp|svg\+xml)$/.test(file.type)) {
+      alert('Logo must be a PNG, JPG, WEBP, or SVG image.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Logo must be under 5MB.');
+      return;
+    }
+
+    // Optimistic local preview while the upload is in flight
+    const prevLogoUrl = agentProfile?.logoUrl || '';
+    const previewUrl = URL.createObjectURL(file);
+    applyLogoUrl(previewUrl);
+
+    setUploadingAvatar(true);
+    try {
+      // POST /agents/me/logo persists logo_url onto the profile row itself
+      // (see agent_profile.routes.js) — no follow-up save call needed.
+      const res = await uploadAgentLogo(file);
+      const logoUrl = res?.logoUrl;
+      if (!logoUrl) throw new Error('Upload did not return a logo URL');
+      applyLogoUrl(logoUrl);
+    } catch (err) {
+      console.error('[AgentDashboard] avatar upload failed:', err?.message);
+      alert('Logo upload failed. Please try again.');
+      applyLogoUrl(prevLogoUrl);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -1696,6 +1912,7 @@ const AgentDashboard = ({ user, onLogout }) => {
   const displayEmail = profile?.email || user?.email || '';
   const displayAgent = profile?.agentNumber || user?.agentNumber || '';
   const avatarLetter = displayName.charAt(0).toUpperCase();
+  const logoUrl = profile?.logoUrl || '';
   // ────────────────────────────────────────────────────────────────
 
   // ── Document verification status ─────────────────────────────────────────
@@ -1816,6 +2033,25 @@ const AgentDashboard = ({ user, onLogout }) => {
   const [clientStatusFilter, setClientStatusFilter] = useState('all');
   const [manifest, setManifest] = useState(null); // { packageName, packageType, departure, duration, clients }
   const [idCardClient, setIdCardClient] = useState(null); // client object for the Umrah ID Card modal
+  const [idSelectMode, setIdSelectMode] = useState(false); // batch ID card select mode
+  const [selectedIdSet, setSelectedIdSet] = useState(new Set()); // bookingIds selected for batch ID cards
+  const [bulkIdOpen, setBulkIdOpen] = useState(false); // batch ID card modal visibility
+
+  const toggleIdSelect = (client) => {
+    setSelectedIdSet(prev => {
+      const next = new Set(prev);
+      if (next.has(client.bookingId)) next.delete(client.bookingId); else next.add(client.bookingId);
+      return next;
+    });
+  };
+  const selectAllInGroup = (eligibleClients, select) => {
+    setSelectedIdSet(prev => {
+      const next = new Set(prev);
+      eligibleClients.forEach(c => { if (select) next.add(c.bookingId); else next.delete(c.bookingId); });
+      return next;
+    });
+  };
+  const exitIdSelectMode = () => { setIdSelectMode(false); setSelectedIdSet(new Set()); };
   const { clients, loading: clientsLoading, error: clientsError, refetch: refetchClients } = useAgentClients();
 
   // ── Conversations / unread count ─────────────────────────────────────────────
@@ -2034,9 +2270,27 @@ const AgentDashboard = ({ user, onLogout }) => {
         {/* Agency Info */}
         <div className="p-3 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
-              {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
-            </div>
+            <button
+              type="button"
+              onClick={handleAvatarPick}
+              title="Change profile picture"
+              className="relative w-10 h-10 min-w-[2.5rem] rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-base flex-shrink-0 overflow-hidden group cursor-pointer"
+            >
+              {profileLoading ? (
+                <Loader className="h-4 w-4 animate-spin" />
+              ) : logoUrl ? (
+                <img src={logoUrl} alt={displayName} className="w-full h-full object-cover" />
+              ) : (
+                avatarLetter
+              )}
+              <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                {uploadingAvatar ? (
+                  <Loader className="h-3.5 w-3.5 text-white animate-spin" />
+                ) : (
+                  <Camera className="h-3.5 w-3.5 text-white" />
+                )}
+              </span>
+            </button>
             {/* Show when sidebar expanded (hover on desktop, always on mobile) */}
             <div className={`transition-all duration-200 overflow-hidden flex-1 min-w-0 ${sidebarHovered ? 'lg:opacity-100 lg:w-auto' : 'lg:opacity-0 lg:w-0'}`}>
               <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
@@ -2264,9 +2518,36 @@ const AgentDashboard = ({ user, onLogout }) => {
                     </>
                   )}
                 </div>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
-                  {profileLoading ? <Loader className="h-4 w-4 animate-spin" /> : avatarLetter}
-                </div>
+                <button
+                  type="button"
+                  onClick={handleAvatarPick}
+                  title="Change profile picture"
+                  className="relative w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold overflow-hidden group cursor-pointer flex-shrink-0"
+                >
+                  {profileLoading ? (
+                    <Loader className="h-4 w-4 animate-spin" />
+                  ) : logoUrl ? (
+                    <img src={logoUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    avatarLetter
+                  )}
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {uploadingAvatar ? (
+                      <Loader className="h-3 w-3 text-white animate-spin" />
+                    ) : (
+                      <Camera className="h-3 w-3 text-white" />
+                    )}
+                  </span>
+                </button>
+
+                {/* Hidden input shared by sidebar + topbar avatar buttons */}
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={handleAvatarFileChange}
+                />
 
                 {/* Logout — visible on mobile where sidebar is hidden */}
                 <button
@@ -2416,10 +2697,37 @@ const AgentDashboard = ({ user, onLogout }) => {
                       </span>
                     )}
                   </div>
-                  <button onClick={refetchClients} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600">
-                    <RefreshCw className="h-4 w-4" /> Refresh
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => (idSelectMode ? exitIdSelectMode() : setIdSelectMode(true))}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-semibold ${
+                        idSelectMode ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <CreditCard className="h-4 w-4" /> {idSelectMode ? 'Cancel selection' : 'Print ID Cards'}
+                    </button>
+                    <button onClick={refetchClients} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600">
+                      <RefreshCw className="h-4 w-4" /> Refresh
+                    </button>
+                  </div>
                 </div>
+
+                {/* Batch selection bar */}
+                {idSelectMode && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                    <p className="text-sm text-emerald-800">
+                      <span className="font-bold">{selectedIdSet.size}</span> selected for batch ID cards
+                      <span className="text-emerald-600/70"> · only clients with a verified passport can be selected</span>
+                    </p>
+                    <button
+                      onClick={() => setBulkIdOpen(true)}
+                      disabled={selectedIdSet.size === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Download className="h-4 w-4" /> Download {selectedIdSet.size || ''} ID card{selectedIdSet.size === 1 ? '' : 's'}
+                    </button>
+                  </div>
+                )}
 
                 {/* Filters */}
                 <div className="flex flex-wrap items-center gap-3">
@@ -2479,6 +2787,10 @@ const AgentDashboard = ({ user, onLogout }) => {
                           setManifest({ packageName, packageType, departure, duration, clients })
                         }
                         onIdCard={setIdCardClient}
+                        selectMode={idSelectMode}
+                        selectedIds={selectedIdSet}
+                        onToggleSelect={toggleIdSelect}
+                        onSelectAllInGroup={selectAllInGroup}
                       />
                     ))}
                   </div>
@@ -2500,21 +2812,44 @@ const AgentDashboard = ({ user, onLogout }) => {
                   />
                 )}
 
-                {/* Umrah ID Card modal */}
-                {idCardClient && (
-                  <UmrahIdCardModal
-                    client={idCardClient}
-                    agent={{
-                      name: displayName,
-                      agentName: displayName,
-                      agencyName: profile?.agencyName,
-                      agentNumber: displayAgent,
-                      email: displayEmail,
-                      phone: profile?.phone,
-                    }}
-                    onClose={() => setIdCardClient(null)}
-                  />
-                )}
+                {/* Agent details for ID cards — falls back through every field name
+                    the backend might use, and finally to the already-working
+                    displayName/logoUrl shown in the dashboard header, so the
+                    card never regresses to a generic "Travel Agency" placeholder
+                    just because one field is missing from getMe(). */}
+                {(() => {
+                  const agentForIdCards = {
+                    name: displayName,
+                    agentName: displayName,
+                    agencyName: profile?.agencyName || profile?.agentName || user?.agencyName || displayName,
+                    agentNumber: displayAgent,
+                    email: displayEmail,
+                    phone: profile?.phone || profile?.phoneNumber || profile?.contactPhone || profile?.whatsapp
+                      || user?.phone || user?.phoneNumber || '',
+                    logoUrl: logoUrl || profile?.logoUrl || user?.logoUrl || '',
+                  };
+                  return (
+                    <>
+                      {/* Umrah ID Card modal */}
+                      {idCardClient && (
+                        <UmrahIdCardModal
+                          client={idCardClient}
+                          agent={agentForIdCards}
+                          onClose={() => setIdCardClient(null)}
+                        />
+                      )}
+
+                      {/* Batch ID Cards modal */}
+                      {bulkIdOpen && (
+                        <BulkIdCardsModal
+                          clients={clients.filter(c => selectedIdSet.has(c.bookingId))}
+                          agent={agentForIdCards}
+                          onClose={() => setBulkIdOpen(false)}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             );
           })()}
@@ -2645,7 +2980,7 @@ const AgentDashboard = ({ user, onLogout }) => {
               {/* Agency profile: logo, bio, years of experience, specialties —
                   the content that shows on the agent's public profile page
                   and is meant to build trust and drive package bookings. */}
-              <AgentProfileSettings />
+              <AgentProfileSettings logoUrl={logoUrl} onLogoUpdated={applyLogoUrl} />
 
               {/* <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                 <div className="p-6 border-b border-gray-200">

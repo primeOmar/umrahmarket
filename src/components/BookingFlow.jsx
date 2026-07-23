@@ -1,16 +1,25 @@
 // BookingFlow.jsx
 //
-// Orchestrates the full booking journey:
+// Orchestrates the booking journey up to payment:
 //   1. loading  — check if passport already verified for this package
-//   2. passport — PassportVerificationModal (details + passport page scan)
+//   2. passport — PassportVerificationModal (details + passport page scan).
+//                 REQUIRED for every booking — there is no way to reach the
+//                 payment step without either an auto-verified passport or a
+//                 manual-review pass (3 failed OCR attempts).
 //   3. payment  — BookingModal (card / M-Pesa / bank)
-//   4. face     — FacePhotoModal (selfie for Umrah ID card, post-payment)
 //
+// What happens AFTER payment is intentionally NOT handled here. Contact
+// details, next-of-kin, and the Umrah ID photo are all collected by
+// ClientDashboard's <PostBookingModal>, which is the single source of truth
+// for "what's still missing on this booking" (see /api/onboarding/*). This
+// component used to also render <FacePhotoModal> itself once payment
+// succeeded, which raced with PostBookingModal for the same booking and was
+// the root cause of the post-payment modal being flaky/inconsistent. Do not
+// re-add a post-payment phase here — extend PostBookingModal instead.
 import React, { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import BookingModal from './BookingModal';
 import PassportVerificationModal from './PassportVerificationModal';
-import FacePhotoModal from './FacePhotoModal';
 import { getPassportStatus } from '../api';
 
 export default function BookingFlow({ pkg, user, onClose, onSuccess }) {
@@ -24,17 +33,20 @@ export default function BookingFlow({ pkg, user, onClose, onSuccess }) {
         if (!alive) return;
         setPhase(res?.canProceed ? 'payment' : 'passport');
       } catch {
+        // If the status check fails for any reason, fail closed — every
+        // booking must go through passport verification, never skip it.
         if (alive) setPhase('passport');
       }
     })();
     return () => { alive = false; };
   }, [pkg.id]);
 
-  // Payment confirmed → immediately advance to face-photo phase.
-  // Also surface to the parent (ClientDashboard) so it can refresh bookings.
+  // Payment confirmed → hand off to the parent immediately. ClientDashboard
+  // is responsible for closing this flow, switching to the Bookings tab, and
+  // opening PostBookingModal for contact / next-of-kin / ID photo.
   const handlePaymentSuccess = (bookingData) => {
-    onSuccess?.(bookingData);   // let ClientDashboard refresh its list
-    setPhase('face');           // show face-photo modal right away
+    onSuccess?.(bookingData);
+    onClose?.();
   };
 
   if (phase === 'loading') {
@@ -66,16 +78,6 @@ export default function BookingFlow({ pkg, user, onClose, onSuccess }) {
         user={user}
         onClose={onClose}
         onSuccess={handlePaymentSuccess}
-      />
-    );
-  }
-
-  if (phase === 'face') {
-    return (
-      <FacePhotoModal
-        pkg={pkg}
-        user={user}
-        onDone={onClose}
       />
     );
   }

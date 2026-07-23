@@ -12,6 +12,7 @@ import { userStore, tokenStore } from '../api';
 import { getItinerary, getPackageById, normalise } from './agent/packages/services/packagesApi';
 import AuthModal from './AuthModal';
 import BookingFlow from './BookingFlow';
+import Footer from './Footer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GalleryCarousel
@@ -357,6 +358,11 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
 
   const pinRefs = [useRef(), useRef(), useRef(), useRef()];
 
+  // Stores the fact that a guest tried to favourite this package before being
+  // sent to login — mirrors HeroSection's pendingFavouriteId pattern so the
+  // action resumes automatically once they authenticate.
+  const pendingFavouriteRef = useRef(false);
+
   const closeModal = () => { setShowBookingModal(false); setPayStep('select'); setPayMethod(null); setCardInfo({ number: '', expiry: '', cvc: '', name: '' }); setMpesaPhone(''); setMpesaPin(['', '', '', '']); };
 
   // When onBook prop is provided (from ClientDashboard), delegate upward.
@@ -481,6 +487,12 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             )}
             <button
               onClick={async () => {
+                const isLoggedIn = !!(currentUser || userStore.get() || tokenStore.get());
+                if (!isLoggedIn) {
+                  pendingFavouriteRef.current = true;
+                  setShowAuthModal(true);
+                  return;
+                }
                 try {
                   await toggleFavorite?.(packageData);
                 } catch (err) {
@@ -828,25 +840,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                 </div>
               </div>
 
-              {/* Need help */}
-              <div className="mt-6 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6">
-                <div className="flex items-start mb-4">
-                  <Info className="h-5 w-5 text-emerald-600 mt-0.5 mr-2 flex-shrink-0" />
-                  <div><h3 className="font-bold text-gray-900 mb-1">Need assistance?</h3><p className="text-sm text-gray-600">Our Umrah experts are available 24/7</p></div>
-                </div>
-                <div className="space-y-3">
-                  <button className="w-full py-3 bg-white border border-emerald-600 text-emerald-600 font-medium rounded-lg hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2">
-                    <Phone className="h-4 w-4" />Call +966 12 345 6789
-                  </button>
-                  <button className="w-full py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
-                    <Mail className="h-4 w-4" />Email us
-                  </button>
-                </div>
-                <div className="mt-4 pt-4 border-t border-emerald-100 flex items-center text-sm text-gray-600">
-                  <Clock className="h-4 w-4 mr-2 text-emerald-600" />
-                  Response: <span className="font-medium text-emerald-700 ml-1">Under 5 minutes</span>
-                </div>
-              </div>
+             
             </div>
           </div>
         </div>
@@ -884,6 +878,8 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
           </div>
         )}
       </main>
+
+      <Footer />
 
       {/* ── Payment Modal ── */}
       {showBookingModal && (
@@ -1263,9 +1259,24 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
       {showAuthModal && (
         <div className="fixed inset-0 z-[100]">
           <AuthModal
-            onClose={() => setShowAuthModal(false)}
-            onAuthSuccess={(user) => {
+            onClose={() => {
               setShowAuthModal(false);
+              pendingFavouriteRef.current = false;
+            }}
+            onAuthSuccess={async (user) => {
+              setShowAuthModal(false);
+
+              // Resume a favourite action that triggered the login prompt
+              if (pendingFavouriteRef.current) {
+                pendingFavouriteRef.current = false;
+                try {
+                  await toggleFavorite?.(packageData);
+                } catch (err) {
+                  console.error('[toggleFavorite]', err);
+                }
+                return;
+              }
+
               if (user?.role === 'agent') {
                 navigate('/agent/dashboard?welcome=true');
               } else {

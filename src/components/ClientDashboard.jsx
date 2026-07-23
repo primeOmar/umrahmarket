@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { userStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
 import BookingFlow from './BookingFlow';
-import FacePhotoModal from './FacePhotoModal';
+import PostBookingModal from './PostBookingModal';
 import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
@@ -276,7 +276,7 @@ const StatCard = ({ icon: Icon, label, value, change, color, darkMode, loading }
 );
 
 // ==================== BOOKING CARD COMPONENT ====================
-const BookingCard = ({ booking, darkMode, onView, onAddPhoto }) => {
+const BookingCard = ({ booking, darkMode, onView, onCompleteDetails }) => {
   const getStatusColor = (status) => {
     switch(status?.toLowerCase()) {
       case 'confirmed': return 'bg-emerald-100 text-emerald-700';
@@ -393,16 +393,19 @@ const BookingCard = ({ booking, darkMode, onView, onAddPhoto }) => {
           View Details
         </button>
 
-        {/* Face-photo nudge — only shown when caller signals this booking needs one */}
-        {onAddPhoto && (
+        {/* Required-details nudge — contact info / next of kin / passport photo
+             still missing for this booking. Takes priority over the face-photo
+             nudge since it gates travel readiness more broadly. */}
+        {onCompleteDetails && (
           <button
-            onClick={() => onAddPhoto(booking)}
-            className="w-full mt-2 py-2.5 flex items-center justify-center gap-2 rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-700 text-sm font-semibold hover:bg-amber-100 transition-colors"
+            onClick={() => onCompleteDetails(booking)}
+            className="w-full mt-2 py-2.5 flex items-center justify-center gap-2 rounded-lg border-2 border-red-400 bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 transition-colors"
           >
-            <Camera className="h-4 w-4" />
-            Add Umrah ID Photo
+            <Shield className="h-4 w-4" />
+            Complete Required Details
           </button>
         )}
+
       </div>
     </div>
   );
@@ -1451,34 +1454,25 @@ const ClientDashboard = ({ user, onLogout }) => {
         const rewardPoints = computeRewardPoints(raw);
         setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past, rewardPoints }));
 
-        // Await face-photo check so we have the missing set before loading.bookings
-        // is set to false — this prevents the auto-popup useEffect from running
-        // against an empty set due to a race condition.
+        // Required-details check — covers contact, next-of-kin, AND the
+        // Umrah ID photo (see onboarding.controller.js:getMissingOnboarding).
+        // This is the single auto-popup source for post-booking requirements;
+        // it re-fires on every login until every active booking is complete.
         try {
-          const fpRes = await request({ method: 'get', url: '/passport/face-photo-status' });
-          const missing = fpRes?.data?.bookingsMissingPhoto ?? [];
-          const missingIds = new Set(missing.map((m) => m.bookingId));
-          setBookingsMissingPhoto(missingIds);
+          const missingDetails = await checkMissingDetails();
+          const missingIds = new Set(missingDetails.map((m) => m.bookingId));
 
-          // Auto-popup: if this is the first load and any active booking needs a
-          // photo, open FacePhotoModal immediately without waiting for a button click.
-          if (!autoPhotoPromptShown.current && missingIds.size > 0) {
+          if (!autoDetailsPromptShown.current && missingIds.size > 0) {
             const target = raw.find(
-              (b) =>
-                ['confirmed', 'pending'].includes(b.status?.toLowerCase()) &&
-                missingIds.has(b.id)
+              (b) => ['confirmed', 'pending'].includes(b.status?.toLowerCase()) && missingIds.has(b.id)
             );
             if (target) {
-              autoPhotoPromptShown.current = true;
-              setFacePhotoBooking({
-                bookingId: target.id,
-                packageId: target.package_id ?? target.package?.id,
-                pkg:       target.package ?? { id: target.package_id, title: target.package?.name ?? 'Umrah Package' },
-              });
+              autoDetailsPromptShown.current = true;
+              setPostBookingTarget(target);
             }
           }
-        } catch (fpErr) {
-          console.warn('[fetchBookings] face-photo-status check failed:', fpErr.message);
+        } catch (detailsErr) {
+          console.warn('[fetchBookings] onboarding/missing check failed:', detailsErr.message);
         }
       } catch (err) {
         console.error('[fetchBookings]', err.message);
@@ -1588,24 +1582,24 @@ const ClientDashboard = ({ user, onLogout }) => {
 
   // ── Booking modal state ──────────────────────────────────────────────────
   const [bookingPkg, setBookingPkg] = useState(null);
-  // ── Face-photo modal state (standalone — for returning users) ────────────
-  // { bookingId, packageId } of the booking whose Umrah ID photo is missing.
-  const [facePhotoBooking, setFacePhotoBooking] = useState(null);
 
-  const [bookingsMissingPhoto, setBookingsMissingPhoto] = useState(new Set());
+  // ── Post-booking details modal (contacts / next-of-kin / passport photo) ──
+  // { id, package_id, package } of the booking still missing one of these.
+  const [postBookingTarget, setPostBookingTarget] = useState(null);
+  const [bookingsMissingDetails, setBookingsMissingDetails] = useState(new Set());
 
-  // Tracks whether we've already shown the auto-popup this session so it
-  // never fires more than once per login, even if bookings refresh.
-  const autoPhotoPromptShown = React.useRef(false);
+  // Never auto-pops more than once per login, same pattern as the face photo nudge.
+  const autoDetailsPromptShown = React.useRef(false);
 
-  const checkFacePhotoStatus = useCallback(async () => {
+  const checkMissingDetails = useCallback(async () => {
     try {
-      const res = await request({ method: 'get', url: '/passport/face-photo-status' });
-      const missing = res?.data?.bookingsMissingPhoto ?? [];
-      setBookingsMissingPhoto(new Set(missing.map((m) => m.bookingId)));
+      const res = await request({ method: 'get', url: '/onboarding/missing' });
+      const missing = res?.data?.bookingsMissingDetails ?? [];
+      setBookingsMissingDetails(new Set(missing.map((m) => m.bookingId)));
+      return missing;
     } catch (err) {
-      console.warn('[checkFacePhotoStatus]', err.message);
-      // Non-critical — silently ignore
+      console.warn('[checkMissingDetails]', err.message);
+      return [];
     }
   }, []);
 
@@ -1625,14 +1619,25 @@ const ClientDashboard = ({ user, onLogout }) => {
     }
   }, []);
 
-  const handleBookingSuccess = useCallback((_newBooking) => {
-    // Keep BookingFlow mounted — FacePhotoModal renders next inside it.
-    // onClose() (setBookingPkg(null)) is called by BookingFlow after face photo.
-    refreshBookings();
-    checkFacePhotoStatus();
+  const handleBookingSuccess = useCallback(async (newBooking) => {
+    // BookingFlow calls onSuccess() (this function) then onClose() itself
+    // right after payment succeeds — this just needs to react to that.
+    await refreshBookings();
+    checkMissingDetails();
     showToast('Package booked successfully! 🎉', 'success');
     setActiveTab('bookings');
-  }, [showToast, refreshBookings, checkFacePhotoStatus]);
+
+    // Immediately send the client to the required-details modal — contacts,
+    // next-of-kin, and passport photo. This is the "redirected right after
+    // payment" step; it doesn't wait for the next login. bookingPkg is still
+    // set here because BookingFlow calls onSuccess() before onClose().
+    const target = newBooking?.id
+      ? newBooking
+      : bookingPkg
+        ? { id: newBooking?.id, package_id: bookingPkg.id, package: bookingPkg }
+        : null;
+    if (target) setPostBookingTarget(target);
+  }, [showToast, refreshBookings, checkMissingDetails, bookingPkg]);
 
   const handleLogout = () => {
     localStorage.removeItem('userData');
@@ -1679,8 +1684,8 @@ const ClientDashboard = ({ user, onLogout }) => {
                         booking={booking}
                         darkMode={darkMode}
                         onView={handleViewBooking}
-                        onAddPhoto={bookingsMissingPhoto.has(booking.id)
-                          ? (b) => setFacePhotoBooking({ bookingId: b.id, packageId: b.package_id ?? b.package?.id, pkg: b.package ?? { id: b.package_id, title: b.package?.name ?? 'Umrah Package' } })
+                        onCompleteDetails={bookingsMissingDetails.has(booking.id)
+                          ? (b) => setPostBookingTarget(b)
                           : undefined}
                       />
                     ))}
@@ -1744,8 +1749,8 @@ const ClientDashboard = ({ user, onLogout }) => {
                     booking={booking}
                     darkMode={darkMode}
                     onView={handleViewBooking}
-                    onAddPhoto={bookingsMissingPhoto.has(booking.id)
-                      ? (b) => setFacePhotoBooking({ bookingId: b.id, packageId: b.package_id ?? b.package?.id, pkg: b.package ?? { id: b.package_id, title: b.package?.name ?? 'Umrah Package' } })
+                    onCompleteDetails={bookingsMissingDetails.has(booking.id)
+                      ? (b) => setPostBookingTarget(b)
                       : undefined}
                   />
                 ))}
@@ -1969,25 +1974,30 @@ const ClientDashboard = ({ user, onLogout }) => {
         />
       )}
 
-      {/* ── Standalone Face-Photo Modal ─────────────────────────────────────
-           Shown when a returning user opens "My Bookings" and one or more
-           confirmed/pending bookings still has no Umrah ID photo on file.
-           Triggered by the "Add Umrah ID Photo" button on BookingCard.
+      {/* ── Post-Booking Details Modal ───────────────────────────────────────
+           Contacts (email + mobile), next-of-kin (name + mobile), and the
+           passport photo — shown immediately after a successful payment, and
+           re-shown on later logins (or via the "Complete Required Details"
+           button on BookingCard) until all three are on file. The passport
+           step still goes through the existing OCR verification endpoint —
+           nothing about that scan is changed here.
       ── */}
-      {facePhotoBooking && (
-        <FacePhotoModal
-          pkg={facePhotoBooking.pkg}
-          onDone={() => {
-            setFacePhotoBooking(null);
-            // Remove this booking from the missing-set so the nudge disappears
-            setBookingsMissingPhoto(prev => {
+      {postBookingTarget && (
+        <PostBookingModal
+          booking={postBookingTarget}
+          user={user}
+          onClose={() => setPostBookingTarget(null)}
+          onComplete={() => {
+            setPostBookingTarget(null);
+            setBookingsMissingDetails(prev => {
               const next = new Set(prev);
-              next.delete(facePhotoBooking.bookingId);
+              next.delete(postBookingTarget.id);
               return next;
             });
           }}
         />
       )}
+
     </div>
   );
 };
