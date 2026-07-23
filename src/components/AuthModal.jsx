@@ -569,6 +569,7 @@ useEffect(() => {
     .then((res) => {
       const user = res.data?.data?.user || res.data?.user;
       if (!user) throw new Error('User data missing from server response');
+      userStore.set(user);
       onClose();
       onAuthSuccess(user);
     })
@@ -636,14 +637,23 @@ useEffect(() => {
       if (authType === 'login') {
         showSuccess('Authenticating...');
 
-const res = await login(formData);
+        const res = await login(formData);
+        const user = res.data?.data?.user || res.data?.user;
 
-// Debug: log the full response to see structure
-if (import.meta?.env?.DEV)  {
-          console.debug('[Login] Full response:', JSON.stringify(res?.data));
-          console.debug('[Login] User:', res.data?.data?.user || res.data?.user || 'NOT FOUND');
+        if (!user) {
+          showError('Login succeeded but user data is missing. Please try again.');
+          setIsLoading(false);
+          return;
         }
-        
+
+        // Persist immediately (synchronously, before any popup/delay) so any
+        // caller that reads userStore right after onAuthSuccess — e.g.
+        // PackageDetailPage resuming a booking — sees the logged-in user.
+        // The register branch below has always done this; login had been
+        // silently skipping it, which is why "Book Now" → login → resume
+        // booking could hand BookingFlow an empty user.
+        userStore.set(user);
+
         const loginPopup = document.createElement('div');
         loginPopup.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg animate-fadeIn';
         loginPopup.dataset.authPopup = 'true';
@@ -657,47 +667,24 @@ if (import.meta?.env?.DEV)  {
                 </svg>
               </div>
               <h3 class="text-2xl font-bold text-gray-900 mb-2">Welcome Back! 🎉</h3>
-              <p class="text-gray-600 mb-6">Redirecting you to your dashboard...</p>
+              <p class="text-gray-600 mb-6">One moment...</p>
               <div class="w-full bg-gray-200 rounded-full h-2 mb-4 overflow-hidden">
                 <div class="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full animate-progress"></div>
               </div>
-              <p class="text-xs text-gray-400">Preparing your experience</p>
             </div>
           </div>
         `;
-        
+
         document.body.appendChild(loginPopup);
-        
+
+        // Short, purely cosmetic pause — long enough to read, short enough
+        // not to stall someone mid-checkout. userStore is already set above,
+        // so anything reacting to onAuthSuccess has correct data immediately.
         setTimeout(() => {
           loginPopup.remove();
-          
-          // Redirect based on user role - backend returns user in res.data.data.user
-          const user = res.data?.data?.user || res.data?.user;
-          
-          console.log('[Login] DEBUG - Full response data:', res.data);
-          console.log('[Login] DEBUG - Extracted user:', user);
-          console.log('[Login] DEBUG - User role:', user?.role);
-          
-          if (!user) {
-            console.error('[Login] No user found in response - cannot redirect');
-            showError('Login succeeded but user data is missing. Please try again.');
-            setIsLoading(false);
-            return;
-          }
-          
-          console.log('[Login] DEBUG - About to call onClose()');
-          // Close modal before redirect
           onClose();
-          console.log('[Login] DEBUG - onClose() called');
-          
-          const targetUrl = user?.role === 'agent' 
-            ? '/agent/dashboard?welcome=true' 
-            : '/client/dashboard?welcome=true';
-          
-          console.log('[Login] DEBUG - Redirecting to:', targetUrl);
           onAuthSuccess(user);
-          console.log('[Login] DEBUG - onAuthSuccess called (this should navigate)');
-        }, 1500);
+        }, 600);
 
       } else {
         if (authMode === 'client') {
@@ -926,6 +913,7 @@ if (import.meta?.env?.DEV)  {
             role: 'agent'
           };
           
+          userStore.set(agentData);
           localStorage.setItem('agentData', JSON.stringify(agentData));
           sessionStorage.setItem('newAgent', 'true');
 
@@ -1180,6 +1168,7 @@ const handleGoogleLogin = useCallback(() => {
       const res = await googleLogin(result.idToken);
       const user = res.data?.data?.user || res.data?.user;
       if (!user) throw new Error('User data missing from server response');
+      userStore.set(user);
       onClose();
       onAuthSuccess(user);
     } catch (err) {

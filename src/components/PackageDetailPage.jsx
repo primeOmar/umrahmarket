@@ -374,6 +374,9 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
       setBookingPkg(pkg);
     }
   };
+  // Single source of truth for auth state on this page — used by every
+  // "Book Now" / favourite click so the check can never drift between spots.
+  const isLoggedIn = () => !!(currentUser || userStore.get() || tokenStore.get());
   const formatPrice  = (p) => Number(p).toLocaleString('en-US');
   const calculateTotal = () => !packageData ? 0 : guests.adults * packageData.price + guests.children * packageData.price * 0.5;
 
@@ -487,8 +490,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             )}
             <button
               onClick={async () => {
-                const isLoggedIn = !!(currentUser || userStore.get() || tokenStore.get());
-                if (!isLoggedIn) {
+                if (!isLoggedIn()) {
                   pendingFavouriteRef.current = true;
                   setShowAuthModal(true);
                   return;
@@ -511,8 +513,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             </button>
             <button
               onClick={() => {
-                const isLoggedIn = !!(currentUser || userStore.get() || tokenStore.get());
-                if (!isLoggedIn) {
+                if (!isLoggedIn()) {
                   setShowAuthModal(true);
                 } else {
                   openBooking(packageData);
@@ -823,8 +824,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
 
                 <button
                   onClick={() => {
-                    const isLoggedIn = !!(currentUser || userStore.get() || tokenStore.get());
-                    if (!isLoggedIn) {
+                    if (!isLoggedIn()) {
                       setShowAuthModal(true);
                     } else {
                       openBooking(packageData);
