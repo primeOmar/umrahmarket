@@ -44,6 +44,19 @@ const handleSessionExpired = () => {
   tokenStore.clear();
   userStore.clear();
 
+  // Never hard-redirect away from the payment callback page. If a card
+  // payment's access token happens to expire mid-checkout on Pesapal, this
+  // handler can fire right as PaymentCallback.jsx is about to navigate the
+  // user to /client/dashboard after a successful verify — the hard redirect
+  // below would win that race and dump them on the homepage instead, even
+  // though the payment succeeded. PaymentCallback's own request()/catch
+  // already shows a proper failed/retry state if the verify call itself
+  // fails, so it's safe to just skip the forced navigation here.
+  if (window.location.pathname.startsWith('/payment/callback')) {
+    window.dispatchEvent(new CustomEvent('session:expired'));
+    return;
+  }
+
   const banner = document.createElement('div');
   banner.style.cssText = `
     position:fixed;top:0;left:0;right:0;z-index:9999;
