@@ -11,7 +11,7 @@ import {
   X, Shield, CheckCircle, AlertCircle,
   Loader2, Lock, Globe, ChevronLeft, ChevronRight, Info, Copy, CreditCard
 } from 'lucide-react';
-import { request, getPassportStatus } from '../api';
+import { request, getPassportStatus, paymentGuard, tokenStore, refreshToken } from '../api';
 import PassportVerificationModal from './PassportVerificationModal';
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ const Field = ({ label, error, children }) => (
 );
 
 // ─── BookingModal ─────────────────────────────────────────────────────────────
-const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
+const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
   // step machine:
   // 'passport-check' (loading) → 'passport' (needs verification) | 'select'
@@ -111,22 +111,62 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
 
   useEffect(() => { fetchFxRate(); }, [fetchFxRate]);
 
-  // Passport must be verified for THIS package before payment is allowed.
+  // Defense-in-depth: BookingFlow should never be reached without a logged-in
+  // user (callers gate "Book Now" behind AuthModal already), but sessions can
+  // expire between the click and this mount. If there's no user/token, bounce
+  // straight to auth instead of firing an unauthenticated request.
+  useEffect(() => {
+    if (!user?.id && !tokenStore.get()) {
+      // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
+      // eslint-disable-next-line no-console
+      console.warn('%c[NAV] BookingFlow mount guard: no user/token', 'color:#e11d48;font-weight:bold', {
+        user, hasToken: !!tokenStore.get(), pkgId: pkg?.id,
+      });
+      onClose?.();
+      onRequireAuth?.();
+    }
+  }, [user, onClose, onRequireAuth]);
+
+  // Passport must be verified for THIS package before payment is allowed —
+  // and that check itself is the proof of an active session. The 'passport'
+  // step must only ever be reached via a *successful* authenticated response
+  // from the backend; nothing here is allowed to fall back into it.
+  const checkPassportStatus = useCallback(async () => {
+    if (!user?.id && !tokenStore.get()) return; // handled by the session guard above
+    setStep('passport-check');
+    try {
+      const data = await getPassportStatus(pkg.id);
+      const verified = data?.status === 'verified' || data?.verified === true;
+      setStep(verified ? 'select' : 'passport');
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
+        // eslint-disable-next-line no-console
+        console.warn('%c[NAV] BookingFlow passport-status check got 401', 'color:#e11d48;font-weight:bold', {
+          pkgId: pkg?.id, hasToken: !!tokenStore.get(),
+        });
+        // Session actually expired mid-flow — send to login. Do NOT fall
+        // through to the passport step without a confirmed active session.
+        onClose?.();
+        onRequireAuth?.();
+        return;
+      }
+      // Any other failure (network, 5xx, etc.) — we couldn't confirm session
+      // or verification status either way, so stay out of the passport step
+      // and let the user retry rather than silently granting/denying access.
+      setStep('passport-check-error');
+    }
+  }, [pkg.id, user, onClose, onRequireAuth]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const data = await getPassportStatus(pkg.id);
-        const verified = data?.status === 'verified' || data?.verified === true;
-        if (!cancelled) setStep(verified ? 'select' : 'passport');
-      } catch {
-        // If the check itself fails, fail safe — require verification rather
-        // than silently letting an unverified guest reach payment.
-        if (!cancelled) setStep('passport');
-      }
+      if (cancelled) return;
+      await checkPassportStatus();
     })();
     return () => { cancelled = true; };
-  }, [pkg.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pkg.id, user]);
 
   // lock body scroll
   useEffect(() => {
@@ -140,6 +180,33 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
   // Any close path (X, backdrop, Escape) must behave the same as "Continue":
   // if a booking just succeeded, the parent still needs onSuccess called so
   // it refreshes bookings / navigates to the dashboard — not just onClose.
+  // Suppress the hard session-expiry redirect for the ENTIRE risky window:
+  // M-Pesa STK push polling, card processing/waiting, AND the success screen
+  // itself (which auto-continues to navigate('/client/dashboard') a few
+  // seconds later — ClientDashboard's first data fetches land right after
+  // that navigate, and a token that expired during the wait would otherwise
+  // hard-kick the user to '/' right as they land on the dashboard). Only
+  // truly released on unmount (component actually closing/navigating away).
+  useEffect(() => {
+    if (['card-waiting', 'processing', 'polling', 'success'].includes(step)) {
+      paymentGuard.start();
+    } else {
+      paymentGuard.end();
+    }
+    return () => paymentGuard.end();
+  }, [step]);
+
+  // Best-effort: proactively refresh the access token the moment payment
+  // succeeds, so ClientDashboard's first mount-time requests (bookings,
+  // favourites, onboarding status) land with a fresh token instead of
+  // whatever's left of the one that's been sitting around through the
+  // whole payment wait. Silent — if this fails, the normal 401-triggered
+  // refresh (still shielded by paymentGuard above) covers it.
+  useEffect(() => {
+    if (step !== 'success') return;
+    refreshToken().catch(() => {});
+  }, [step]);
+
   const handleClose = useCallback(() => {
     if (step === 'success') onSuccess?.(successBooking);
     onClose?.();
@@ -250,6 +317,55 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
       setStep('error');
     }
   };
+
+  const pollAttemptsRef = useRef(0);
+
+  const pollCardStatus = useCallback(async () => {
+    if (!orderTrackingId) return;
+    pollAttemptsRef.current += 1;
+    try {
+      const res = await request({
+        method: 'post',
+        url:    '/payments/card/verify',
+        data:   { orderTrackingId, packageId: pkg.id },
+      });
+      if (res.data?.success && res.data.status !== 'PENDING') {
+        setStep('success');
+        if (res.data.booking) setSuccessBooking(res.data.booking);
+      }
+    } catch {
+      // Ignore — likely still pending or a transient error. Next poll retries,
+      // up to the attempt cap below.
+    }
+  }, [orderTrackingId, pkg.id]);
+
+  useEffect(() => {
+    if (step !== 'card-waiting' || !orderTrackingId) return;
+    pollAttemptsRef.current = 0;
+    // Give the user real time to actually finish paying on Pesapal before we
+    // start checking — an early check can catch a transient non-COMPLETED
+    // status, which the backend used to lock in as permanent FAILED (see
+    // Cardcontroller.js verify()). 20s initial delay, then every 10s, capped
+    // at 20 attempts (~3.5 min) so an abandoned payment doesn't poll forever
+    // — the "I've paid" button still works manually after that.
+    const MAX_ATTEMPTS = 20;
+    const tick = () => {
+      if (pollAttemptsRef.current >= MAX_ATTEMPTS) return;
+      pollCardStatus();
+    };
+    const first = setTimeout(tick, 20000);
+    const interval = setInterval(tick, 10000);
+    return () => { clearTimeout(first); clearInterval(interval); };
+  }, [step, orderTrackingId, pollCardStatus]);
+
+  // Auto-continue a few seconds after success, so confirming the booking
+  // doesn't require an extra click — falls through to the same handleClose()
+  // → onSuccess() → dashboard redirect as the manual "Continue" button.
+  useEffect(() => {
+    if (step !== 'success') return;
+    const t = setTimeout(() => handleClose(), 4000);
+    return () => clearTimeout(t);
+  }, [step, handleClose]);
 
   // ── MPESA ─────────────────────────────────────────────────────────────────
   const validatePhone = () => {
@@ -442,6 +558,29 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
             </div>
           )}
 
+          {/* ══ PASSPORT CHECK — couldn't confirm active session/status ══ */}
+          {step === 'passport-check-error' && (
+            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+              <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertCircle className="h-7 w-7 text-red-500" />
+              </div>
+              <div>
+                <p className="font-bold text-gray-900">Couldn't verify your session</p>
+                <p className="text-sm text-gray-500 mt-1">We couldn't confirm you're signed in. Please retry, or sign in again.</p>
+              </div>
+              <div className="flex gap-3 w-full max-w-xs">
+                <button onClick={checkPassportStatus}
+                  className="flex-1 py-3 font-bold text-white rounded-xl"
+                  style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
+                  Retry
+                </button>
+                <button onClick={onClose} className="flex-1 py-3 border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ══ SELECT METHOD ══ */}
           {step === 'select' && (
             <div className="space-y-3">
@@ -561,9 +700,13 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
               <div>
                 <p className="font-bold text-gray-900 text-lg">Complete payment in the new tab</p>
                 <p className="text-sm text-gray-500 mt-1">Enter your card or M-Pesa details on the Pesapal page.</p>
-                <p className="text-xs text-gray-400 mt-2">Once done, return here and click the button below.</p>
+                <p className="text-xs text-gray-400 mt-2">We'll confirm automatically — or click below once you're done.</p>
               </div>
               <div className="w-full space-y-3">
+                <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Checking payment status…
+                </div>
                 <button
                   onClick={verifyCard}
                   disabled={cardLoading}
@@ -725,6 +868,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess }) => {
               <div>
                 <h3 className="text-2xl font-bold text-gray-900">Payment confirmed!</h3>
                 <p className="text-gray-500 mt-1 text-sm">Your Umrah package is booked. A confirmation has been sent to your email.</p>
+                <p className="text-gray-400 mt-1 text-xs">Taking you to your dashboard to finish setup…</p>
               </div>
               <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2 text-left">
                 {[['Package', pkg.title], ['Booking ref', pkgRef], ['Amount paid', `$${fmt(pkg.price)}`]].map(([l, v]) => (

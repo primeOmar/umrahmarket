@@ -40,19 +40,72 @@ export const userStore = {
 // ─── Session expiry handler ────────────────────────────────────────────────────
 // Called when refresh token is also expired — clears state, shows banner, and
 // fires a 'session:expired' event that App.jsx can catch to open the auth modal.
+// ─── Payment-in-flight guard ────────────────────────────────────────────────
+// While a card payment is being polled/verified (BookingFlow.jsx's
+// 'card-waiting' / 'processing' / 'success' steps), Pesapal checkout + our
+// polling window can easily outlast a short-lived access token. If a 401
+// lands during that window and refresh also fails, we do NOT want the hard
+// redirect below to fire and yank the user away right as they're about to
+// land on the dashboard. BookingFlow sets this flag for the duration of the
+// flow and clears it once it's done (success, error, or modal closed).
+let _paymentInFlight = false;
+export const paymentGuard = {
+  start: () => { _paymentInFlight = true; },
+  end:   () => { _paymentInFlight = false; },
+};
+
+// ── Navigation bridge ────────────────────────────────────────────────────────
+// Single source of truth for "go to this route" everywhere in the app,
+// including from code that has no React context at all (this file). Mixing
+// useNavigate (SPA route change) with window.location.href (hard reload) in
+// the same flow is what was causing the session-expiry redirect to race
+// BookingFlow's navigate('/client/dashboard') and win — dumping the user
+// back on the homepage instead of letting the dashboard navigation stand.
+// <NavigationBridge/> (rendered inside <Router> in App.jsx) registers the
+// real router `navigate` here on mount, before anything else in the tree.
+let _navigate = null;
+export const setNavigator = (fn) => { _navigate = fn; };
+export const goTo = (path, opts, reason) => {
+  // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
+  // eslint-disable-next-line no-console
+  console.warn(`%c[NAV] -> ${path}`, 'color:#e11d48;font-weight:bold', {
+    reason: reason || '(no reason given)',
+    hasNavigator: !!_navigate,
+    accessToken: !!tokenStore.get(),
+    refreshToken: !!localStorage.getItem('refresh_token'),
+    user: userStore.get(),
+    path: window.location.pathname,
+  });
+  // eslint-disable-next-line no-console
+  console.trace('[NAV] call stack');
+  if (_navigate) _navigate(path, opts);
+  else window.location.href = path; // fallback: bridge not mounted yet (should not happen in practice)
+};
+
 const handleSessionExpired = () => {
   tokenStore.clear();
   userStore.clear();
 
-  // Never hard-redirect away from the payment callback page. If a card
-  // payment's access token happens to expire mid-checkout on Pesapal, this
-  // handler can fire right as PaymentCallback.jsx is about to navigate the
-  // user to /client/dashboard after a successful verify — the hard redirect
-  // below would win that race and dump them on the homepage instead, even
-  // though the payment succeeded. PaymentCallback's own request()/catch
-  // already shows a proper failed/retry state if the verify call itself
-  // fails, so it's safe to just skip the forced navigation here.
-  if (window.location.pathname.startsWith('/payment/callback')) {
+  // Never hard-redirect while a payment is in-flight or on the payment
+  // callback page itself. The hard redirect would otherwise win the race
+  // against BookingFlow's navigate('/client/dashboard') and dump the user
+  // on the homepage even though the payment succeeded. The booking flow's
+  // own error UI already handles a genuine verify failure, so it's safe to
+  // just skip the forced navigation here and let that take over instead.
+  //
+  // Also skip it in the few seconds right after landing on the dashboard
+  // from a just-completed booking (booking_just_confirmed flag, set by
+  // BookingFlow's onSuccess and cleared by ClientDashboard on read) — a
+  // token that expired during a long M-Pesa/card wait can otherwise 401 on
+  // the dashboard's very first data fetch and hard-bounce the user straight
+  // back to the homepage instead of onto onboarding. ClientDashboard has
+  // its own session guard that will still navigate them away gracefully
+  // (client-side, no jarring reload) if the session is genuinely dead.
+  const justBookedOnDashboard =
+    window.location.pathname === '/client/dashboard' &&
+    sessionStorage.getItem('booking_just_confirmed');
+
+  if (_paymentInFlight || window.location.pathname.startsWith('/payment/callback') || justBookedOnDashboard) {
     window.dispatchEvent(new CustomEvent('session:expired'));
     return;
   }
@@ -72,7 +125,7 @@ const handleSessionExpired = () => {
 
   setTimeout(() => {
     banner.remove();
-    window.location.href = '/';
+    goTo('/', { replace: true }, 'api.js:handleSessionExpired (401 that could not be silently refreshed)');
   }, 2500);
 };
 
@@ -191,8 +244,8 @@ export const request = async (config) => {
 };
 
 // ─── Auth endpoints ────────────────────────────────────────────────────────────
-export const registerClient = (formData) =>
-  request({
+export const registerClient = async (formData) => {
+  const res = await request({
     method: 'post',
     url: '/auth/register/client',
     data: {
@@ -203,6 +256,17 @@ export const registerClient = (formData) =>
       phone:     formData.phone || undefined,
     },
   });
+  if (res?.data?.data?.accessToken) {
+    tokenStore.set(res.data.data.accessToken);
+    await supabase.auth.setSession({
+      access_token:  res.data.data.accessToken,
+      refresh_token: res.data.data.refreshToken || '',
+    });
+  }
+  if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
+  if (res?.data?.data?.user) userStore.set(res.data.data.user);
+  return res;
+};
 
 export const registerAgent = async (data) => {
   const res = await request({ method: 'post', url: '/auth/register/agent', data });

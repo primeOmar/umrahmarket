@@ -220,7 +220,7 @@ const GalleryCarousel = ({ images, title }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-const PackageDetailPage = ({ packages = [], loading = false, favorites = [], toggleFavorite, currentUser, onBook }) => {
+const PackageDetailPage = ({ packages = [], loading = false, favorites = [], toggleFavorite, currentUser, onBook, onAuthSuccess }) => {
   const { id }    = useParams();
   const navigate  = useNavigate();
   const location  = useLocation();
@@ -1270,6 +1270,15 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             }}
             onAuthSuccess={async (user) => {
               setShowAuthModal(false);
+
+              // Propagate the newly-authenticated user up to App.jsx's
+              // top-level currentUser state — localStorage (tokenStore /
+              // userStore) is already correct at this point (AuthModal sets
+              // those itself), but App.jsx's React state doesn't know yet.
+              // Without this, navigating to /client/dashboard right after
+              // booking hands ClientDashboard a stale/null `user` prop and
+              // its session guard immediately kicks the client back to '/'.
+              onAuthSuccess?.(user);
 
               // Resume a favourite action that triggered the login prompt
               if (pendingFavouriteRef.current) {

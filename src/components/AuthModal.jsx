@@ -14,6 +14,7 @@ import {
   googleLogin,
   uploadAgentDocuments,
   userStore,
+  goTo,
 } from '../api';   
 
 // ==================== ANIMATION STYLES ====================
@@ -1089,7 +1090,7 @@ useEffect(() => {
       await uploadAgentDocuments(uploadedFiles, pendingUserId);
       showSuccess('Documents submitted! Your account will be reviewed within 24–48 hours.');
       setTimeout(() => {
-        window.location.href = '/agent/dashboard?verified=true';
+        goTo('/agent/dashboard?verified=true');
       }, 2500);
     } catch (err) {
       showError(err.message || 'Document upload failed. Please try again.');

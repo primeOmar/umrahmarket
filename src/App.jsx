@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Header from './components/Header';
 import HeroSection from './components/HeroSection';
 import PackageDetailPage from './components/PackageDetailPage';
@@ -10,7 +10,7 @@ import SuperAdminLogin from './components/SuperAdminLogin';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import GoogleCallback from './pages/GoogleCallback';
 import GoogleDone from './pages/GoogleDone';
-import { refreshToken, userStore, tokenStore } from './api';
+import { refreshToken, userStore, tokenStore, goTo, setNavigator } from './api';
 import PaymentCallback from './pages/PaymentCallback';
 import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
 import SuperAdminRegister from './components/SuperAdminRegister';
@@ -58,7 +58,19 @@ const ProtectedClientRoute = ({ children, authReady }) => {
     </div>
   );
   const user = userStore.get();
-  if (!user || user.role !== 'client') return <Navigate to="/" state={{ from: location.pathname }} replace />;
+  if (!user || user.role !== 'client') {
+    // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
+    // eslint-disable-next-line no-console
+    console.warn('%c[NAV] ProtectedClientRoute bounced to /', 'color:#e11d48;font-weight:bold', {
+      from: location.pathname,
+      user,
+      accessToken: !!tokenStore.get(),
+      refreshToken: !!localStorage.getItem('refresh_token'),
+    });
+    // eslint-disable-next-line no-console
+    console.trace('[NAV] call stack');
+    return <Navigate to="/" state={{ from: location.pathname }} replace />;
+  }
   return children;
 };
 
@@ -92,6 +104,21 @@ const HomeRoute = ({ authReady, currentUser, children }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Navigation bridge ──────────────────────────────────────────────────────
+// Registers this app's real useNavigate() with api.js so code outside React
+// (the axios response interceptor) can trigger a proper SPA route change
+// instead of window.location.href. Must render inside <Router> since
+// useNavigate() requires router context; mounts before any route content,
+// so the bridge is always ready before any request could possibly 401.
+function NavigationBridge() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    setNavigator(navigate);
+    return () => setNavigator(null);
+  }, [navigate]);
+  return null;
+}
+
 function App() {
   const [favorites,   setFavorites]   = useState([]); // array of package IDs
   const [currentUser, setCurrentUser] = useState(null);
@@ -166,7 +193,7 @@ function App() {
     tokenStore.clear();
     userStore.clear();
     setCurrentUser(null);
-    window.location.href = '/';
+    goTo('/', { replace: true }, 'App.jsx:handleLogout');
   }, []);
 
   // ── Listen for token expiry fired by api.js interceptor ──────────────────
@@ -208,6 +235,7 @@ function App() {
 
   return (
     <Router>
+      <NavigationBridge />
       <div className="min-h-screen bg-gray-50">
         <Routes>
           {/* Home */}
@@ -257,6 +285,10 @@ function App() {
                 favorites={favorites}
                 toggleFavorite={toggleFavorite}
                 currentUser={currentUser}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
               />
               <Footer />
             </>

@@ -15,7 +15,7 @@ import {
   Maximize2, Minus, Plus, Headphones, Loader2, Info
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { userStore, request } from '../api';
+import { userStore, tokenStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
 import BookingFlow from './BookingFlow';
 import PostBookingModal from './PostBookingModal';
@@ -1412,6 +1412,17 @@ const ClientDashboard = ({ user, onLogout }) => {
       return; // skip first render — user prop may not be set yet
     }
     if (!user?.id) {
+      // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
+      // eslint-disable-next-line no-console
+      console.warn('%c[NAV] ClientDashboard session guard bounced to /', 'color:#e11d48;font-weight:bold', {
+        user,
+        userStoreValue: userStore.get(),
+        accessToken: !!tokenStore.get(),
+        refreshToken: !!localStorage.getItem('refresh_token'),
+        justBooked: sessionStorage.getItem('booking_just_confirmed'),
+      });
+      // eslint-disable-next-line no-console
+      console.trace('[NAV] call stack');
       navigate('/', { replace: true });
     }
   }, [user?.id, navigate]);
@@ -1541,24 +1552,9 @@ const ClientDashboard = ({ user, onLogout }) => {
     return;
   }
 
-  // ── PASSPORT VERIFICATION GATE ──────────────────────────────────────────
-  try {
-    const status = await getPassportStatus(pkg.id);
-    if (!status?.verified) {
-      // Not verified → show the passport modal
-      setVerificationPkg(pkg);
-      setShowPassportVerification(true);
-      return;
-    }
-  } catch (err) {
-    // If the API call fails, assume not verified and show the modal
-    console.warn('[Passport check] failed, showing modal', err.message);
-    setVerificationPkg(pkg);
-    setShowPassportVerification(true);
-    return;
-  }
-
-  // Already verified → proceed to payment
+  // Open the booking flow — BookingFlow itself checks passport verification
+  // status for this package first and shows the passport step automatically
+  // if it isn't verified yet, before ever reaching payment.
   setBookingPkg(pkg);
 };
   const handleViewBooking = (booking) => navigate(`/package/${booking.package_id ?? booking.package?.id}`);
@@ -2010,6 +2006,11 @@ const ClientDashboard = ({ user, onLogout }) => {
           user={user}
           onClose={() => setBookingPkg(null)}
           onSuccess={handleBookingSuccess}
+          onRequireAuth={() => {
+            setBookingPkg(null);
+            showToast('Your session has expired. Please sign in to book.', 'error');
+            onLogout?.();
+          }}
         />
       )}
 
