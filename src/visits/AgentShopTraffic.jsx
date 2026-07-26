@@ -51,15 +51,10 @@ const visitsFetch = async (url, options = {}) => {
 // visitsFetch above, matching the superadmin-token pattern used elsewhere —
 // e.g. the PublicChat pcFetch helper).
 //
-// The endpoint has two modes (see visits.controller.js):
-//   - no agentId  -> latest 100 rows across ALL agents (used to discover who's
-//                    currently active), plus a grand-total count
-//   - ?agentId=X  -> the FULL row history for that one agent (no limit applied)
-//
-// So we do it in two passes: find the active agent ids from the unfiltered
-// call, then fetch each agent's complete history so range windows (7D/30D/
-// 90D/All) and deltas are computed from real data rather than a truncated
-// sample.
+// ONE call, no agentId: the backend now groups every visit row by agent
+// server-side and returns { agents: [{ agentId, agentName,
+// verificationStatus, yearsExperience, totalVisits, visits: [...] }],
+// totalVisits }. No more N follow-up per-agent requests.
 // ---------------------------------------------------------------------------
 
 const RANGES = { "7D": 7, "30D": 30, "90D": 90, All: Infinity };
@@ -73,6 +68,28 @@ function dateLabel(key) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// UTC-safe day-key arithmetic. Mixing local Date methods (setHours/setDate)
+// with toISOString()-derived keys is what caused visits to disappear for
+// anyone outside UTC: a Nairobi (UTC+3) "local midnight today" converts to
+// *yesterday* in UTC, so the last bucket in the chart was keyed one day off
+// from the visited_at rows (which are stored/keyed in UTC). Everything below
+// stays in UTC date-string space end to end.
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function keyDaysAgo(baseKey, n) {
+  const d = new Date(`${baseKey}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetweenKeys(fromKey, toKey) {
+  const a = new Date(`${fromKey}T00:00:00Z`);
+  const b = new Date(`${toKey}T00:00:00Z`);
+  return Math.round((b - a) / 86400000);
+}
+
 // Zero-filled daily series for the given window, most recent day last.
 function buildDailySeries(rows, daysBack) {
   const counts = {};
@@ -81,24 +98,23 @@ function buildDailySeries(rows, daysBack) {
     counts[k] = (counts[k] || 0) + 1;
   });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const tKey = todayKey();
 
   let span = daysBack;
   if (daysBack === Infinity) {
     if (rows.length === 0) {
       span = 1;
     } else {
-      const earliest = new Date(Math.min(...rows.map((r) => new Date(r.visited_at))));
-      earliest.setHours(0, 0, 0, 0);
-      span = Math.max(1, Math.round((today - earliest) / 86400000) + 1);
+      const earliestKey = rows.reduce((min, r) => {
+        const k = dateKey(r.visited_at);
+        return k < min ? k : min;
+      }, tKey);
+      span = Math.max(1, daysBetweenKeys(earliestKey, tKey) + 1);
     }
   }
 
   return Array.from({ length: span }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (span - 1 - i));
-    const k = d.toISOString().slice(0, 10);
+    const k = keyDaysAgo(tKey, span - 1 - i);
     return { date: dateLabel(k), key: k, visits: counts[k] || 0 };
   });
 }
@@ -119,18 +135,16 @@ function buildCumulativeSeries(allRows) {
     counts[k] = (counts[k] || 0) + 1;
   });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const earliest = new Date(Math.min(...allRows.map((r) => new Date(r.visited_at))));
-  earliest.setHours(0, 0, 0, 0);
-  const span = Math.max(1, Math.round((today - earliest) / 86400000) + 1);
+  const tKey = todayKey();
+  const earliestKey = allRows.reduce((min, r) => {
+    const k = dateKey(r.visited_at);
+    return k < min ? k : min;
+  }, tKey);
+  const span = Math.max(1, daysBetweenKeys(earliestKey, tKey) + 1);
 
   let running = 0;
   return Array.from({ length: span }, (_, i) => {
-    const d = new Date(earliest);
-    d.setDate(d.getDate() + i);
-    const k = d.toISOString().slice(0, 10);
+    const k = keyDaysAgo(tKey, span - 1 - i);
     running += counts[k] || 0;
     return { date: dateLabel(k), key: k, cumulative: running };
   });
@@ -163,35 +177,16 @@ export default function AgentAgentTraffic() {
     setLoadError(null);
 
     try {
-      // Pass 1: who's active, from the latest 100 rows across all agents.
+      // One call: the backend groups every row by agent already.
       const overview = await fetchVisits("/getagentvisits");
-      const seen = new Map();
-      (overview.visits || []).forEach((v) => {
-        if (!seen.has(v.agent_id)) {
-          seen.set(v.agent_id, {
-            id: v.agent_id,
-            name: v.agent_name,
-            agencyName: v.agent_name,
-          });
-        }
-      });
-
-      const ids = [...seen.keys()];
-
-      // Pass 2: full history per agent (unfiltered calls are capped at 100
-      // rows server-side, so filtered-by-agentId calls are the only way to
-      // get a complete series for each one).
-      const perAgent = await Promise.all(
-        ids.map((id) =>
-          fetchVisits(`/getagentvisits?agentId=${id}`)
-        )
-      );
 
       if (controller.cancelled) return;
 
-      const built = ids.map((id, i) => ({
-        ...seen.get(id),
-        rows: perAgent[i].visits || [],
+      const built = (overview.agents || []).map((a) => ({
+        id: a.agentId,
+        name: a.agentName,
+        agencyName: a.agentName,
+        rows: a.visits || [],
       }));
 
       setAgents(built);
@@ -221,13 +216,14 @@ export default function AgentAgentTraffic() {
 
       let delta = null;
       if (windowDays !== Infinity && current.length) {
-        const windowStart = new Date(`${current[0].key}T00:00:00`);
-        const priorStart = new Date(windowStart);
-        priorStart.setDate(priorStart.getDate() - windowDays);
+        const windowStartKey = current[0].key;
+        const priorStartKey = keyDaysAgo(windowStartKey, windowDays);
+        const windowStartMs = Date.parse(`${windowStartKey}T00:00:00Z`);
+        const priorStartMs = Date.parse(`${priorStartKey}T00:00:00Z`);
 
         const priorTotal = a.rows.filter((r) => {
-          const t = new Date(r.visited_at);
-          return t >= priorStart && t < windowStart;
+          const t = new Date(r.visited_at).getTime();
+          return t >= priorStartMs && t < windowStartMs;
         }).length;
 
         delta =
