@@ -130,6 +130,41 @@ function sumVisits(days) {
   return days.reduce((a, b) => a + b.visits, 0);
 }
 
+function latestVisitAt(rows) {
+  if (!rows.length) return null;
+  return rows.reduce(
+    (latest, r) => (r.visited_at > latest ? r.visited_at : latest),
+    rows[0].visited_at
+  );
+}
+
+// Compact "time since" label: "Just now", "12m ago", "3h ago", "5d ago",
+// falling back to a short date once it's more than a couple of weeks old.
+function formatRelativeTime(iso) {
+  if (!iso) return "No visits yet";
+
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMs = Math.max(0, now - then);
+  const minutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(diffMs / 3600000);
+  const days = Math.floor(diffMs / 86400000);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 14) return `${days}d ago`;
+
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year:
+      new Date(iso).getFullYear() !== new Date().getFullYear()
+        ? "numeric"
+        : undefined,
+  });
+}
+
 // Running total across ALL agents' full history, from the earliest visit on
 // record to today — independent of the 7D/30D/90D/All range toggle, since
 // "cumulative from the initial visit" always means the whole timeline.
@@ -279,7 +314,9 @@ export default function AgentAgentTraffic() {
             : Math.round(((currentTotal - priorTotal) / priorTotal) * 100);
       }
 
-      return { ...a, current, total: currentTotal, delta };
+      const lastVisit = latestVisitAt(a.rows);
+
+      return { ...a, current, total: currentTotal, delta, lastVisit };
     });
   }, [agents, windowDays]);
 
@@ -637,6 +674,9 @@ function AgentRow({ agent, rank }) {
           {agent.agencyName}
         </p>
         <p className="truncate text-xs text-stone-500">{agent.name}</p>
+        <p className="mt-0.5 truncate text-[11px] text-stone-400">
+          Last visit: {formatRelativeTime(agent.lastVisit)}
+        </p>
       </div>
 
       <div className="h-10 w-36 shrink-0">
