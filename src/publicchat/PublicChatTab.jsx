@@ -478,7 +478,7 @@ const PublicChatTab = ({ conversations, setConversations, loading, error, onRefr
           </select>
           <button
             onClick={() => onRefresh?.()}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+            className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm bg-white hover:bg-gray-50 text-gray-700 transition-colors"
           >
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
