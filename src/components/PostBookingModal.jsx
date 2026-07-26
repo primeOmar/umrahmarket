@@ -870,7 +870,6 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
                     <input
                       ref={galleryInputRef}
                       type="file"
-                      accept="image/jpeg,image/png,image/webp"
                       onChange={handleFileSelect}
                       className="hidden"
                       id="id-photo-gallery-input"
