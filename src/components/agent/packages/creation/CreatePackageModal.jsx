@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   X, Upload, Trash2, Loader2, CheckCircle2, MapPin, Building2, Check, TrendingUp,
-  Sparkles, RefreshCw, ChevronDown, ChevronUp, Plus, CalendarClock,
+  Sparkles, RefreshCw, ChevronDown, ChevronUp, Plus, CalendarClock, Clock, AlertCircle,
 } from "lucide-react";
 import { createPackage, updatePackage, getItinerary, saveItinerary } from "../services/packagesApi";
 import {
   Field, sanitizeText, sanitizeNumber, sanitizeDate,
   InputEl, TextareaEl, Stars, HotelBlock,
-  RadioPillGroup, PresetChips,
+  RadioPillGroup, PresetChips, errorRingStyle,
 } from "./Packageformcomponents";
 import toast from "./Toast";
 import { processPackageImages } from "./imageProcessing";
@@ -235,6 +235,79 @@ function sanitizeItineraryPayload(days) {
     .filter((d) => d.title || d.activities.length > 0);
 }
 
+// ── draft auto-save ──────────────────────────────────────────────────────────
+// Persists in-progress form state to localStorage as the agent types, so a
+// dropped connection, browser crash, or accidental tab close never means
+// retyping everything. Photos (File objects) can't be cheaply persisted this
+// way, so only their count is remembered — the agent gets a reminder to
+// re-add them after restoring. Cleared automatically once the package is
+// successfully saved, or after DRAFT_MAX_AGE_MS so stale drafts don't linger.
+
+const DRAFT_KEY_PREFIX = "umrahmarket_draft_package_";
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DRAFT_SAVE_DEBOUNCE_MS = 600;
+
+function getDraftKey(mode, initialPackage) {
+  if ((mode === "edit" || mode === "duplicate") && initialPackage?.id) {
+    return `${DRAFT_KEY_PREFIX}${mode}_${initialPackage.id}`;
+  }
+  return `${DRAFT_KEY_PREFIX}new`;
+}
+
+function readDraft(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || !parsed.form) return null;
+    if (Date.now() - (parsed.savedAt || 0) > DRAFT_MAX_AGE_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ ...data, savedAt: Date.now() }));
+    return true;
+  } catch {
+    // Storage full or unavailable (e.g. private browsing) — autosave is a
+    // nice-to-have, so fail silently rather than interrupting the agent.
+    return false;
+  }
+}
+
+function clearDraft(key) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
+
+function formatDraftAge(ts) {
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+// Skip saving essentially-empty drafts (e.g. the moment the modal opens on a
+// blank form) — no point cluttering localStorage or prompting a restore for
+// a form nobody actually started filling in.
+function draftHasContent(form, itinerary) {
+  return !!(
+    (form.name && form.name.trim()) ||
+    (form.description && form.description.trim()) ||
+    form.price ||
+    form.makkah_hotel_name ||
+    form.madinah_hotel_name ||
+    (Array.isArray(itinerary) && itinerary.some((d) => d.title || (d.activities || []).some(Boolean)))
+  );
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function calcDurationNights(form) {
@@ -249,9 +322,124 @@ function calcDurationNights(form) {
   return nights > 0 ? String(nights) : "";
 }
 
+// ── validation ───────────────────────────────────────────────────────────────
+// What actually makes a package "complete" enough to publish. Checked before
+// advancing a tab (so an agent never gets to the end only to have "Create
+// Package" fail) and again in full before the final submit (in case a
+// restored draft dropped them straight onto a later step). Every error here
+// is keyed by the same field name used in `form`, so it can be handed
+// straight to the matching <Field error={...}> / input highlight.
+
+// Which step a given field lives on — used to light up the right dot on the
+// step bar and to know which step's errors to show inline right now.
+const FIELD_STEP = {
+  name: 0,
+  makkah_hotel_name: 1, makkah_hotel_rating: 1, makkah_check_in_date: 1, makkah_check_out_date: 1,
+  madinah_hotel_name: 1, madinah_hotel_rating: 1, madinah_check_in_date: 1, madinah_check_out_date: 1,
+  price: 2, duration: 2, available_to: 2, max_group_size: 2,
+  itinerary: 3,
+  images: 4,
+};
+
+// Fields that are validated as a pair (date ranges, min/max) — editing
+// either side clears both, since the previously-shown error might now be
+// resolved (or might still apply, in which case the next validation pass
+// will just show it again).
+const RELATED_ERROR_KEYS = {
+  makkah_check_in_date:  ["makkah_check_in_date", "makkah_check_out_date"],
+  makkah_check_out_date: ["makkah_check_in_date", "makkah_check_out_date"],
+  madinah_check_in_date:  ["madinah_check_in_date", "madinah_check_out_date"],
+  madinah_check_out_date: ["madinah_check_in_date", "madinah_check_out_date"],
+  available_from: ["available_from", "available_to"],
+  available_to:   ["available_from", "available_to"],
+  min_group_size: ["min_group_size", "max_group_size"],
+  max_group_size: ["min_group_size", "max_group_size"],
+};
+
+function validateStepFields(stepIdx, form, itinerary, images, existingImageUrls) {
+  const errors = {};
+  // Every package includes Makkah; Madinah (and Jeddah transit packages,
+  // which still route through Madinah) need a Madinah hotel too.
+  const needsMadinah = form.location !== "makkah";
+
+  if (stepIdx === 0) {
+    if (!form.name.trim()) errors.name = "Package name is required";
+  }
+
+  if (stepIdx === 1) {
+    if (!form.makkah_hotel_name.trim()) errors.makkah_hotel_name = "Hotel name is required";
+    if (!form.makkah_hotel_rating) errors.makkah_hotel_rating = "Star rating is required";
+    if (!form.makkah_check_in_date) errors.makkah_check_in_date = "Check-in date is required";
+    if (!form.makkah_check_out_date) errors.makkah_check_out_date = "Check-out date is required";
+    if (
+      form.makkah_check_in_date && form.makkah_check_out_date &&
+      new Date(form.makkah_check_out_date) <= new Date(form.makkah_check_in_date)
+    ) {
+      errors.makkah_check_out_date = "Must be after check-in";
+    }
+
+    if (needsMadinah) {
+      if (!form.madinah_hotel_name.trim()) errors.madinah_hotel_name = "Hotel name is required";
+      if (!form.madinah_hotel_rating) errors.madinah_hotel_rating = "Star rating is required";
+      if (!form.madinah_check_in_date) errors.madinah_check_in_date = "Check-in date is required";
+      if (!form.madinah_check_out_date) errors.madinah_check_out_date = "Check-out date is required";
+      if (
+        form.madinah_check_in_date && form.madinah_check_out_date &&
+        new Date(form.madinah_check_out_date) <= new Date(form.madinah_check_in_date)
+      ) {
+        errors.madinah_check_out_date = "Must be after check-in";
+      }
+    }
+  }
+
+  if (stepIdx === 2) {
+    if (!form.price || Number(form.price) <= 0) errors.price = "A valid price is required";
+    if (!form.duration || Number(form.duration) <= 0) errors.duration = "Trip duration is required";
+    if (
+      form.available_from && form.available_to &&
+      new Date(form.available_to) < new Date(form.available_from)
+    ) {
+      errors.available_to = "Must be after 'Available From'";
+    }
+    if (
+      form.min_group_size && form.max_group_size &&
+      Number(form.max_group_size) < Number(form.min_group_size)
+    ) {
+      errors.max_group_size = "Must be ≥ min group size";
+    }
+  }
+
+  if (stepIdx === 3) {
+    if (!itinerary.length) {
+      errors.itinerary = "Add at least one day to the itinerary";
+    } else if (itinerary.some((d) => !String(d.title || "").trim())) {
+      errors.itinerary = "Every day needs a short title";
+    }
+  }
+
+  if (stepIdx === 4) {
+    if (existingImageUrls.length + images.length === 0) {
+      errors.images = "Add at least one photo of the package";
+    }
+  }
+
+  return errors;
+}
+
+function validateAllSteps(form, itinerary, images, existingImageUrls) {
+  let merged = {};
+  let firstInvalidStep = -1;
+  for (let i = 0; i < STEPS.length; i++) {
+    const stepErrors = validateStepFields(i, form, itinerary, images, existingImageUrls);
+    if (Object.keys(stepErrors).length > 0 && firstInvalidStep === -1) firstInvalidStep = i;
+    merged = { ...merged, ...stepErrors };
+  }
+  return { errors: merged, firstInvalidStep };
+}
+
 // ── sub-components ───────────────────────────────────────────────────────────
 
-const StepBar = ({ current, total }) => (
+const StepBar = ({ current, total, errorSteps }) => (
   <div className="flex gap-1.5 px-6 pb-5">
     {Array.from({ length: total }).map((_, i) => (
       <div
@@ -259,7 +447,9 @@ const StepBar = ({ current, total }) => (
         className="h-1 flex-1 rounded-full transition-all duration-500"
         style={{
           background:
-            i < current
+            errorSteps?.has(i) && i !== current
+              ? "#dc2626"
+              : i < current
               ? "linear-gradient(90deg,#0D3D2B,#1a6b4a)"
               : i === current
               ? "#C9A84C"
@@ -350,11 +540,14 @@ const PriceBreakdown = ({ price }) => {
 
 // ── Itinerary day editor (used inside Step 3) ──────────────────────────────
 
-const ItineraryDayCard = ({ day, collapsed, onToggle, onUpdateTitle, onUpdateActivity, onAddActivity, onRemoveActivity, onRemoveDay, canRemove }) => (
-  <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #C8DFC8", background: "#F8FCF8" }}>
+const ItineraryDayCard = ({ day, collapsed, onToggle, onUpdateTitle, onUpdateActivity, onAddActivity, onRemoveActivity, onRemoveDay, canRemove, titleMissing }) => (
+  <div
+    className="rounded-2xl overflow-hidden transition-colors"
+    style={{ border: titleMissing ? "1px solid #f3a5a5" : "1px solid #C8DFC8", background: "#F8FCF8" }}
+  >
     <div
       className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-      style={{ background: "#F0F8F0" }}
+      style={{ background: titleMissing ? "#FEF6F6" : "#F0F8F0" }}
       onClick={onToggle}
     >
       <div
@@ -368,10 +561,11 @@ const ItineraryDayCard = ({ day, collapsed, onToggle, onUpdateTitle, onUpdateAct
         value={day.title}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => onUpdateTitle(sanitizeText(e.target.value, ITINERARY_TITLE_MAXLEN))}
-        placeholder={`Day ${day.day} title`}
+        placeholder={`Day ${day.day} title — required`}
         className="flex-1 bg-transparent text-sm font-semibold focus:outline-none placeholder-gray-400 min-w-0"
-        style={{ color: "#0D3D2B" }}
+        style={{ color: titleMissing ? "#dc2626" : "#0D3D2B" }}
       />
+      {titleMissing && <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: "#dc2626" }} />}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         {canRemove && (
           <button type="button" onClick={(e) => { e.stopPropagation(); onRemoveDay(); }} className="p-1 rounded-lg hover:bg-red-50 transition-colors">
@@ -437,7 +631,14 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   const [itineraryLoading, setItinLoading]  = useState(false);
   const [collapsedDays, setCollapsedDays]   = useState({});
   const [activeTemplate, setActiveTemplate] = useState(null);
+  const [errors, setErrors] = useState({}); // field name -> message, see validateStepFields
   const fileRef             = useRef(null);
+
+  // Draft auto-save
+  const [draftKey, setDraftKey]       = useState(() => getDraftKey(mode, initialPackage));
+  const [draftBanner, setDraftBanner] = useState(null); // { savedAt, imagesCount } when a restorable draft exists
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const skipNextAutosave = useRef(false); // true right after hydrating/opening, so we don't instantly re-save over a draft the agent hasn't decided on yet
 
   const isEdit = mode === "edit";
 
@@ -446,12 +647,23 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   useEffect(() => {
     if (!isOpen) return;
 
+    const key = getDraftKey(mode, initialPackage);
+    setDraftKey(key);
+    setLastSavedAt(null);
+    // Don't let the autosave effect immediately fire on the blank/hydrated
+    // state we're about to set below — wait for the agent to actually type,
+    // or to make a restore/discard decision on the banner first.
+    skipNextAutosave.current = true;
+    const existingDraft = readDraft(key);
+    setDraftBanner(existingDraft ? { savedAt: existingDraft.savedAt, imagesCount: existingDraft.imagesCount || 0 } : null);
+
     if (mode === "create" || !initialPackage) {
       setForm(EMPTY);
       setImages([]); setPrev([]); setImageMeta([]);
       setExistingImageUrls([]);
       setItinerary([]); setItinTouched(false); setCollapsedDays({});
       setActiveTemplate(null);
+      setErrors({});
       setStep(0);
       setStatus("idle");
       return;
@@ -490,6 +702,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     setExistingImageUrls(Array.isArray(pkg.image_urls) ? pkg.image_urls : []);
     setImages([]); setPrev([]); setImageMeta([]);
     setActiveTemplate(null);
+    setErrors({});
     setStep(0);
     setStatus("idle");
 
@@ -538,10 +751,43 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     }
   }, [step]); // eslint-disable-line
 
+  // Debounced autosave — fires on any form/itinerary/step change while the
+  // modal is open. Skipped for empty-content states and for the one render
+  // right after opening (see skipNextAutosave above).
+  useEffect(() => {
+    if (!isOpen) return;
+    if (skipNextAutosave.current) { skipNextAutosave.current = false; return; }
+
+    const t = setTimeout(() => {
+      if (!draftHasContent(form, itinerary)) return;
+      const saved = writeDraft(draftKey, {
+        form, itinerary, step, activeTemplate, existingImageUrls,
+        imagesCount: images.length,
+        mode,
+      });
+      if (saved) setLastSavedAt(Date.now());
+    }, DRAFT_SAVE_DEBOUNCE_MS);
+
+    return () => clearTimeout(t);
+  }, [form, itinerary, step, activeTemplate, existingImageUrls, images.length, isOpen, draftKey, mode]);
+
   if (!isOpen) return null;
 
-  const set    = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const set = (k, v) => {
+    setForm((p) => ({ ...p, [k]: v }));
+    const keysToClear = RELATED_ERROR_KEYS[k] || [k];
+    if (keysToClear.some((kk) => errors[kk])) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        keysToClear.forEach((kk) => delete next[kk]);
+        return next;
+      });
+    }
+  };
   const isLast = step === STEPS.length - 1;
+  // Which step dots should read as "needs attention" right now.
+  const errorSteps = new Set(Object.keys(errors).map((k) => FIELD_STEP[k]).filter((v) => v !== undefined));
+  const currentStepHasErrors = Object.keys(errors).some((k) => FIELD_STEP[k] === step);
   const busy   = status === "loading";
   const ok     = status === "success";
 
@@ -563,7 +809,40 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     }
   };
 
+  // ── draft restore/discard ────────────────────────────────────────────────
+
+  const restoreDraft = () => {
+    const draft = readDraft(draftKey);
+    if (!draft) { setDraftBanner(null); return; }
+    setForm((p) => ({ ...p, ...draft.form }));
+    if (Array.isArray(draft.itinerary) && draft.itinerary.length) {
+      setItinerary(draft.itinerary);
+      setItinTouched(true);
+      setCollapsedDays(
+        draft.itinerary.reduce((acc, d, i) => ({ ...acc, [i]: i !== 0 && i !== draft.itinerary.length - 1 }), {})
+      );
+    }
+    if (typeof draft.step === "number") setStep(draft.step);
+    if (draft.activeTemplate) setActiveTemplate(draft.activeTemplate);
+    setDraftBanner(null);
+    toast.success(
+      "Draft restored",
+      draft.imagesCount > 0
+        ? `Picking up where you left off — you'll need to re-add ${draft.imagesCount} photo${draft.imagesCount > 1 ? "s" : ""}, they aren't saved in the draft.`
+        : "Picking up right where you left off."
+    );
+  };
+
+  const discardDraft = () => {
+    clearDraft(draftKey);
+    setDraftBanner(null);
+  };
+
   // ── itinerary helpers ────────────────────────────────────────────────────
+
+  const clearItineraryError = () => {
+    if (errors.itinerary) setErrors((prev) => { const n = { ...prev }; delete n.itinerary; return n; });
+  };
 
   const regenerateItinerary = () => {
     const defaults = buildDefaultItinerary(form.duration, form.location);
@@ -571,10 +850,13 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     setCollapsedDays(
       defaults.reduce((acc, d, i) => ({ ...acc, [i]: i !== 0 && i !== defaults.length - 1 }), {})
     );
+    clearItineraryError();
   };
 
-  const updateDayTitle = (dayIdx, title) =>
+  const updateDayTitle = (dayIdx, title) => {
     setItinerary((prev) => prev.map((d, i) => (i === dayIdx ? { ...d, title } : d)));
+    clearItineraryError();
+  };
 
   const updateActivity = (dayIdx, actIdx, value) =>
     setItinerary((prev) =>
@@ -596,8 +878,10 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     setItinerary((prev) => [...prev, { day: prev.length + 1, title: "", activities: [""] }]);
   };
 
-  const removeDay = (dayIdx) =>
+  const removeDay = (dayIdx) => {
     setItinerary((prev) => prev.filter((_, i) => i !== dayIdx).map((d, i) => ({ ...d, day: i + 1 })));
+    clearItineraryError();
+  };
 
   const toggleDayCollapse = (dayIdx) =>
     setCollapsedDays((prev) => ({ ...prev, [dayIdx]: !prev[dayIdx] }));
@@ -637,6 +921,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
           ...prev,
           ...results.map((r) => ({ isLowRes: r.isLowRes, width: r.width, height: r.height })),
         ]);
+        if (errors.images) setErrors((prev) => { const n = { ...prev }; delete n.images; return n; });
       }
       const lowResCount = results.filter((r) => r.isLowRes).length;
       if (lowResCount > 0) {
@@ -665,6 +950,27 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     setExistingImageUrls((prev) => prev.filter((_, idx) => idx !== i));
   };
 
+  // ── step navigation ──────────────────────────────────────────────────────
+  // Validates only the step the agent is leaving — cheap, and means an error
+  // introduced on step 1 doesn't block them from reaching step 3 to fix a
+  // typo there. Full cross-step validation still runs again at submit time.
+  const goNext = () => {
+    const stepErrors = validateStepFields(step, form, itinerary, images, existingImageUrls);
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...stepErrors }));
+      toast.error("A few required fields are missing", "Check the highlighted fields before continuing.");
+      return;
+    }
+    // Clear only this step's errors — any errors left over from other steps
+    // (e.g. spotted at submit time, then the agent jumped back) stay visible.
+    setErrors((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((k) => { if (FIELD_STEP[k] === step) delete next[k]; });
+      return next;
+    });
+    setStep(step + 1);
+  };
+
   // ── submit ────────────────────────────────────────────────────────────────
   // Two calls against two endpoints that already exist and already sanitise
   // independently server-side (createpackages.controller.js and
@@ -675,6 +981,20 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   // packages list, so a transient error here never loses their work.
 
   const submit = async () => {
+    // Re-check everything (not just the current step) — a restored draft can
+    // drop the agent straight onto a later step, bypassing the per-step Next
+    // checks below, so this is the last line of defense before hitting the API.
+    const { errors: allErrors, firstInvalidStep } = validateAllSteps(form, itinerary, images, existingImageUrls);
+    if (firstInvalidStep !== -1) {
+      setErrors(allErrors);
+      setStep(firstInvalidStep);
+      toast.error(
+        "Some required fields are missing",
+        `Check ${STEPS[firstInvalidStep]} — highlighted fields need your attention.`
+      );
+      return;
+    }
+
     setStatus("loading");
     try {
       const cleanForm = sanitizeFormPayload(form);
@@ -701,6 +1021,9 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       }
 
       setStatus("success");
+      clearDraft(draftKey);
+      setDraftBanner(null);
+      setLastSavedAt(null);
       toast.success(
         isEdit ? "Package updated!" : "Package created!",
         isEdit ? "Your changes have been saved." : "Your package has been saved successfully."
@@ -717,6 +1040,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
         setItinTouched(false);
         setCollapsedDays({});
         setActiveTemplate(null);
+        setErrors({});
         onClose?.();
       }, 1200);
     } catch (e) {
@@ -752,6 +1076,11 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
             <h2 className="text-xl font-bold" style={{ color: "#0D3D2B" }}>
               {isEdit ? "Edit Package" : mode === "duplicate" ? "Duplicate Package" : "Create Umrah / Hajj Package"}
             </h2>
+            {lastSavedAt && (
+              <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: "#7aaa8a" }}>
+                <Clock className="h-3 w-3" /> Draft saved on this device — safe if you lose connection
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -765,10 +1094,54 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
           </button>
         </div>
 
-        <StepBar current={step} total={STEPS.length} />
+        <StepBar current={step} total={STEPS.length} errorSteps={errorSteps} />
 
         {/* scrollable content */}
         <div className="overflow-y-auto flex-1 px-6 pb-3 space-y-4">
+
+          {draftBanner && (
+            <div
+              className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
+              style={{ background: "#FFF8E1", border: "1px solid #FFE082" }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <RefreshCw className="h-4 w-4 flex-shrink-0" style={{ color: "#a8882f" }} />
+                <p className="text-sm min-w-0" style={{ color: "#7a5a10" }}>
+                  <span className="font-semibold">Unsaved progress found</span> from {formatDraftAge(draftBanner.savedAt)} — restore it?
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={discardDraft}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                  style={{ color: "#7a5a10", background: "rgba(122,90,16,0.08)" }}
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={restoreDraft}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all"
+                  style={{ background: "linear-gradient(135deg,#C9A84C,#a8882f)" }}
+                >
+                  Restore
+                </button>
+              </div>
+            </div>
+          )}
+
+          {currentStepHasErrors && (
+            <div
+              className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
+              style={{ background: "#FEF2F2", border: "1px solid #FCA5A5" }}
+            >
+              <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: "#dc2626" }} />
+              <p className="text-sm font-semibold" style={{ color: "#b91c1c" }}>
+                A few required fields need your attention below before you can continue.
+              </p>
+            </div>
+          )}
 
           {/* STEP 0 — Basic Info */}
           {step === 0 && (
@@ -794,13 +1167,14 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                 </div>
               </Field>
 
-              <Field label="Package Name" required>
+              <Field label="Package Name" required error={errors.name}>
                 <InputEl
                   value={form.name}
                   onChange={(e) => set("name", e.target.value)}
                   placeholder="e.g. 14-Night Hajj Gold Package"
                   sanitize="text"
                   maxLen={120}
+                  style={errors.name ? errorRingStyle : {}}
                 />
               </Field>
               <div className="grid grid-cols-1 gap-3">
@@ -851,12 +1225,26 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                 icon={<MapPin className="h-4 w-4" style={{ color: "#C9A84C" }} />}
                 formData={form}
                 set={set}
+                required
+                errors={{
+                  name: errors.makkah_hotel_name,
+                  rating: errors.makkah_hotel_rating,
+                  checkIn: errors.makkah_check_in_date,
+                  checkOut: errors.makkah_check_out_date,
+                }}
               />
               <HotelBlock
                 city="madinah"
                 icon={<Building2 className="h-4 w-4" style={{ color: "#C9A84C" }} />}
                 formData={form}
                 set={set}
+                required={form.location !== "makkah"}
+                errors={{
+                  name: errors.madinah_hotel_name,
+                  rating: errors.madinah_hotel_rating,
+                  checkIn: errors.madinah_check_in_date,
+                  checkOut: errors.madinah_check_out_date,
+                }}
               />
               {form.duration && (
                 <div
@@ -881,7 +1269,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
           {step === 2 && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                <Field label="Your Price (USD)" required>
+                <Field label="Your Price (USD)" required error={errors.price}>
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
                     <InputEl
@@ -889,6 +1277,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                       value={form.price}
                       onChange={(e) => set("price", e.target.value)}
                       placeholder="0.00" className="pl-7" sanitize="number"
+                      style={errors.price ? errorRingStyle : {}}
                     />
                   </div>
                 </Field>
@@ -918,7 +1307,12 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
               <PriceBreakdown price={form.price} />
 
               {/* Duration (read-only if auto-calculated, editable fallback) */}
-              <Field label="Trip Duration (nights)" hint={calcDurationNights(form) ? "auto-calculated from hotel dates" : "tap a preset or enter manually"}>
+              <Field
+                label="Trip Duration (nights)"
+                required
+                error={errors.duration}
+                hint={!errors.duration && (calcDurationNights(form) ? "auto-calculated from hotel dates" : "tap a preset or enter manually")}
+              >
                 <PresetChips
                   color="gold"
                   value={form.duration}
@@ -934,9 +1328,10 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                   <InputEl type="date" value={form.available_from}
                     onChange={(e) => set("available_from", e.target.value)} sanitize="date" />
                 </Field>
-                <Field label="Available To">
+                <Field label="Available To" error={errors.available_to}>
                   <InputEl type="date" value={form.available_to}
-                    onChange={(e) => set("available_to", e.target.value)} sanitize="date" />
+                    onChange={(e) => set("available_to", e.target.value)} sanitize="date"
+                    style={errors.available_to ? errorRingStyle : {}} />
                 </Field>
               </div>
 
@@ -950,7 +1345,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                     customPlaceholder="1"
                   />
                 </Field>
-                <Field label="Max Group Size">
+                <Field label="Max Group Size" error={errors.max_group_size}>
                   <PresetChips
                     color="green"
                     value={form.max_group_size}
@@ -994,6 +1389,16 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                 </button>
               </div>
 
+              {errors.itinerary && (
+                <div
+                  className="flex items-center gap-2.5 rounded-2xl px-4 py-2.5"
+                  style={{ background: "#FEF2F2", border: "1px solid #FCA5A5" }}
+                >
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: "#dc2626" }} />
+                  <p className="text-sm font-semibold" style={{ color: "#b91c1c" }}>{errors.itinerary}</p>
+                </div>
+              )}
+
               <div className="space-y-3">
                 {itinerary.map((day, dayIdx) => (
                   <ItineraryDayCard
@@ -1007,6 +1412,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                     onRemoveActivity={(actIdx) => removeActivity(dayIdx, actIdx)}
                     onRemoveDay={() => removeDay(dayIdx)}
                     canRemove={itinerary.length > 1}
+                    titleMissing={!!errors.itinerary && !String(day.title || "").trim()}
                   />
                 ))}
               </div>
@@ -1065,7 +1471,12 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
               </Field>
 
               {/* Images */}
-              <Field label="Package Images" hint="up to 10 · max 10 MB each · auto-optimized for the carousel & thumbnail">
+              <Field
+                label="Package Images"
+                required
+                error={errors.images}
+                hint={!errors.images && "up to 10 · max 10 MB each · auto-optimized for the carousel & thumbnail"}
+              >
                 {existingImageUrls.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
                     {existingImageUrls.map((src, i) => (
@@ -1128,11 +1539,11 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                   onClick={() => fileRef.current?.click()}
                   className="flex flex-col items-center gap-2 border-2 border-dashed rounded-xl py-6 cursor-pointer transition-all"
                   style={{
-                    borderColor: drag ? "#C9A84C" : "#C8DFC8",
-                    background:  drag ? "rgba(201,168,76,0.05)" : "#F5FAF5",
+                    borderColor: drag ? "#C9A84C" : errors.images ? "#dc2626" : "#C8DFC8",
+                    background:  drag ? "rgba(201,168,76,0.05)" : errors.images ? "#FEF6F6" : "#F5FAF5",
                   }}
-                  onMouseEnter={(e) => { if (!drag) e.currentTarget.style.borderColor = "#1a6b4a"; }}
-                  onMouseLeave={(e) => { if (!drag) e.currentTarget.style.borderColor = "#C8DFC8"; }}
+                  onMouseEnter={(e) => { if (!drag) e.currentTarget.style.borderColor = errors.images ? "#dc2626" : "#1a6b4a"; }}
+                  onMouseLeave={(e) => { if (!drag) e.currentTarget.style.borderColor = errors.images ? "#dc2626" : "#C8DFC8"; }}
                 >
                   <div className="p-2.5 rounded-full" style={{ background: "rgba(201,168,76,0.1)" }}>
                     <Upload className="h-5 w-5" style={{ color: "#C9A84C" }} />
@@ -1213,7 +1624,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
             ) : (
               <button
                 type="button"
-                onClick={() => setStep(step + 1)}
+                onClick={goNext}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all"
                 style={{
                   background: "linear-gradient(135deg,#0D3D2B,#1a6b4a)",

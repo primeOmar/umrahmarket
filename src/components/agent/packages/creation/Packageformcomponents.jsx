@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, Plus, Star, ChevronDown, MapPin, Building2 } from "lucide-react";
+import { X, Plus, Star, ChevronDown, MapPin, Building2, AlertCircle } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sanitisation helpers
@@ -69,6 +69,15 @@ export const inputStyle = {
   background: "#EEF5EE",
   border: "1px solid #C8DFC8",
   color: "#0D3D2B",
+};
+
+// Applied inline (merged into an input's `style`) whenever that field has a
+// live validation error — a red ring that matches the same visual language
+// as the gold focus ring, so it reads as "this needs attention" without a
+// jarring style clash.
+export const errorRingStyle = {
+  borderColor: "#dc2626",
+  boxShadow: "0 0 0 3px rgba(220,38,38,0.12)",
 };
 
 const focusOn  = (e) => {
@@ -154,21 +163,27 @@ export const TextareaEl = ({ className = "", onChange, maxLen, ...props }) => {
 // Field
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const Field = ({ label, required, hint, children }) => (
+export const Field = ({ label, required, hint, error, children }) => (
   <div className="space-y-1.5">
     <label
       className="flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase"
-      style={{ color: "#4a7c5f" }}
+      style={{ color: error ? "#dc2626" : "#4a7c5f" }}
     >
       {label}
-      {required && <span style={{ color: "#C9A84C" }}>*</span>}
-      {hint && (
+      {required && <span style={{ color: error ? "#dc2626" : "#C9A84C" }}>*</span>}
+      {hint && !error && (
         <span className="normal-case font-normal ml-1" style={{ color: "#7aaa8a" }}>
           — {sanitizeText(hint, 80)}
         </span>
       )}
     </label>
     {children}
+    {error && (
+      <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#dc2626" }}>
+        <AlertCircle className="h-3 w-3 flex-shrink-0" />
+        {sanitizeText(error, 100)}
+      </p>
+    )}
   </div>
 );
 
@@ -205,8 +220,15 @@ export const Sel = ({ value, onChange, children }) => (
 // Stars (Star rating)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const Stars = ({ value, onChange }) => (
-  <div className="flex gap-1 h-[42px] items-center">
+export const Stars = ({ value, onChange, error }) => (
+  <div
+    className="flex gap-1 h-[42px] items-center rounded-xl transition-all"
+    style={
+      error
+        ? { boxShadow: "0 0 0 3px rgba(220,38,38,0.12)", paddingLeft: 6 }
+        : {}
+    }
+  >
     {[1, 2, 3, 4, 5, 6].map((n) => (
       <button
         key={n}
@@ -397,14 +419,22 @@ export const PresetChips = ({
 // HotelBlock
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const HotelBlock = ({ city, icon, formData, set }) => {
+// `required`: true when this city must be filled in for the package to be
+// complete (Makkah always; Madinah/others whenever the package's selected
+// location includes them). `errors`: { name, rating, checkIn, checkOut } —
+// each an error message string or undefined, keyed to this city's fields.
+export const HotelBlock = ({ city, icon, formData, set, required = false, errors = {} }) => {
   const label = city === "makkah" ? "Makkah" : "Madinah";
   const hint  = city === "makkah" ? "distance from Haram" : "distance from Prophet's Mosque";
+  const hasError = !!(errors.name || errors.rating || errors.checkIn || errors.checkOut);
 
   return (
     <div
-      className="rounded-2xl p-5 space-y-4"
-      style={{ background: "#F0F8F0", border: "1px solid #C8DFC8" }}
+      className="rounded-2xl p-5 space-y-4 transition-colors"
+      style={{
+        background: hasError ? "#FEF6F6" : "#F0F8F0",
+        border: hasError ? "1px solid #f3a5a5" : "1px solid #C8DFC8",
+      }}
     >
       <div className="flex items-center gap-2">
         <div className="p-1.5 rounded-lg" style={{ background: "rgba(201,168,76,0.12)" }}>
@@ -413,24 +443,29 @@ export const HotelBlock = ({ city, icon, formData, set }) => {
         <h3 className="font-bold text-sm" style={{ color: "#0D3D2B" }}>
           {label} Hotel
         </h3>
-        <span className="ml-auto text-xs font-medium" style={{ color: "#7aaa8a" }}>
-          optional
+        <span
+          className="ml-auto text-xs font-bold uppercase tracking-wide"
+          style={{ color: hasError ? "#dc2626" : required ? "#C9A84C" : "#7aaa8a" }}
+        >
+          {required ? "required" : "optional"}
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Hotel Name">
+        <Field label="Hotel Name" error={errors.name}>
           <InputEl
             value={formData[`${city}_hotel_name`]}
             onChange={(e) => set(`${city}_hotel_name`, e.target.value)}
             placeholder={`e.g. Mövenpick ${label}`}
             sanitize="text"
+            style={errors.name ? errorRingStyle : {}}
           />
         </Field>
-        <Field label="Star Rating">
+        <Field label="Star Rating" error={errors.rating}>
           <Stars
             value={formData[`${city}_hotel_rating`]}
             onChange={(v) => set(`${city}_hotel_rating`, v)}
+            error={errors.rating}
           />
         </Field>
       </div>
@@ -455,20 +490,22 @@ export const HotelBlock = ({ city, icon, formData, set }) => {
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Check-in">
+        <Field label="Check-in" error={errors.checkIn}>
           <InputEl
             type="date"
             value={formData[`${city}_check_in_date`]}
             onChange={(e) => set(`${city}_check_in_date`, e.target.value)}
             sanitize="date"
+            style={errors.checkIn ? errorRingStyle : {}}
           />
         </Field>
-        <Field label="Check-out">
+        <Field label="Check-out" error={errors.checkOut}>
           <InputEl
             type="date"
             value={formData[`${city}_check_out_date`]}
             onChange={(e) => set(`${city}_check_out_date`, e.target.value)}
             sanitize="date"
+            style={errors.checkOut ? errorRingStyle : {}}
           />
         </Field>
       </div>
