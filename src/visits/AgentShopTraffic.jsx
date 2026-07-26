@@ -380,7 +380,7 @@ export default function AgentAgentTraffic() {
         </p>
         <button
           onClick={handleRefresh}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-600 shadow-sm hover:bg-stone-50"
+          className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-600 shadow-sm hover:bg-stone-50"
         >
           <RefreshCw size={13} />
           Try again
@@ -424,7 +424,7 @@ export default function AgentAgentTraffic() {
               onClick={handleRefresh}
               disabled={refreshing}
               title="Refresh"
-              className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 shadow-sm transition hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="cursor-pointer inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 shadow-sm transition hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
             </button>
