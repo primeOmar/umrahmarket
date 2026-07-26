@@ -1292,7 +1292,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                     />
                   </div>
                 </Field>
-                <Field label="Discount %" hint="0–100">
+                {/* <Field label="Discount %" hint="0–100">
                   <PresetChips
                     color="gold"
                     value={form.discount}
@@ -1301,7 +1301,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                     suffix="%"
                     customPlaceholder="0"
                   />
-                </Field>
+                </Field> */}
               </div>
 
               <PriceBreakdown price={form.price} />
