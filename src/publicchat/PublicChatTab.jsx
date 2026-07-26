@@ -569,7 +569,7 @@ const PublicChatTab = ({ conversations, setConversations, loading, error, onRefr
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-full sm:max-w-xl md:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-gray-200 flex-shrink-0">
               <h2 className="font-semibold text-gray-900">Public Chat Thread</h2>
-              <button onClick={closeModal} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><X className="h-4 w-4" /></button>
+              <button onClick={closeModal} className="cursor-pointer p-1.5 hover:bg-gray-100 rounded-lg transition-colors"><X className="h-4 w-4" /></button>
             </div>
             <div className="p-5 overflow-y-auto flex-1 space-y-3">
               <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
