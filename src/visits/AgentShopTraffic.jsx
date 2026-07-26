@@ -51,10 +51,17 @@ const visitsFetch = async (url, options = {}) => {
 // visitsFetch above, matching the superadmin-token pattern used elsewhere —
 // e.g. the PublicChat pcFetch helper).
 //
-// ONE call, no agentId: the backend now groups every visit row by agent
+// ONE call, no agentId: the backend groups every visit row by agent
 // server-side and returns { agents: [{ agentId, agentName,
 // verificationStatus, yearsExperience, totalVisits, visits: [...] }],
-// totalVisits }. No more N follow-up per-agent requests.
+// totalVisits }.
+//
+// IMPORTANT: the backend can return the SAME real-world agency as more than
+// one group — e.g. "package" visits (agent_id is null, only agent_name is
+// set) land in a separate bucket from "agent" profile-page visits (agent_id
+// set). Grouping the frontend rows by agentId alone therefore duplicates the
+// agency in the list. We merge groups by normalized agentName below so one
+// agency = one row, regardless of how the backend split its buckets.
 // ---------------------------------------------------------------------------
 
 const RANGES = { "7D": 7, "30D": 30, "90D": 90, All: Infinity };
@@ -154,6 +161,49 @@ async function fetchVisits(url) {
   return visitsFetch(url);
 }
 
+// Merge backend agent groups so ONE real-world agency (matched by normalized
+// name) always produces ONE row, even if the backend sent it back as several
+// buckets (e.g. a null-agentId "package visits" bucket plus a real-agentId
+// "agent profile visits" bucket for the same agency).
+function mergeAgentGroups(rawAgents) {
+  const grouped = new Map(); // key: normalized name -> merged entry
+
+  (rawAgents || []).forEach((a) => {
+    const displayName = (a.agentName || "Unknown agent").trim();
+    const key = displayName.toLowerCase();
+
+    const entry = grouped.get(key) || {
+      id: null,
+      name: displayName,
+      agencyName: displayName,
+      verificationStatus: null,
+      yearsExperience: null,
+      rows: [],
+    };
+
+    entry.rows.push(...(a.visits || []));
+
+    // Prefer a real agentId / verification / experience over nulls from
+    // whichever bucket happens to be missing them.
+    if (!entry.id && a.agentId) entry.id = a.agentId;
+    if (!entry.verificationStatus && a.verificationStatus) {
+      entry.verificationStatus = a.verificationStatus;
+    }
+    if (entry.yearsExperience == null && a.yearsExperience != null) {
+      entry.yearsExperience = a.yearsExperience;
+    }
+
+    grouped.set(key, entry);
+  });
+
+  return Array.from(grouped.entries()).map(([key, entry]) => ({
+    ...entry,
+    // Fall back to the name-key as a stable React `key` when no agency ever
+    // had a real agentId (e.g. purely anonymous/package-only traffic).
+    id: entry.id || key,
+  }));
+}
+
 export default function AgentAgentTraffic() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -182,12 +232,7 @@ export default function AgentAgentTraffic() {
 
       if (controller.cancelled) return;
 
-      const built = (overview.agents || []).map((a) => ({
-        id: a.agentId,
-        name: a.agentName,
-        agencyName: a.agentName,
-        rows: a.visits || [],
-      }));
+      const built = mergeAgentGroups(overview.agents);
 
       setAgents(built);
     } catch (err) {
