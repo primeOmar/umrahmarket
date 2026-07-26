@@ -4,7 +4,7 @@ import {
   LogOut, Search, Menu, X, Shield, Activity, TrendingUp, Briefcase,
   Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
   Eye, EyeOff, Lock, MapPin, BookOpen, ExternalLink,
-  HelpCircle, Flag, MessagesSquare,
+  HelpCircle, Flag, MessagesSquare,ChartNoAxesCombined 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -14,6 +14,8 @@ import ResourcesTab from './resources/ResourcesTab';
 import PublicChatTab from '../publicchat/PublicChatTab'
 import ComplaintsTab from '../complains/ComplaintsTab'
 import FaqsTab from '../faq/FaqsTab';
+import AgentShopTraffic from '../visits/AgentShopTraffic'
+
 // ─── API base (no trailing /api duplication) ──────────────────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 const BASE_API = _base.endsWith('/api') ? _base : `${_base}/api`;
@@ -670,6 +672,7 @@ const navItems = [
   { id: 'faqs',       label: 'FAQs',         icon: HelpCircle },
   { id: 'complaints', label: 'Complains',    icon: Flag },
   { id: 'publicchat', label: 'Public Chat',  icon: MessagesSquare },
+    { id: 'visits', label: 'Agents Visits',  icon: ChartNoAxesCombined },
   { id: 'audit',      label: 'Audit Logs',   icon: Activity },
   { id: 'accounting', label: 'Accounting',   icon: TrendingUp },
   { id: 'settings',   label: 'Settings',     icon: Settings },
@@ -806,6 +809,7 @@ const navItems = [
           {activeTab === 'clients'   && <ClientsTab  clients={clients} searchQuery={searchQuery} onViewClient={id => markItemViewed('clients', id)} />}
           {activeTab === 'resources' && <ResourcesTab />}
              {activeTab === 'faqs'       && <FaqsTab />}
+                {activeTab === 'visits'       && <AgentShopTraffic />}
                     {activeTab === 'complaints' && <ComplaintsTab />}
                     {activeTab === 'publicchat' && <PublicChatTab />}
           {activeTab === 'chats'     && (

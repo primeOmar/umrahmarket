@@ -6,7 +6,7 @@ import {
   Star, Calendar, Briefcase, Globe, Tag, Building2,
 } from 'lucide-react';
 import { request } from '../api';
-
+import AgentVisitTracker from '../visits/AgentVisitTracker'
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/agents/:id  →  full public agent profile (see agents.routes.js):
 // businessName, firstName, lastName, verificationStatus, agentNumber,
@@ -91,6 +91,7 @@ const AgentDetailPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
+          <AgentVisitTracker agent={agent} />
       {/* Back */}
       <div className=" container mx-auto px-4 sm:px-6 pt-6">
         <button
