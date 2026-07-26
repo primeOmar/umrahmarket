@@ -11,35 +11,29 @@ import { format, formatDistanceToNow } from 'date-fns';
  * PublicChatTab — superadmin view for conversations started from the public
  * website's ChatWidget.
  *
- * REALTIME REVISION 4 — unread badge is DB-backed, not per-browser state.
+ * REALTIME REVISION 5 — unread badge + ping sound moved up to the sidebar.
  *
- * Previously `unreadCounts` was local React state, built up only from
- * broadcasts a given tab happened to see. A second agent window, or a
- * refreshed tab, started blank — there was no unread history to replay.
+ * Previously the conversation list, the DB-backed unread counts, and the
+ * ping sound only existed while this component was mounted — i.e. only
+ * while the "Public Chat" tab was actually open. Agents had no way to
+ * know a visitor had messaged unless they were already looking at the tab.
  *
- * Now each conversation's unread count comes from the server (`unreadCount`
- * on the row, backed by a real `unread_count` column — see
- * public_chat_unread_migration.sql). Every card just renders
- * `conv.unreadCount` directly:
- *   - On first load / refresh, it comes from `listConversations`.
- *   - On a visitor message, the direct 'visitor_message' broadcast
- *     optimistically bumps it by 1 for instant feedback, and the backend's
- *     'conversation_updated' broadcast (which now carries the
- *     authoritative DB value) overwrites it moments later — self-healing
- *     if the two ever disagree.
- *   - Opening a thread calls the new `/superadmin/public-chats/:id/read`
- *     endpoint, which resets it to 0 in the DB and broadcasts that reset —
- *     so every other agent window sees the badge clear too, not just the
- *     one that opened it.
+ * All of that now lives in `usePublicChatUnread`, exported below. Call it
+ * once in SuperAdminDashboard (which is always mounted) and it:
+ *   - fetches + subscribes to the same `chat:admin:list` channel this file
+ *     always used, independent of whether this tab is active
+ *   - keeps a running `unreadTotal` (sum of every conversation's
+ *     unreadCount) for the sidebar badge, styled the same as the
+ *     Documents badge
+ *   - plays the ping the moment a visitor message broadcasts in, no
+ *     matter which tab the agent is currently on — except when they're
+ *     already looking at that exact thread
  *
- * `pingedMsgIdsRef` still exists, but now it only dedupes the notification
- * *sound* (so the same message never chimes twice across the two delivery
- * paths) — it no longer has anything to do with the badge's number.
- *
- * REALTIME REVISION 3 (still in effect) — a reply broadcasts directly to
- * the visitor's widget the instant it's sent, over the same
- * `chat:conversation:{id}` channel typing already uses; the backend
- * REST + broadcast path is the durable/reconciling backup.
+ * This component now receives conversations/loading/error/refresh as
+ * props instead of owning that state itself, so there's a single source
+ * of truth and only one realtime subscription for the whole dashboard.
+ * Everything about an *open* thread (messages, typing, sending, closing)
+ * is unchanged and still lives here.
  *
  * SETUP REQUIRED: npm install @supabase/supabase-js; env vars
  * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (same as the public widget).
@@ -95,76 +89,69 @@ const genId = () =>
     ? crypto.randomUUID()
     : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-// ─── Component ───────────────────────────────────────────────────────────────
-const PublicChatTab = () => {
+// ─── Notification sound — a single shared AudioContext for the whole app ──
+// Not tied to any one component instance: the sidebar badge/hook can be
+// alive on every tab, so the ding needs to be too.
+let _audioCtx = null;
+const playPing = async () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!_audioCtx || _audioCtx.state === 'closed') {
+      _audioCtx = new AudioCtx();
+    }
+    const ctx = _audioCtx;
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch { /* still locked */ }
+    }
+    if (ctx.state !== 'running') return; // needs one prior user gesture
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now); // A5 — distinct from the widget's tone
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.55);
+  } catch { /* audio must never break the dashboard */ }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// usePublicChatUnread — the list, its realtime feed, the unread total for
+// the sidebar badge, and the ping sound. Mount this once, high up
+// (SuperAdminDashboard), so it keeps running no matter which tab is active.
+//
+// `activeTab` / `openConversationId` are only used to decide whether to
+// suppress the ping for a thread the agent already has open — pass
+// whatever tab id you're using for Public Chat and the currently-open
+// conversation id (or null).
+// ═════════════════════════════════════════════════════════════════════════
+export const usePublicChatUnread = ({ activeTab, openConversationId, publicChatTabId = 'publicchat' } = {}) => {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
 
-  // Thread modal
-  const [selected, setSelected] = useState(null); // conversation or null
-  const [messages, setMessages] = useState([]);
-  const [threadLoading, setThreadLoading] = useState(false);
-  const [visitorTyping, setVisitorTyping] = useState(false);
-  const [reply, setReply] = useState('');
-  const [sending, setSending] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [closeReason, setCloseReason] = useState('');
-  const [showCloseForm, setShowCloseForm] = useState(false);
+  const activeTabRef = useRef(activeTab);
+  const openConversationIdRef = useRef(openConversationId);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  useEffect(() => { openConversationIdRef.current = openConversationId; }, [openConversationId]);
 
-  const bottomRef = useRef(null);
-  const audioCtxRef = useRef(null);
-  const threadChannelRef = useRef(null);
-  const selectedIdRef = useRef(null);
-  const threadCountRef = useRef(0);
-  const lastTypingBroadcastRef = useRef(0);
-  const typingStaleTimerRef = useRef(null);
-  // Dedupes the notification *sound* only — the badge number itself comes
-  // straight from the server's unread_count via conv.unreadCount.
+  // Dedupes the notification *sound* only — the badge number comes
+  // straight from each conversation's server-backed unreadCount.
   const pingedMsgIdsRef = useRef(new Set());
 
-  useEffect(() => { selectedIdRef.current = selected?.id ?? null; }, [selected]);
-
-  // ── Sound: soft ding on new visitor activity ──────────────────────────────
-  const playPing = async () => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-        audioCtxRef.current = new AudioCtx();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch { /* still locked */ }
-      }
-      if (ctx.state !== 'running') return; // needs one prior user gesture
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now); // A5 — distinct from the widget's tone
-      gain.gain.setValueAtTime(0.22, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.55);
-    } catch { /* audio must never break the dashboard */ }
-  };
-
-  /** Play the ping at most once per distinct message id, whichever path
-   *  (direct broadcast or backend event) reports it first. */
   const maybePing = useCallback((conversationId, messageId) => {
     if (!messageId) return;
     if (pingedMsgIdsRef.current.has(messageId)) return;
     pingedMsgIdsRef.current.add(messageId);
-    if (selectedIdRef.current === conversationId) return; // already looking at it
+    // Already looking at this exact thread — no need to ding.
+    if (activeTabRef.current === publicChatTabId && openConversationIdRef.current === conversationId) return;
     playPing();
-  }, []);
+  }, [publicChatTabId]);
 
-  // ── Conversation list ─────────────────────────────────────────────────────
   const fetchConversations = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -187,7 +174,8 @@ const PublicChatTab = () => {
     return () => clearInterval(id);
   }, [fetchConversations]);
 
-  // Live grid updates: one shared channel, patched in place per event.
+  // Live updates: one shared channel for the whole dashboard, patched in
+  // place per event, regardless of which tab is currently showing.
   useEffect(() => {
     const channel = supabase
       .channel(ADMIN_LIST_CHANNEL)
@@ -233,6 +221,38 @@ const PublicChatTab = () => {
 
     return () => supabase.removeChannel(channel);
   }, [fetchConversations, maybePing]);
+
+  const unreadTotal = useMemo(
+    () => conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
+    [conversations],
+  );
+
+  return { conversations, setConversations, loading, error, refresh: fetchConversations, unreadTotal };
+};
+
+// ─── Component ───────────────────────────────────────────────────────────────
+// Receives the list (and its setter) from usePublicChatUnread via props so
+// there's exactly one realtime subscription for the whole dashboard.
+const PublicChatTab = ({ conversations, setConversations, loading, error, onRefresh, onOpenConversation }) => {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+
+  // Thread modal
+  const [selected, setSelected] = useState(null); // conversation or null
+  const [messages, setMessages] = useState([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [visitorTyping, setVisitorTyping] = useState(false);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [closeReason, setCloseReason] = useState('');
+  const [showCloseForm, setShowCloseForm] = useState(false);
+
+  const bottomRef = useRef(null);
+  const threadChannelRef = useRef(null);
+  const threadCountRef = useRef(0);
+  const lastTypingBroadcastRef = useRef(0);
+  const typingStaleTimerRef = useRef(null);
 
   const counts = useMemo(() => ({
     open: conversations.filter(c => c.status !== 'closed').length,
@@ -284,6 +304,7 @@ const PublicChatTab = () => {
     setShowCloseForm(false);
     setCloseReason('');
     threadCountRef.current = 0;
+    onOpenConversation?.(conv.id); // tells the dashboard-level hook to suppress the ping for this thread
 
     // Optimistic local clear for instant feedback…
     setConversations((prev) => prev.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c)));
@@ -347,6 +368,7 @@ const PublicChatTab = () => {
     setReply('');
     setShowCloseForm(false);
     setCloseReason('');
+    onOpenConversation?.(null);
   };
 
   // ── Agent typing — direct broadcast, no backend round trip ────────────────
@@ -455,7 +477,7 @@ const PublicChatTab = () => {
             <option value="closed">Closed</option>
           </select>
           <button
-            onClick={() => fetchConversations()}
+            onClick={() => onRefresh?.()}
             className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm bg-white hover:bg-gray-50 text-gray-700 transition-colors"
           >
             <RefreshCw className="h-4 w-4" /> Refresh

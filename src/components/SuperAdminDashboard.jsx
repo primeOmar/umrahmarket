@@ -11,7 +11,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { AccountingTab } from './AccountingTab';
 import ResourcesTab from './resources/ResourcesTab';
-import PublicChatTab from '../publicchat/PublicChatTab'
+import PublicChatTab, { usePublicChatUnread } from '../publicchat/PublicChatTab'
 import ComplaintsTab from '../complains/ComplaintsTab'
 import FaqsTab from '../faq/FaqsTab';
 import AgentShopTraffic from '../visits/AgentShopTraffic'
@@ -299,7 +299,20 @@ export const SuperAdminDashboard = () => {
   const [itemActionLoading, setItemActionLoading] = useState(null);
   const [filterStatus,      setFilterStatus]      = useState('all');
   const [actionLoading,     setActionLoading]     = useState(false);
+const [openPublicChatId, setOpenPublicChatId] = useState(null);
 
+const {
+  conversations: publicChatConversations,
+  setConversations: setPublicChatConversations,
+  loading: publicChatLoading,
+  error: publicChatError,
+  refresh: refreshPublicChat,
+  unreadTotal: publicChatUnread,
+} = usePublicChatUnread({
+  activeTab,
+  openConversationId: openPublicChatId,
+  publicChatTabId: 'publicchat',
+});
   // ── init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const token = saStore.getToken();
@@ -671,7 +684,7 @@ const navItems = [
   { id: 'resources',  label: 'Resources',    icon: BookOpen },
   { id: 'faqs',       label: 'FAQs',         icon: HelpCircle },
   { id: 'complaints', label: 'Complains',    icon: Flag },
-  { id: 'publicchat', label: 'Public Chat',  icon: MessagesSquare },
+  { id: 'publicchat', label: 'Public Chat', icon: MessagesSquare, count: publicChatUnread },
     { id: 'visits', label: 'Agents Visits',  icon: ChartNoAxesCombined },
   { id: 'audit',      label: 'Audit Logs',   icon: Activity },
   { id: 'accounting', label: 'Accounting',   icon: TrendingUp },
@@ -811,8 +824,16 @@ const navItems = [
              {activeTab === 'faqs'       && <FaqsTab />}
                 {activeTab === 'visits'       && <AgentShopTraffic />}
                     {activeTab === 'complaints' && <ComplaintsTab />}
-                    {activeTab === 'publicchat' && <PublicChatTab />}
-          {activeTab === 'chats'     && (
+{activeTab === 'publicchat' && (
+  <PublicChatTab
+    conversations={publicChatConversations}
+    setConversations={setPublicChatConversations}
+    loading={publicChatLoading}
+    error={publicChatError}
+    onRefresh={refreshPublicChat}
+    onOpenConversation={setOpenPublicChatId}
+  />
+)}          {activeTab === 'chats'     && (
             <ChatsTab
               chats={chats}
               searchQuery={searchQuery}
