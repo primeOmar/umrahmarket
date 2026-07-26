@@ -376,7 +376,7 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
                   <label className="flex flex-col items-center justify-center gap-2 py-6 rounded-xl border-2 border-dashed border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors cursor-pointer">
                     <Upload className="h-7 w-7 text-emerald-600" />
                     <span className="text-sm font-semibold text-gray-700">Upload photo</span>
-                    <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={onFile} />
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onFile} />
                   </label>
                 </div>
               )}
