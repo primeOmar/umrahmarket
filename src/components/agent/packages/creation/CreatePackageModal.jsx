@@ -1392,35 +1392,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
               </Field>
 
               <PriceBreakdown price={form.price} />
-
-              {/* Duration (read-only if auto-calculated, editable fallback) */}
-              <Field
-                label="Trip Duration (nights)"
-                required
-                error={errors.duration}
-                hint={!errors.duration && (calcDurationNights(form) ? "auto-calculated from hotel dates" : "tap a preset or enter manually")}
-              >
-                <PresetChips
-                  color="gold"
-                  value={form.duration}
-                  onChange={(v) => set("duration", v)}
-                  options={[7, 10, 14, 21, 30]}
-                  suffix="n"
-                  customPlaceholder="e.g. 14"
-                />
-              </Field>
-
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Available From">
-                  <InputEl type="date" value={form.available_from}
-                    onChange={(e) => set("available_from", e.target.value)} sanitize="date" />
-                </Field>
-                <Field label="Available To" error={errors.available_to}>
-                  <InputEl type="date" value={form.available_to}
-                    onChange={(e) => set("available_to", e.target.value)} sanitize="date"
-                    style={errors.available_to ? errorRingStyle : {}} />
-                </Field>
-              </div>
+              
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Min Group Size">
