@@ -12,8 +12,7 @@ import { userStore, tokenStore } from '../api';
 import { getItinerary, getPackageById, normalise } from './agent/packages/services/packagesApi';
 import AuthModal from './AuthModal';
 import BookingFlow from './BookingFlow';
-import Footer from './Footer';
-
+import PackageVisitTracker from '../visits/PackageVisitTracker';
 // ─────────────────────────────────────────────────────────────────────────────
 // GalleryCarousel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -467,6 +466,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   // ── Main render ──────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-white">
+    <PackageVisitTracker packageData={packageData} />
 
       {/* Nav */}
       <header className="sticky top-0 z-50 bg-white border-b border-gray-200">
@@ -876,9 +876,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
           </div>
         )}
       </main>
-
-      <Footer />
-
       {/* ── Payment Modal ── */}
       {showBookingModal && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4"
