@@ -393,17 +393,22 @@ export const uploadAgentDocuments = (files, agentId) => {
 };
 
 // ─── Passport verification ──────────────────────────────────────────────────
+// Every traveler on a booking (adult/child/minor_child/infant) needs their
+// OWN passport verified — `travelerIndex` (0-based, assigned in booking
+// order) identifies which one. Defaults to 0 so single-traveler callers
+// don't need to change anything.
+
 // Step 1: validate typed details + 6-month rule (no image, server-authoritative)
-export const checkPassport = ({ packageId, passportExpiry }) =>
+export const checkPassport = ({ packageId, passportExpiry, travelerIndex = 0 }) =>
   request({
     method: 'post',
     url: '/passport/check',
-    data: { packageId, passportExpiry },
+    data: { packageId, passportExpiry, travelerIndex },
   }).then((r) => r.data);
 
 // Step 2: OCR the photo and confirm it matches the typed details.
 // `details` = { packageId, passportNumber, passportCountry, passportExpiry,
-//               surname, givenNames, dateOfBirth, nationality }
+//               surname, givenNames, dateOfBirth, nationality, travelerIndex }
 // `file` = a File/Blob of the passport photo.
 export const verifyPassportImage = (details, file) => {
   const form = new FormData();
@@ -418,12 +423,22 @@ export const verifyPassportImage = (details, file) => {
   }).then((r) => r.data);
 };
 
-// Latest verification status for a (user, package).
-export const getPassportStatus = (packageId) =>
+// Latest verification status for a single (user, package, traveler).
+export const getPassportStatus = (packageId, travelerIndex = 0) =>
   request({
     method: 'get',
     url: '/passport/status',
-    params: { packageId },
+    params: { packageId, travelerIndex },
+  }).then((r) => r.data);
+
+// Verification status for EVERY traveler on a booking in one call — tells
+// BookingFlow whether everyone already has a verified passport, and if not,
+// which traveler (by index) still needs one.
+export const getPassportStatusBatch = (packageId, totalTravelers = 1) =>
+  request({
+    method: 'get',
+    url: '/passport/status-batch',
+    params: { packageId, totalTravelers },
   }).then((r) => r.data);
 
 // ─── Agent document verification (per-item, agent-facing) ───────────────────
@@ -463,7 +478,7 @@ export default {
   logout, refreshToken, getMe, requestPasswordReset,
   uploadAgentDocuments, getAgentDocuments, uploadAgentDocument, saveOfficeMapsUrl,
   tokenStore, userStore,
-  checkPassport, verifyPassportImage, getPassportStatus,
+  checkPassport, verifyPassportImage, getPassportStatus, getPassportStatusBatch,
   getAgentVerificationStatus, requestDocumentReview,
   getAgentProfile, updateAgentProfile, uploadAgentLogo,
 };

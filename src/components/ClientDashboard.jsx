@@ -68,7 +68,7 @@ const useToast = () => {
 
 // ==================== CONSTANTS ====================
 const CACHE_TTL = 5 * 60 * 1000;
-const CACHE_VERSION = 'v3'; // bump this whenever normalise() changes shape
+const CACHE_VERSION = 'v4'; // bumped: normalise() now includes priceTiers
 
 // Reward points: 2 USD spent = 1 point, earned per successfully booked package.
 const USD_PER_REWARD_POINT = 2;
@@ -145,6 +145,16 @@ const normalise = (pkg) => {
     price:         Number(rawPrice),
     originalPrice: Number(rawOriginal),
     discount,
+    // Age-tier pricing (adult/child/minor_child/infant) for the traveler
+    // picker in BookingFlow — any tier the agent left blank on the package
+    // falls back to the adult/base price, so every tier always resolves to
+    // a real number and BookingFlow never has to special-case a missing tier.
+    priceTiers: {
+      adult:       Number(pkg.price_tiers?.adult       ?? rawPrice),
+      child:       Number(pkg.price_tiers?.child       ?? rawPrice),
+      minor_child: Number(pkg.price_tiers?.minor_child ?? rawPrice),
+      infant:      Number(pkg.price_tiers?.infant      ?? rawPrice),
+    },
 
     // trip info
     duration:      Number(pkg.duration_days ?? pkg.durationDays ?? pkg.duration ?? 0),

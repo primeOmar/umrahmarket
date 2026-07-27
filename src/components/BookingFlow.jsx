@@ -9,14 +9,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X, Shield, CheckCircle, AlertCircle,
-  Loader2, Lock, Globe, ChevronLeft, ChevronRight, Info, Copy, CreditCard
+  Loader2, Lock, Globe, ChevronLeft, ChevronRight, Info, Copy, CreditCard,
+  Minus, Plus, Users,
 } from 'lucide-react';
-import { request, getPassportStatus, paymentGuard, tokenStore, refreshToken } from '../api';
+import { request, getPassportStatus, getPassportStatusBatch, paymentGuard, tokenStore, refreshToken } from '../api';
 import PassportVerificationModal from './PassportVerificationModal';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS  = 4_000;
 const POLL_MAX_ATTEMPTS = 18;          // 72 s total
+
+// Age-tier pricing — mirrors the tiers agents set on the package (see
+// createpackages.controller.js) and the cap enforced server-side in
+// services/pricing.service.js. At least one adult is required per booking.
+const TRAVELER_TIERS = [
+  { key: 'adult',       label: 'Adults',         sub: '12+ yrs',   min: 1 },
+  { key: 'child',       label: 'Children',       sub: '7–11 yrs',  min: 0 },
+  { key: 'minor_child', label: 'Young children', sub: '2–6 yrs',   min: 0 },
+  { key: 'infant',      label: 'Infants',        sub: 'Under 2 yrs', min: 0 },
+];
+const MAX_TRAVELERS = 30;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 // NOTE: KES conversion no longer uses a hardcoded rate — see fxRate state below,
@@ -54,12 +66,26 @@ const Field = ({ label, error, children }) => (
 const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
   // step machine:
-  // 'passport-check' (loading) → 'passport' (needs verification) | 'select'
-  // 'select' → 'card' | 'mpesa' | 'bank'
+  // 'travelers' (pick counts) → 'passport-check' (loading, checks EVERY
+  //   traveler at once) → 'passport' (current traveler in travelerQueue needs
+  //   verification, repeats until all are done) → 'select' → 'card' | 'mpesa' | 'bank'
   // any method → 'processing' → 'success' | 'error'
   // 'mpesa' → 'polling' → 'success' | 'error'
-  const [step,     setStep]     = useState('passport-check');
+  const [step,     setStep]     = useState('travelers');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // travelers — how many people this booking is for, broken down by age
+  // tier. Defaults to a single adult ("book alone"), the most common case.
+  const [travelers, setTravelers] = useState({ adult: 1, child: 0, minor_child: 0, infant: 0 });
+  const [travelersError, setTravelersError] = useState('');
+
+  // Every traveler on the booking gets their OWN passport verified — not
+  // just the account holder's. travelerQueue is built from `travelers` once
+  // counts are confirmed: one entry per person, in adult → child →
+  // minor_child → infant order, each carrying a stable `index` (0-based)
+  // that identifies its passport_verifications row on the backend.
+  const [travelerQueue, setTravelerQueue] = useState([]);       // [{ index, tierKey, tierLabel }]
+  const [travelerPos,   setTravelerPos]   = useState(0);        // position in travelerQueue currently being verified
 
   // card (Flutterwave)
   const [cardLoading, setCardLoading] = useState(false);
@@ -127,17 +153,25 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     }
   }, [user, onClose, onRequireAuth]);
 
-  // Passport must be verified for THIS package before payment is allowed —
-  // and that check itself is the proof of an active session. The 'passport'
-  // step must only ever be reached via a *successful* authenticated response
-  // from the backend; nothing here is allowed to fall back into it.
-  const checkPassportStatus = useCallback(async () => {
+  // Passport must be verified for EVERY traveler on THIS booking before
+  // payment is allowed — not just the account holder's own passport. Only
+  // runs once traveler counts are confirmed (travelerQueue is built), since
+  // we can't know how many passports to check before that. That confirmed,
+  // authenticated response is also the proof of an active session — the
+  // 'passport' step must only ever be reached via a *successful* response;
+  // nothing here is allowed to fall back into it.
+  const checkPassportBatch = useCallback(async (queue) => {
     if (!user?.id && !tokenStore.get()) return; // handled by the session guard above
     setStep('passport-check');
     try {
-      const data = await getPassportStatus(pkg.id);
-      const verified = data?.status === 'verified' || data?.verified === true;
-      setStep(verified ? 'select' : 'passport');
+      const data = await getPassportStatusBatch(pkg.id, queue.length);
+      if (data?.allCanProceed) {
+        setStep('select');
+        return;
+      }
+      const nextIdx = Number.isInteger(data?.nextIncompleteIndex) ? data.nextIncompleteIndex : 0;
+      setTravelerPos(nextIdx);
+      setStep('passport');
     } catch (err) {
       if (err?.response?.status === 401) {
         // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
@@ -158,15 +192,18 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     }
   }, [pkg.id, user, onClose, onRequireAuth]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (cancelled) return;
-      await checkPassportStatus();
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pkg.id, user]);
+  // Called when a single traveler's passport just came back verified/
+  // manual_review — advances to the next unverified traveler in the queue,
+  // or on to payment once everyone's done.
+  const advanceTravelerVerification = useCallback(() => {
+    const nextPos = travelerPos + 1;
+    if (nextPos >= travelerQueue.length) {
+      setStep('select');
+    } else {
+      setTravelerPos(nextPos);
+      setStep('passport');
+    }
+  }, [travelerPos, travelerQueue.length]);
 
   // lock body scroll
   useEffect(() => {
@@ -229,8 +266,56 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
   const pkgRef = `UMRAH-${pkg.id.slice(-8).toUpperCase()}`;
 
+  // ── traveler-derived pricing ────────────────────────────────────────────
+  // Falls back to the package's flat `price` for any tier the agent didn't
+  // set, so this works even for packages saved before per-tier pricing
+  // existed. This total is advisory only — the backend recomputes it fresh
+  // from price_tiers on every initiate() call and never trusts this number.
+  const tierPrices = pkg.priceTiers || {
+    adult: pkg.price, child: pkg.price, minor_child: pkg.price, infant: pkg.price,
+  };
+  const totalTravelers = TRAVELER_TIERS.reduce((sum, t) => sum + (travelers[t.key] || 0), 0);
+  const totalUSD = TRAVELER_TIERS.reduce(
+    (sum, t) => sum + (travelers[t.key] || 0) * Number(tierPrices[t.key] ?? pkg.price ?? 0),
+    0
+  );
+
+  const setTravelerCount = (key, delta) => {
+    setTravelersError('');
+    setTravelers((prev) => {
+      const tier = TRAVELER_TIERS.find((t) => t.key === key);
+      const next = Math.max(tier?.min ?? 0, (prev[key] || 0) + delta);
+      const prospectiveTotal = TRAVELER_TIERS.reduce(
+        (sum, t) => sum + (t.key === key ? next : (prev[t.key] || 0)), 0
+      );
+      if (prospectiveTotal > MAX_TRAVELERS) return prev; // silently clamp at the cap
+      return { ...prev, [key]: next };
+    });
+  };
+
+  const confirmTravelers = () => {
+    if (totalTravelers < 1) {
+      setTravelersError('At least one adult is required to book.');
+      return;
+    }
+    setTravelersError('');
+
+    // Build one queue entry per person, in a stable adult → child →
+    // minor_child → infant order, so `index` reliably identifies the same
+    // person's passport row across re-renders and re-confirmations.
+    const queue = [];
+    TRAVELER_TIERS.forEach((tier) => {
+      for (let i = 0; i < (travelers[tier.key] || 0); i++) {
+        queue.push({ index: queue.length, tierKey: tier.key, tierLabel: tier.label });
+      }
+    });
+    setTravelerQueue(queue);
+    setTravelerPos(0);
+    checkPassportBatch(queue);
+  };
+
   // live-rate-derived amounts — null until the fx rate has loaded
-  const totalKes    = fxRate ? Math.round(pkg.price * fxRate) : null;
+  const totalKes    = fxRate ? Math.round(totalUSD * fxRate) : null;
   const fmtKes       = (usd) => (fxRate ? `KES ${fmt(Math.round(usd * fxRate))}` : 'Loading rate…');
   const fmtUsd       = (usd) => `$${fmt(usd)}`;
   const fmtSelected  = (usd) => (currency === 'USD' ? fmtUsd(usd) : fmtKes(usd));
@@ -258,7 +343,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       const res = await request({
         method: 'post',
         url:    '/payments/card/initiate',
-        data:   { packageId: pkg.id, currency, amountKes: totalKes },
+        data:   { packageId: pkg.id, currency, amountKes: totalKes, travelers },
       });
 
       if (!res.data?.success) throw new Error(res.data?.message || 'Failed to initiate payment');
@@ -395,7 +480,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
         // M-Pesa STK push always settles in KES (Safaricom requirement) regardless
         // of the display currency picked above — we still send `currency` +
         // the live-rate `amountKes` for consistency/logging with the card flow.
-        data: { packageId: pkg.id, phone: normPhone, currency, amountKes: totalKes },
+        data: { packageId: pkg.id, phone: normPhone, currency, amountKes: totalKes, travelers },
       });
       if (!res.data?.success) throw new Error(res.data?.message || 'STK push failed');
       setCheckoutId(res.data.checkoutRequestId);
@@ -444,7 +529,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       const res = await request({
         method: 'post',
         url: '/payments/bank/initiate',
-        data: { packageId: pkg.id },
+        data: { packageId: pkg.id, currency, amountKes: totalKes, travelers },
       });
       if (!res.data?.success) throw new Error(res.data?.message || 'Failed to record bank transfer');
       setStep('success');
@@ -468,14 +553,23 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   );
 
   // ── render ────────────────────────────────────────────────────────────────
-  // Passport must be verified before the payment shell ever shows.
+  // Passport must be verified — one traveler at a time — before the payment
+  // shell ever shows. travelerQueue/travelerPos identify who's up next; see
+  // confirmTravelers() and advanceTravelerVerification() above.
   if (step === 'passport') {
+    const current = travelerQueue[travelerPos];
     return (
       <PassportVerificationModal
         pkg={pkg}
         user={user}
+        travelerIndex={current?.index ?? 0}
+        travelerLabel={
+          travelerQueue.length > 1
+            ? `${current?.tierLabel || 'Traveler'} · ${travelerPos + 1} of ${travelerQueue.length}`
+            : undefined
+        }
         onClose={handleClose}
-        onVerified={() => setStep('select')}
+        onVerified={advanceTravelerVerification}
       />
     );
   }
@@ -506,11 +600,21 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-sm text-gray-900 truncate">{pkg.title}</p>
                 <p className="text-xs text-gray-500">{pkg.duration} days · {pkg.agencyName}</p>
+                {step !== 'travelers' && (
+                  <button
+                    type="button"
+                    onClick={() => setStep('travelers')}
+                    className="text-[11px] font-medium text-emerald-600 hover:underline flex items-center gap-1 mt-0.5"
+                  >
+                    <Users className="h-3 w-3" />
+                    {totalTravelers} traveler{totalTravelers === 1 ? '' : 's'} · Edit
+                  </button>
+                )}
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="font-bold text-emerald-600">{fmtSelected(pkg.price)}</p>
+                <p className="font-bold text-emerald-600">{fmtSelected(totalUSD)}</p>
                 <p className="text-xs text-gray-400">
-                  {currency === 'USD' ? fmtKes(pkg.price) : fmtUsd(pkg.price)}
+                  {currency === 'USD' ? fmtKes(totalUSD) : fmtUsd(totalUSD)}
                 </p>
               </div>
             </div>
@@ -554,7 +658,11 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
           {step === 'passport-check' && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="h-8 w-8 text-emerald-600 animate-spin" />
-              <p className="text-sm text-gray-500">Checking your passport verification…</p>
+              <p className="text-sm text-gray-500">
+                {travelerQueue.length > 1
+                  ? `Checking passport verification for ${travelerQueue.length} travelers…`
+                  : 'Checking your passport verification…'}
+              </p>
             </div>
           )}
 
@@ -569,7 +677,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                 <p className="text-sm text-gray-500 mt-1">We couldn't confirm you're signed in. Please retry, or sign in again.</p>
               </div>
               <div className="flex gap-3 w-full max-w-xs">
-                <button onClick={checkPassportStatus}
+                <button onClick={() => checkPassportBatch(travelerQueue)}
                   className="flex-1 py-3 font-bold text-white rounded-xl"
                   style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
                   Retry
@@ -578,6 +686,79 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                   Cancel
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ══ TRAVELERS — how many people, by age tier ══ */}
+          {step === 'travelers' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Users className="h-4 w-4 text-emerald-600" />
+                <p className="text-sm font-semibold text-gray-900">Who's traveling?</p>
+              </div>
+              <p className="text-xs text-gray-500 -mt-2">
+                Book for yourself alone, or add family/group members. Each age tier is priced separately.
+              </p>
+
+              <div className="space-y-2.5">
+                {TRAVELER_TIERS.map((tier) => {
+                  const count = travelers[tier.key] || 0;
+                  const unitPrice = Number(tierPrices[tier.key] ?? pkg.price ?? 0);
+                  return (
+                    <div key={tier.key} className="flex items-center justify-between p-3 rounded-2xl border-2 border-gray-100">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{tier.label}</p>
+                        <p className="text-xs text-gray-500">{tier.sub} · {fmtSelected(unitPrice)} each</p>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setTravelerCount(tier.key, -1)}
+                          disabled={count <= tier.min}
+                          className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center text-gray-500 hover:border-emerald-400 hover:text-emerald-600 disabled:opacity-30 disabled:hover:border-gray-200 disabled:hover:text-gray-500 transition-colors"
+                          aria-label={`Decrease ${tier.label}`}
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="w-5 text-center font-bold text-gray-900 tabular-nums">{count}</span>
+                        <button
+                          type="button"
+                          onClick={() => setTravelerCount(tier.key, 1)}
+                          disabled={totalTravelers >= MAX_TRAVELERS}
+                          className="w-8 h-8 rounded-full border-2 border-gray-200 flex items-center justify-center text-gray-500 hover:border-emerald-400 hover:text-emerald-600 disabled:opacity-30 transition-colors"
+                          aria-label={`Increase ${tier.label}`}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {travelersError && (
+                <p className="text-xs text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />{travelersError}
+                </p>
+              )}
+
+              <div className="rounded-2xl p-4 bg-emerald-50 border border-emerald-100 space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">{totalTravelers} traveler{totalTravelers === 1 ? '' : 's'} total</span>
+                  <span className="font-bold text-emerald-700 text-base">{fmtSelected(totalUSD)}</span>
+                </div>
+                <p className="text-xs text-gray-400">
+                  {currency === 'USD' ? fmtKes(totalUSD) : fmtUsd(totalUSD)}
+                </p>
+              </div>
+
+              <button
+                onClick={confirmTravelers}
+                className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all"
+                style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}
+              >
+                Continue to payment — {fmtSelected(totalUSD)}
+              </button>
             </div>
           )}
 
@@ -685,7 +866,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing checkout…</>
                   : !fxRate
                     ? <><Loader2 className="h-4 w-4 animate-spin" /> Loading rate…</>
-                    : <><Lock className="h-4 w-4" /> Pay {fmtSelected(pkg.price)} via Pesapal</>
+                    : <><Lock className="h-4 w-4" /> Pay {fmtSelected(totalUSD)} via Pesapal</>
                 }
               </button>
             </div>
@@ -760,7 +941,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
               <button onClick={handleMpesaPay} disabled={phone.length < 9 || !fxRate}
                 className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
-                {fxRate ? `Send STK Push — ${fmtKes(pkg.price)}` : 'Loading rate…'}
+                {fxRate ? `Send STK Push — ${fmtKes(totalUSD)}` : 'Loading rate…'}
               </button>
             </div>
           )}
@@ -871,7 +1052,12 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                 <p className="text-gray-400 mt-1 text-xs">Taking you to your dashboard to finish setup…</p>
               </div>
               <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2 text-left">
-                {[['Package', pkg.title], ['Booking ref', pkgRef], ['Amount paid', `$${fmt(pkg.price)}`]].map(([l, v]) => (
+                {[
+                  ['Package', pkg.title],
+                  ['Travelers', `${totalTravelers} ${totalTravelers === 1 ? 'person' : 'people'}`],
+                  ['Booking ref', pkgRef],
+                  ['Amount paid', `$${fmt(totalUSD)}`],
+                ].map(([l, v]) => (
                   <div key={l} className="flex justify-between text-sm">
                     <span className="text-gray-500">{l}</span>
                     <span className={`font-semibold text-gray-900 ${l === 'Booking ref' ? 'font-mono' : ''}`}>{v}</span>

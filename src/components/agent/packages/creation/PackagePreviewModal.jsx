@@ -8,6 +8,13 @@ import { getItinerary } from "../services/packagesApi";
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=1200&q=80";
 
+const PRICE_TIER_LABELS = [
+  { key: "adult",       label: "Adult",       sub: "12+ yrs" },
+  { key: "child",       label: "Child",       sub: "7–11 yrs" },
+  { key: "minor_child", label: "Young Child", sub: "2–6 yrs" },
+  { key: "infant",      label: "Infant",      sub: "Under 2 yrs" },
+];
+
 // Agent-side read-only preview — no booking/payment flow, since agents can't
 // book their own packages. Just what they need to sanity-check a listing:
 // photos, pricing, hotel info, inclusions, itinerary. "Edit Package" hands
@@ -33,6 +40,15 @@ const PackagePreviewModal = ({ pkg, onClose, onEdit }) => {
   const inclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
   const exclusions = Array.isArray(pkg.exclusions) ? pkg.exclusions : [];
   const isActive = (pkg.status || "").toLowerCase() === "active";
+  // Any tier the agent left blank on the package falls back to the adult/base
+  // price — so this section always shows four real numbers, never a blank
+  // or "N/A", even for packages saved before per-tier pricing existed.
+  const priceTiers = {
+    adult:       pkg.price_tiers?.adult       ?? pkg.price,
+    child:       pkg.price_tiers?.child       ?? pkg.price,
+    minor_child: pkg.price_tiers?.minor_child ?? pkg.price,
+    infant:      pkg.price_tiers?.infant      ?? pkg.price,
+  };
 
   const nextImg = () => setActiveImg((i) => (i + 1) % images.length);
   const prevImg = () => setActiveImg((i) => (i - 1 + images.length) % images.length);
@@ -135,6 +151,22 @@ const PackagePreviewModal = ({ pkg, onClose, onEdit }) => {
             <span className="text-2xl font-bold" style={{ color: "#0D3D2B" }}>${pkg.price}</span>
             <span className="text-xs" style={{ color: "#7aaa8a" }}>per person</span>
           </div>
+
+          {/* Age-tier pricing — what clients will actually see/pay per traveler */}
+          {priceTiers && (
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#7aaa8a" }}>Pricing by Traveler</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {PRICE_TIER_LABELS.map(({ key, label, sub }) => (
+                  <div key={key} className="rounded-xl px-3 py-2.5" style={{ background: "#F8FCF8", border: "1px solid #C8DFC8" }}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "#7aaa8a" }}>{label}</p>
+                    <p className="text-sm font-bold" style={{ color: "#0D3D2B" }}>${priceTiers[key]}</p>
+                    <p className="text-[10px]" style={{ color: "#a8b8ae" }}>{sub}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {pkg.description && (
             <p className="text-sm leading-relaxed" style={{ color: "#4a5c52" }}>{pkg.description}</p>

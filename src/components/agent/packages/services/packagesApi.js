@@ -109,6 +109,11 @@ const buildFormData = (formData, imageFiles = [], keepImageUrls = []) => {
   body.append('highlights', JSON.stringify(formData.highlights ?? []));
   body.append('inclusions',  JSON.stringify(formData.inclusions  ?? []));
   body.append('exclusions',  JSON.stringify(formData.exclusions  ?? []));
+  // Age-tier pricing (adult/child/minor_child/infant) — sent as a single
+  // JSON object; server falls back any blank tier to the adult price.
+  if (formData.price_tiers) {
+    body.append('price_tiers', JSON.stringify(formData.price_tiers));
+  }
   // Existing photos the agent kept (edit) or carried over (duplicate) —
   // newly uploaded files are appended separately below and merged server-side.
   if (Array.isArray(keepImageUrls) && keepImageUrls.length > 0) {
@@ -214,6 +219,15 @@ export const normalise = (pkg) => {
     image:  coverImage,
     images: imageUrls ?? [coverImage],   // ← always an array for the gallery
     price: Number(pkg.price ?? 0),
+    // Age-tier pricing for the booking modal. Older packages saved before
+    // this feature won't have price_tiers — fall back all tiers to the base
+    // price so booking logic never has to special-case a missing tier.
+    priceTiers: {
+      adult:       Number(pkg.price_tiers?.adult       ?? pkg.price ?? 0),
+      child:       Number(pkg.price_tiers?.child       ?? pkg.price ?? 0),
+      minor_child: Number(pkg.price_tiers?.minor_child ?? pkg.price ?? 0),
+      infant:      Number(pkg.price_tiers?.infant      ?? pkg.price ?? 0),
+    },
     duration: Number(pkg.duration ?? 7),
     discount: Number(pkg.discount ?? 0),
     rating: Number(pkg.makkah_hotel_rating ?? pkg.rating ?? 4.5),
