@@ -1,91 +1,4 @@
-const BASE_URL = (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000')
-  .replace(/\/api$/, ''); // strip trailing /api — we add it explicitly in each path
-
-// ─────────────────────────────────────────────
-// TOKEN HELPERS — key matches api.js tokenStore
-// ─────────────────────────────────────────────
-
-const getAccessToken = () => localStorage.getItem('access_token');
-const setAccessToken = (token) => localStorage.setItem('access_token', token);
-const clearAccessToken = () => {
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('user');
-};
-
-/**
- * Silently refresh the access token using the refresh token cookie.
- * Mirrors the /api/auth/refresh call in api.js
- */
-const refreshAccessToken = async () => {
-  try {
-    const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    const newToken = data.data?.accessToken || data.accessToken;
-    if (newToken) {
-      setAccessToken(newToken);
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-};
-
-// ─────────────────────────────────────────────
-// CORE FETCH WRAPPER
-// ─────────────────────────────────────────────
-
-const apiFetch = async (path, { headers = {}, ...options } = {}, _retry = true) => {
-  const token = getAccessToken();
-
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      ...headers,
-      ...(token && { Authorization: `Bearer ${token}` }),
-    },
-  });
-
-  // Only attempt refresh when:
-  //   1. We had a token to begin with (guests never refresh)
-  //   2. This is the first attempt
-  //   3. Server explicitly signals token is expired
-  if (res.status === 401 && _retry && token) {
-    let body = {};
-    try { body = await res.clone().json(); } catch { /* ignore */ }
-
-    if (body.code === 'TOKEN_EXPIRED') {
-      const refreshed = await refreshAccessToken();
-      if (refreshed) return apiFetch(path, { headers, ...options }, false);
-      // Refresh truly failed — token is dead
-      clearAccessToken();
-    }
-    // Any other 401 (wrong role, bad perms) — don't clear token
-  }
-
-  return res;
-};
-// ─────────────────────────────────────────────
-// RESPONSE HANDLER
-// ─────────────────────────────────────────────
-
-const handleResponse = async (res) => {
-  if (!res.ok) {
-    let err = {};
-    try { err = await res.json(); } catch { /* ignore */ }
-    const message = err.message || err.error || `Request failed (${res.status})`;
-    const error = new Error(message);
-    error.status = res.status;
-    error.data = err;
-    throw error;
-  }
-  return res.json();
-};
+import { request, tokenStore } from '../../../../api';
 
 // ─────────────────────────────────────────────
 // FORM DATA BUILDER
@@ -123,78 +36,76 @@ const buildFormData = (formData, imageFiles = [], keepImageUrls = []) => {
   return body;
 };
 
-// ─────────────────────────────────────────────
-// API METHODS
-// ─────────────────────────────────────────────
 
 export const getAllActivePackages = async () => {
-  // Public route — bypass auth wrapper when there's no token so a
-  // guest user never triggers the refresh flow or gets a 401.
-  const token = getAccessToken();
-  const res = token
-    ? await apiFetch('/api/packages/all-active')
-    : await fetch(`${BASE_URL}/api/packages/all-active`, { credentials: 'include' });
-  return handleResponse(res);
+  // Public route — request() omits the Authorization header automatically
+  // when there's no token (see api.js's request interceptor), so guests hit
+  // this safely with no special-casing needed here.
+  const res = await request({ method: 'get', url: '/packages/all-active' });
+  return res.data;
 };
+
 export const getAgentPackages = async () => {
-  const res = await apiFetch('/api/packages/getagentpackages');
-  return handleResponse(res);
+  const res = await request({ method: 'get', url: '/packages/getagentpackages' });
+  return res.data;
 };
 
 export const createPackage = async (formData, imageFiles = [], keepImageUrls = []) => {
   const body = buildFormData(formData, imageFiles, keepImageUrls);
-  const res  = await apiFetch('/api/packages/create-packages', {
-    method: 'POST',
-    body,
+  const res = await request({
+    method: 'post',
+    url: '/packages/create-packages',
+    data: body,
   });
-  return handleResponse(res);
+  return res.data;
 };
 
 export const getPackageById = async (id) => {
-  const res = await apiFetch(`/api/packages/${id}`);
-  return handleResponse(res);
+  const res = await request({ method: 'get', url: `/packages/${id}` });
+  return res.data;
 };
 
 export const updatePackage = async (id, formData, imageFiles = [], keepImageUrls = []) => {
   const body = buildFormData(formData, imageFiles, keepImageUrls);
-  const res  = await apiFetch(`/api/packages/${id}`, {
-    method: 'PUT',
-    body,
+  const res = await request({
+    method: 'put',
+    url: `/packages/${id}`,
+    data: body,
   });
-  return handleResponse(res);
+  return res.data;
 };
 
 export const deletePackage = async (id) => {
-  const res = await apiFetch(`/api/packages/${id}`, { method: 'DELETE' });
-  return handleResponse(res);
+  const res = await request({ method: 'delete', url: `/packages/${id}` });
+  return res.data;
 };
 
 export const toggleFavourite = async (packageId) => {
-  const res = await apiFetch('/api/favourites/toggle', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ packageId }),
+  const res = await request({
+    method: 'post',
+    url: '/favourites/toggle',
+    data: { packageId },
   });
-  return handleResponse(res);
+  return res.data;
 };
 
 export const getFavourites = async () => {
-  const res = await apiFetch('/api/favourites');
-  return handleResponse(res);
+  const res = await request({ method: 'get', url: '/favourites' });
+  return res.data;
 };
 
 export const getItinerary = async (packageId) => {
-  const res = await apiFetch(`/api/packages/${packageId}/itinerary`);
-  return handleResponse(res);
+  const res = await request({ method: 'get', url: `/packages/${packageId}/itinerary` });
+  return res.data;
 };
 
 export const saveItinerary = async (packageId, days) => {
-  const res = await apiFetch(`/api/packages/${packageId}/itinerary`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ days }),
+  const res = await request({
+    method: 'post',
+    url: `/packages/${packageId}/itinerary`,
+    data: { days },
   });
-  return handleResponse(res);
+  return res.data;
 };
 
 export const normalise = (pkg) => {
@@ -242,3 +153,5 @@ export const normalise = (pkg) => {
     agency_name: pkg.agency_name || pkg.agency || null,
   };
 };
+
+export { tokenStore }; 

@@ -14,15 +14,14 @@ const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
 // ─── Token & user stores ───────────────────────────────────────────────────────
 let _accessToken = localStorage.getItem('access_token') || null;
 
+// ─── Token & user stores ───────────────────────────────────────────────────────
 export const tokenStore = {
-  get: () => _accessToken,
+  get: () => localStorage.getItem('access_token'),
   set: (token) => {
-    _accessToken = token;
     if (token) localStorage.setItem('access_token', token);
     else localStorage.removeItem('access_token');
   },
   clear: () => {
-    _accessToken = null;
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
