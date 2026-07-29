@@ -257,10 +257,14 @@ export const registerClient = async (formData) => {
   });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
-    await supabase.auth.setSession({
-      access_token:  res.data.data.accessToken,
-      refresh_token: res.data.data.refreshToken || '',
-    });
+    try {
+      await supabase.auth.setSession({
+        access_token:  res.data.data.accessToken,
+        refresh_token: res.data.data.refreshToken || '',
+      });
+    } catch {
+      // Ignore Supabase session-sync errors; the backend JWT is still valid for app requests.
+    }
   }
   if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
@@ -283,10 +287,14 @@ export const login = async (formData) => {
   });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
-    await supabase.auth.setSession({
-      access_token:  res.data.data.accessToken,
-      refresh_token: res.data.data.refreshToken || '',
-    });
+    try {
+      await supabase.auth.setSession({
+        access_token:  res.data.data.accessToken,
+        refresh_token: res.data.data.refreshToken || '',
+      });
+    } catch {
+      // Ignore Supabase session-sync errors; the backend JWT is still valid for app requests.
+    }
   }
   if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
@@ -297,10 +305,14 @@ export const googleLogin = async (idToken) => {
   const res = await request({ method: 'post', url: '/auth/google', data: { idToken } });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
-    await supabase.auth.setSession({
-      access_token:  res.data.data.accessToken,
-      refresh_token: res.data.data.refreshToken || '',
-    });
+    try {
+      await supabase.auth.setSession({
+        access_token:  res.data.data.accessToken,
+        refresh_token: res.data.data.refreshToken || '',
+      });
+    } catch {
+      // Ignore Supabase session-sync errors; the backend JWT is still valid for app requests.
+    }
   }
   if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);

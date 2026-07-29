@@ -32,28 +32,72 @@ const greenStyle = { background: 'linear-gradient(135deg,#059669,#0d9488)' };
 
 const MAX_MB = 8;
 
-export default function PassportVerificationModal({ pkg, user, onClose, onVerified }) {
-  const [step, setStep] = useState('details'); // details | renew | capture | scanning | mismatch | review | success
-  const [form, setForm] = useState({
+export default function PassportVerificationModal({
+  pkg,
+  user,
+  travelerIndex = 0,
+  travelerLabel,
+  initialState,
+  onProgressChange,
+  onClose,
+  onVerified,
+}) {
+  const emptyForm = {
     surname: '', givenNames: '', passportNumber: '',
     nationality: '', dateOfBirth: '', passportExpiry: '',
-  });
+  };
+  const [step, setStep] = useState(initialState?.step || 'details'); // details | renew | capture | scanning | mismatch | review | success
+  const [form, setForm] = useState(initialState?.form || emptyForm);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
-  const [renewMsg, setRenewMsg] = useState('');
+  const [renewMsg, setRenewMsg] = useState(initialState?.renewMsg || '');
 
   // capture state
   const [photo, setPhoto] = useState(null);        // { file, url }
   const [cameraOn, setCameraOn] = useState(false);
-  const [cameraErr, setCameraErr] = useState('');
+  const [cameraErr, setCameraErr] = useState(initialState?.cameraErr || '');
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
   // verification result
-  const [result, setResult] = useState(null);
-  const [serverErr, setServerErr] = useState('');
+  const [result, setResult] = useState(initialState?.result || null);
+  const [serverErr, setServerErr] = useState(initialState?.serverErr || '');
+  const [autoAdvancing, setAutoAdvancing] = useState(false);
 
   const travelDate = getTravelDate(pkg);
+  const lastProgressRef = useRef(null);
+
+  const progressSnapshot = useCallback(() => ({
+    step,
+    form,
+    errors,
+    renewMsg,
+    cameraErr,
+    serverErr,
+    result,
+    travelerIndex,
+    travelerLabel,
+  }), [cameraErr, errors, form, renewMsg, result, serverErr, step, travelerIndex, travelerLabel]);
+
+  useEffect(() => {
+    if (!onProgressChange) return;
+    const snapshot = progressSnapshot();
+    const prev = lastProgressRef.current;
+    const same = prev && JSON.stringify(prev) === JSON.stringify(snapshot);
+    if (same) return;
+    lastProgressRef.current = snapshot;
+    onProgressChange(snapshot);
+  }, [onProgressChange, progressSnapshot]);
+
+  useEffect(() => {
+    lastProgressRef.current = null;
+  }, [travelerIndex]);
+
+  useEffect(() => {
+    if (!['review', 'success'].includes(step)) {
+      setAutoAdvancing(false);
+    }
+  }, [step]);
 
   // ── lock body scroll ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -147,7 +191,11 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
     setSubmitting(true);
     setServerErr('');
     try {
-      const res = await checkPassport({ packageId: pkg.id, passportExpiry: form.passportExpiry });
+      const res = await checkPassport({
+        packageId: pkg.id,
+        passportExpiry: form.passportExpiry,
+        travelerIndex,
+      });
       if (!res.valid) { setRenewMsg(res.message || expiryReasonMessage(res.reason)); setStep('renew'); return; }
       setStep('capture');
     } catch (err) {
@@ -167,6 +215,7 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
       const res = await verifyPassportImage(
         {
           packageId: pkg.id,
+          travelerIndex,
           passportNumber: form.passportNumber.trim().toUpperCase(),
           passportExpiry: form.passportExpiry,
           surname: form.surname.trim(),
@@ -184,19 +233,57 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
       else if (res.status === 'manual_review' || res.canProceed) setStep('review');
       else setStep('mismatch');
     } catch (err) {
-      console.error('Passport verification error', err, err.response?.data, err.response?.status, err.config);
       const serverError = err.response?.data?.error;
       const status = err.response?.status;
+      const ref = err.response?.data?.ref;
       setServerErr(
         status === 500
-          ? `Server error (${status}). Please try again.`
+          ? `Server error (${status}). Please try again.${ref ? ` Reference: ${ref}` : ''}`
           : serverError || err.message || 'Verification failed. Please try again.'
       );
       setStep('capture');
     }
   };
 
-  const proceedToPayment = () => { stopCamera(); onVerified?.(result); };
+  const proceedToPayment = useCallback(() => {
+    console.info('[passport-handoff]', {
+      action: 'modal-proceed',
+      travelerIndex,
+      travelerLabel,
+      step,
+      result,
+      hasOnVerified: typeof onVerified === 'function',
+    });
+    stopCamera();
+    setAutoAdvancing(true);
+    window.setTimeout(() => {
+      console.info('[passport-handoff]', {
+        action: 'modal-onverified-trigger',
+        travelerIndex,
+        travelerLabel,
+        step,
+      });
+      onVerified?.(result, travelerIndex);
+    }, 900);
+  }, [onVerified, result, step, stopCamera, travelerIndex, travelerLabel]);
+
+  useEffect(() => {
+    if (!['review', 'success'].includes(step)) return;
+    console.info('[passport-handoff]', {
+      action: 'auto-advance-arm',
+      step,
+      travelerIndex,
+      travelerLabel,
+      autoAdvancing,
+    });
+    const timer = window.setTimeout(() => {
+      if (!autoAdvancing) {
+        console.info('[passport-handoff]', { action: 'auto-advance-trigger', step, travelerIndex, travelerLabel });
+        proceedToPayment();
+      }
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [autoAdvancing, proceedToPayment, step, travelerIndex, travelerLabel]);
 
   // ── shell ───────────────────────────────────────────────────────────────────
   return (
@@ -211,7 +298,11 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
             <span className="p-2 rounded-xl bg-emerald-50"><ShieldCheck className="h-5 w-5 text-emerald-600" /></span>
             <div>
               <p className="font-bold text-gray-900 leading-tight">Verify your passport</p>
-              <p className="text-xs text-gray-500">Step 1 of 3 · Required before payment</p>
+              <p className="text-xs text-gray-500">
+                {travelerLabel
+                  ? `${travelerLabel} · Step 1 of 3 · Required before payment`
+                  : 'Step 1 of 3 · Required before payment'}
+              </p>
             </div>
           </div>
           <button onClick={() => { stopCamera(); onClose(); }} className="p-2 hover:bg-gray-100 rounded-xl transition-colors" aria-label="Close">
@@ -387,7 +478,7 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
           {step === 'scanning' && (
             <div className="text-center py-12">
               <Loader2 className="h-12 w-12 text-emerald-600 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-gray-900 mb-1">Scanning your passport…</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Scanning passport for {travelerLabel || 'this traveler'}…</h3>
               <p className="text-sm text-gray-500">Reading the document and matching your details. This can take a few seconds.</p>
             </div>
           )}
@@ -439,7 +530,13 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
               </div>
               <h3 className="text-lg font-bold text-gray-900 mb-2">We’ll verify this manually</h3>
               <p className="text-sm text-gray-600 mb-6 px-2">{result?.message || 'Your booking can continue. Our team will verify your passport before travel.'}</p>
-              <button className={greenBtn} style={greenStyle} onClick={proceedToPayment}>Continue to payment <ArrowRight className="h-4 w-4" /></button>
+              {autoAdvancing ? (
+                <div className="flex items-center justify-center gap-2 text-sm font-semibold text-emerald-700">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Continuing to the next traveler…
+                </div>
+              ) : (
+                <button className={greenBtn} style={greenStyle} onClick={proceedToPayment}>Continue to payment <ArrowRight className="h-4 w-4" /></button>
+              )}
             </div>
           )}
 
@@ -451,7 +548,13 @@ export default function PassportVerificationModal({ pkg, user, onClose, onVerifi
               </div>
               <h3 className="text-lg font-bold text-gray-900 mb-2">Passport verified</h3>
               <p className="text-sm text-gray-600 mb-6 px-2">Your passport details were confirmed. You can now proceed to payment.</p>
-              <button className={greenBtn} style={greenStyle} onClick={proceedToPayment}>Continue to payment <ArrowRight className="h-4 w-4" /></button>
+              {autoAdvancing ? (
+                <div className="flex items-center justify-center gap-2 text-sm font-semibold text-emerald-700">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Continuing to the next traveler…
+                </div>
+              ) : (
+                <button className={greenBtn} style={greenStyle} onClick={proceedToPayment}>Continue to payment <ArrowRight className="h-4 w-4" /></button>
+              )}
             </div>
           )}
         </div>

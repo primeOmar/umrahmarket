@@ -266,6 +266,8 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   }, [id, preloadedPkg]);
 
   const packageData = preloadedPkg ?? fetchedPkg;
+  const readOnlyFromBooking = Boolean(location.state?.fromBooking);
+  const bookingContext = location.state?.booking ?? null;
 
   // Scroll to top whenever the viewed package changes
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [id]);
@@ -378,6 +380,46 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   const isLoggedIn = () => !!(currentUser || userStore.get() || tokenStore.get());
   const formatPrice  = (p) => Number(p).toLocaleString('en-US');
   const calculateTotal = () => !packageData ? 0 : guests.adults * packageData.price + guests.children * packageData.price * 0.5;
+
+  const getAge = (rawDob) => {
+    if (!rawDob) return null;
+    const dob = new Date(rawDob);
+    if (Number.isNaN(dob.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - dob.getFullYear();
+    const monthDiff = now.getMonth() - dob.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) age -= 1;
+    return age >= 0 ? age : null;
+  };
+
+  const bookedTravelers = useMemo(() => {
+    const b = bookingContext ?? {};
+    const travelers = [
+      b.traveler_details,
+      b.travelerDetails,
+      b.travelers,
+      b.passengers,
+      b.clients,
+      b.people,
+      b.passport_verifications,
+      b.passportVerifications,
+    ].find((v) => Array.isArray(v)) ?? [];
+
+    return travelers.slice(0, 12).map((t, index) => {
+      const given = t?.given_names ?? t?.givenNames ?? t?.first_name ?? t?.firstName ?? '';
+      const surname = t?.surname ?? t?.last_name ?? t?.lastName ?? '';
+      const name = (t?.full_name ?? t?.fullName ?? t?.name ?? `${given} ${surname}`.trim()) || `Traveler ${index + 1}`;
+      const dob = t?.date_of_birth ?? t?.dateOfBirth ?? t?.dob ?? null;
+      const passportNumber = t?.passport_number ?? t?.passportNumber ?? null;
+      return {
+        id: t?.id ?? t?.traveler_id ?? t?.travelerIndex ?? index,
+        name,
+        dateOfBirth: dob,
+        age: getAge(dob),
+        passportNumber,
+      };
+    });
+  }, [bookingContext]);
 
   // Format card number with spaces
   const fmtCard = (v) => v.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim();
@@ -511,17 +553,19 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                 }`}
               />
             </button>
-            <button
-              onClick={() => {
-                if (!isLoggedIn()) {
-                  setShowAuthModal(true);
-                } else {
-                  openBooking(packageData);
-                }
-              }}
-              className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors">
-              Book Now
-            </button>
+            {!readOnlyFromBooking && (
+              <button
+                onClick={() => {
+                  if (!isLoggedIn()) {
+                    setShowAuthModal(true);
+                  } else {
+                    openBooking(packageData);
+                  }
+                }}
+                className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+                Book Now
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -557,7 +601,39 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
           {/* Left column */}
-          <div className="lg:col-span-2">
+          <div className={readOnlyFromBooking ? 'lg:col-span-3' : 'lg:col-span-2'}>
+
+            {readOnlyFromBooking && (
+              <div className="mb-8 border border-emerald-200 bg-emerald-50 rounded-2xl p-5">
+                <h2 className="text-lg font-bold text-emerald-900 mb-1">Booked Package Information</h2>
+                <p className="text-sm text-emerald-800 mb-4">
+                  Booking actions are disabled here. This page is for viewing trip details only.
+                </p>
+                {bookedTravelers.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-emerald-900">
+                      Booked Travelers ({bookedTravelers.length})
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {bookedTravelers.map((traveler) => (
+                        <div key={traveler.id} className="bg-white border border-emerald-100 rounded-lg px-3 py-2">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{traveler.name}</p>
+                          <p className="text-xs text-gray-600">
+                            {traveler.age != null ? `Age ${traveler.age}` : 'Age —'}
+                            {traveler.dateOfBirth ? ` · DOB ${new Date(traveler.dateOfBirth).toLocaleDateString('en-GB')}` : ''}
+                            {traveler.passportNumber ? ` · ${traveler.passportNumber}` : ''}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-emerald-800">
+                    Traveler details will appear here after passport and onboarding data sync.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Availability */}
             {(packageData.available_from || packageData.available_to) && (
@@ -748,6 +824,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
           </div>
 
           {/* Right column — booking card */}
+          {!readOnlyFromBooking && (
           <div className="lg:col-span-1">
             <div className="sticky top-24">
               <div className="bg-white border border-gray-200 rounded-2xl shadow-xl p-6">
@@ -841,6 +918,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Similar packages */}

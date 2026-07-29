@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { request, getPassportStatus, getPassportStatusBatch, paymentGuard, tokenStore, refreshToken } from '../api';
 import PassportVerificationModal from './PassportVerificationModal';
+import { persistBookingFlow, readPendingBookingFlow, clearPendingBookingFlow } from '../utils/bookingResume';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS  = 4_000;
@@ -86,6 +87,13 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   // that identifies its passport_verifications row on the backend.
   const [travelerQueue, setTravelerQueue] = useState([]);       // [{ index, tierKey, tierLabel }]
   const [travelerPos,   setTravelerPos]   = useState(0);        // position in travelerQueue currently being verified
+  // Keyed by traveler index — each traveler's in-progress modal state
+  // (form/photo/result/step) must stay isolated from every other traveler's,
+  // otherwise advancing to the next person can resume straight into the
+  // PREVIOUS traveler's finished 'success' screen, skip their actual scan
+  // entirely, and loop forever once the backend (correctly) reports that
+  // traveler as still unverified. See advanceTravelerVerification below.
+  const [passportResumeStates, setPassportResumeStates] = useState({});
 
   // card (Flutterwave)
   const [cardLoading, setCardLoading] = useState(false);
@@ -137,17 +145,50 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
   useEffect(() => { fetchFxRate(); }, [fetchFxRate]);
 
+  useEffect(() => {
+    if (!user?.id || !pkg?.id) return;
+    const pending = readPendingBookingFlow(user.id);
+    if (!pending || String(pending.packageId) !== String(pkg.id)) return;
+    if (Array.isArray(pending.travelerQueue) && pending.travelerQueue.length) {
+      setTravelerQueue(pending.travelerQueue);
+      const restoredPos = Math.max(0, Math.min(Number(pending.travelerPos ?? 0), pending.travelerQueue.length - 1));
+      setTravelerPos(restoredPos);
+      setPassportResumeStates(pending.passportResumeStates ?? {});
+      if (pending.step === 'passport') {
+        setStep('passport');
+      } else if (pending.step === 'passport-check') {
+        setStep('passport-check');
+      } else if (pending.step === 'select') {
+        setStep('select');
+      } else if (pending.step === 'travelers') {
+        setStep('travelers');
+      }
+    }
+  }, [pkg?.id, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !pkg?.id || !travelerQueue.length) return;
+    if (['success', 'processing', 'card-waiting', 'polling'].includes(step)) {
+      clearPendingBookingFlow(user.id);
+      return;
+    }
+    persistBookingFlow(user.id, {
+      packageId: pkg.id,
+      packageTitle: pkg.title,
+      packageImage: pkg.image,
+      step,
+      travelerQueue,
+      travelerPos,
+      passportResumeStates,
+    });
+  }, [pkg?.id, passportResumeStates, step, travelerPos, travelerQueue, user?.id]);
+
   // Defense-in-depth: BookingFlow should never be reached without a logged-in
   // user (callers gate "Book Now" behind AuthModal already), but sessions can
   // expire between the click and this mount. If there's no user/token, bounce
   // straight to auth instead of firing an unauthenticated request.
   useEffect(() => {
     if (!user?.id && !tokenStore.get()) {
-      // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
-      // eslint-disable-next-line no-console
-      console.warn('%c[NAV] BookingFlow mount guard: no user/token', 'color:#e11d48;font-weight:bold', {
-        user, hasToken: !!tokenStore.get(), pkgId: pkg?.id,
-      });
       onClose?.();
       onRequireAuth?.();
     }
@@ -174,11 +215,6 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       setStep('passport');
     } catch (err) {
       if (err?.response?.status === 401) {
-        // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
-        // eslint-disable-next-line no-console
-        console.warn('%c[NAV] BookingFlow passport-status check got 401', 'color:#e11d48;font-weight:bold', {
-          pkgId: pkg?.id, hasToken: !!tokenStore.get(),
-        });
         // Session actually expired mid-flow — send to login. Do NOT fall
         // through to the passport step without a confirmed active session.
         onClose?.();
@@ -195,15 +231,27 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   // Called when a single traveler's passport just came back verified/
   // manual_review — advances to the next unverified traveler in the queue,
   // or on to payment once everyone's done.
-  const advanceTravelerVerification = useCallback(() => {
-    const nextPos = travelerPos + 1;
-    if (nextPos >= travelerQueue.length) {
-      setStep('select');
-    } else {
-      setTravelerPos(nextPos);
-      setStep('passport');
-    }
-  }, [travelerPos, travelerQueue.length]);
+  const advanceTravelerVerification = useCallback(async (result, travelerIndex) => {
+    const completedIndex = Number.isInteger(travelerIndex) ? travelerIndex : travelerPos;
+    console.info('[passport-handoff]', {
+      action: 'advance-traveler',
+      completedTravelerIndex: completedIndex,
+      queueLength: travelerQueue.length,
+      currentStep: step,
+    });
+
+    // Drop the finished traveler's resume snapshot — it recorded a
+    // terminal 'success'/'review' step, and MUST NOT be reused as the
+    // initial state for whichever traveler comes up next.
+    setPassportResumeStates((prev) => {
+      if (!(completedIndex in prev)) return prev;
+      const next = { ...prev };
+      delete next[completedIndex];
+      return next;
+    });
+
+    await checkPassportBatch(travelerQueue);
+  }, [checkPassportBatch, step, travelerPos, travelerQueue]);
 
   // lock body scroll
   useEffect(() => {
@@ -552,6 +600,26 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     </button>
   );
 
+  // Stable handler for the passport modal's progress snapshots. MUST be
+  // memoized — an inline arrow here gets a new identity on every render,
+  // which (via the modal's persistProgress -> useEffect chain) re-fires the
+  // modal's effect every render, which calls this again, which updates state
+  // here, which re-renders this component, which recreates the inline arrow
+  // again — an infinite "Maximum update depth exceeded" loop. Keying off
+  // travelerQueue/travelerPos (which only change on real traveler handoffs)
+  // keeps this identity stable across incidental re-renders.
+  const handlePassportProgressChange = useCallback((nextState) => {
+    const idx = travelerQueue[travelerPos]?.index ?? travelerPos ?? 0;
+    setPassportResumeStates((prev) => {
+      const prevForIdx = prev[idx];
+      // Skip the update entirely if nothing actually changed — avoids
+      // triggering a re-render (and therefore another persist round-trip)
+      // for no-op snapshots.
+      if (prevForIdx && JSON.stringify(prevForIdx) === JSON.stringify(nextState)) return prev;
+      return { ...prev, [idx]: nextState };
+    });
+  }, [travelerPos, travelerQueue]);
+
   // ── render ────────────────────────────────────────────────────────────────
   // Passport must be verified — one traveler at a time — before the payment
   // shell ever shows. travelerQueue/travelerPos identify who's up next; see
@@ -560,6 +628,12 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     const current = travelerQueue[travelerPos];
     return (
       <PassportVerificationModal
+        // Force a full remount per traveler — otherwise React reuses the
+        // same instance across travelerIndex changes and the modal's own
+        // internal state (step/form/photo/result) leaks from the previous
+        // traveler's completed "success" screen instead of resetting to
+        // a fresh "details" form for the next person.
+        key={current?.index ?? 0}
         pkg={pkg}
         user={user}
         travelerIndex={current?.index ?? 0}
@@ -568,6 +642,8 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
             ? `${current?.tierLabel || 'Traveler'} · ${travelerPos + 1} of ${travelerQueue.length}`
             : undefined
         }
+        initialState={passportResumeStates[current?.index ?? 0] ?? null}
+        onProgressChange={handlePassportProgressChange}
         onClose={handleClose}
         onVerified={advanceTravelerVerification}
       />
