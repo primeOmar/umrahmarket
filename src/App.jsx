@@ -19,6 +19,7 @@ import ExperiencesPage from './components/ExperiencesPage';
 import VerifiedPage from './components/VerifiedPage';
 import AgentsPage from './components/AgentsPage';
 import AgentDetailPage from './components/AgentDetailPage';
+import VerifyEmailPage from './components/VerifyEmailPage';
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
@@ -381,6 +382,12 @@ function App() {
           <Route path="/verified" element={
             <>
               <VerifiedPage />
+              <Footer />
+            </>
+          } />
+          <Route path="/verify-email" element={
+            <>
+              <VerifyEmailPage />
               <Footer />
             </>
           } />

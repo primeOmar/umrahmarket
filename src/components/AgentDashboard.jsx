@@ -25,6 +25,7 @@ import AgentProfileSettings from './AgentProfileSettings';
 import { useBookingNotifications } from '../hooks/useBookingNotifications';
 import { getAgentVerificationStatus, requestDocumentReview, getMe, uploadAgentLogo } from '../api';
 import umLogo from '../assets/umramarket.png';
+import EmailVerificationBanner from './EmailVerificationBanner';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -2561,6 +2562,8 @@ const AgentDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         </header>
+
+        {!user?.emailVerified && <EmailVerificationBanner user={user} />}
 
         {/* Dashboard Content */}
         <main className="p-4 md:p-8 pb-24 lg:pb-8">

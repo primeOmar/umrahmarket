@@ -23,6 +23,7 @@ import PostBookingModal from './PostBookingModal';
 import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
+import EmailVerificationBanner from './EmailVerificationBanner';
 
 // A package's `location` is one of three coverage tiers set by the agent in
 // CreatePackageModal ("Primary Location"), not a single free-text city —
@@ -2379,6 +2380,7 @@ const ClientDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         </header>
+        {!user?.emailVerified && <EmailVerificationBanner user={user} darkMode={darkMode} />}
         <main className="p-4 sm:p-6 lg:p-8">{renderContent()}</main>
         <footer className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-2 px-4">
           <div className="flex items-center justify-around">

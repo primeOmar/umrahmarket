@@ -342,6 +342,16 @@ export const getMe = () => request({ method: 'get', url: '/auth/me' });
 export const requestPasswordReset = (email) =>
   request({ method: 'post', url: '/auth/password-reset/request', data: { email } });
 
+// ─── Email confirmation ─────────────────────────────────────────────────────
+// Confirms the account using the token from the emailed verification link.
+export const verifyEmail = (token) =>
+  request({ method: 'post', url: '/auth/verify-email', data: { token } }).then((r) => r.data);
+
+// Requests a fresh confirmation email (60s cooldown enforced server-side).
+// Backend always returns a generic success message — no email-enumeration signal.
+export const resendVerificationEmail = (email) =>
+  request({ method: 'post', url: '/auth/verify-email/resend', data: { email } }).then((r) => r.data);
+
 // ─── Uploads ──────────────────────────────────────────────────────────────────
 // NOTE: DocumentsTab.jsx previously called these endpoints with raw fetch()
 // + credentials:'include' (cookie auth), but this backend authenticates via
@@ -487,6 +497,7 @@ export const uploadAgentLogo = (file) => {
 export default {
   registerClient, registerAgent, login, googleLogin,
   logout, refreshToken, getMe, requestPasswordReset,
+  verifyEmail, resendVerificationEmail,
   uploadAgentDocuments, getAgentDocuments, uploadAgentDocument, saveOfficeMapsUrl,
   tokenStore, userStore,
   checkPassport, verifyPassportImage, getPassportStatus, getPassportStatusBatch,
