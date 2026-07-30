@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, XCircle, Loader2, Mail } from 'lucide-react';
-import { verifyEmail } from '../api';
+import { verifyEmail, tokenStore, userStore } from '../api';
 
 // Route this at /verify-email (already referenced by the confirmation
 // email link and by AuthModal's post-registration copy).
@@ -20,6 +20,12 @@ const VerifyEmailPage = () => {
   // response shape), so this never throws or dead-ends.
   const [dashboardPath, setDashboardPath] = useState('/');
 
+  const resolveDashboardPath = (role) => {
+    if (role === 'agent') return '/agent/dashboard';
+    if (role === 'client') return '/client/dashboard';
+    return '/';
+  };
+
   useEffect(() => {
     if (ranOnce.current) return; // StrictMode double-invoke guard
     ranOnce.current = true;
@@ -35,26 +41,50 @@ const VerifyEmailPage = () => {
         if (res.success) {
           setStatus('success');
           setMessage(res.message || 'Your email has been verified.');
-          try {
-            const raw = localStorage.getItem('user');
-            const parsed = raw ? JSON.parse(raw) : null;
-            if (parsed && typeof parsed === 'object') {
-              const nextUser = {
-                ...parsed,
-                emailVerified: true,
-                email_verified: true,
-                emailConfirmedAt: parsed.emailConfirmedAt || new Date().toISOString(),
-              };
-              localStorage.setItem('user', JSON.stringify(nextUser));
-              window.dispatchEvent(new CustomEvent('auth:email-verified'));
+
+          // ── Establish a session on THIS browser ─────────────────────────
+          // The backend now mints access/refresh tokens on verification (see
+          // auth_routes.js), because this link is very often opened on a
+          // different device/browser than the one that registered — without
+          // storing a session here, ProtectedAgentRoute/ProtectedClientRoute
+          // find no matching user and bounce the redirect below straight
+          // back to "/". Store it the same way login()/registerClient() do.
+          if (res.accessToken && res.user) {
+            tokenStore.set(res.accessToken);
+            if (res.refreshToken) localStorage.setItem('refresh_token', res.refreshToken);
+            userStore.set({ ...res.user, emailVerified: true, email_verified: true });
+            window.dispatchEvent(new CustomEvent('auth:email-verified'));
+          } else {
+            // Fallback: no session in the response (e.g. older backend
+            // deploy) — merge the verified flag into whatever's already
+            // stored, same as before.
+            try {
+              const raw = localStorage.getItem('user');
+              const parsed = raw ? JSON.parse(raw) : null;
+              if (parsed && typeof parsed === 'object') {
+                const nextUser = {
+                  ...parsed,
+                  emailVerified: true,
+                  email_verified: true,
+                  emailConfirmedAt: parsed.emailConfirmedAt || new Date().toISOString(),
+                };
+                localStorage.setItem('user', JSON.stringify(nextUser));
+                window.dispatchEvent(new CustomEvent('auth:email-verified'));
+
+                // Fallback role source when backend success payload has no role.
+                if (!res.role && nextUser.role) {
+                  setDashboardPath(resolveDashboardPath(nextUser.role));
+                }
+              }
+            } catch {
+              // Ignore local storage parse/set failures.
             }
-          } catch {
-            // Ignore local storage parse/set failures.
           }
+
           if (res.role === 'agent') {
-            setDashboardPath('/agent/dashboard');
+            setDashboardPath(resolveDashboardPath('agent'));
           } else if (res.role === 'client') {
-            setDashboardPath('/client/dashboard');
+            setDashboardPath(resolveDashboardPath('client'));
           }
         } else {
           setStatus('error');
@@ -66,6 +96,14 @@ const VerifyEmailPage = () => {
         setMessage('Something went wrong while verifying your email. Please try again.');
       });
   }, [token]);
+
+  useEffect(() => {
+    if (status !== 'success') return undefined;
+    const timer = setTimeout(() => {
+      navigate(dashboardPath, { replace: true });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [status, dashboardPath, navigate]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -86,7 +124,8 @@ const VerifyEmailPage = () => {
         {status === 'success' && (
           <>
             <h1 className="text-lg font-bold text-gray-900 mb-1">Email confirmed</h1>
-            <p className="text-sm text-gray-500 mb-6">{message}</p>
+            <p className="text-sm text-gray-500 mb-2">{message}</p>
+            <p className="text-xs text-gray-400 mb-6">Redirecting you to your dashboard…</p>
             <button
               onClick={() => navigate(dashboardPath, { replace: true })}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold text-sm hover:opacity-90 transition-opacity"
