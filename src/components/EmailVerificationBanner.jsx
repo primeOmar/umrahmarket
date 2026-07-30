@@ -139,7 +139,7 @@ const EmailVerificationBanner = ({ user, darkMode = false, blocking = false, onV
 
   if (blocking) {
     return (
-      <div className="absolute inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/20 backdrop-blur-[1px]">
+      <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 bg-black/35 backdrop-blur-[2px]">
         <div className="w-full max-w-lg rounded-2xl border border-amber-200 bg-white shadow-2xl p-5 sm:p-6">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">

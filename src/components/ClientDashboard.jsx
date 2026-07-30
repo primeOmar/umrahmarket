@@ -2385,7 +2385,6 @@ const ClientDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         </header>
-        {!emailVerified && <EmailVerificationBanner user={currentUser || user} darkMode={darkMode} />}
         <main
           className={`p-4 sm:p-6 lg:p-8 transition-all ${emailVerified ? '' : 'pointer-events-none blur-[2px] select-none'}`}
           aria-hidden={!emailVerified}

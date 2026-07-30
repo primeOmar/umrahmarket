@@ -2577,8 +2577,6 @@ const AgentDashboard = ({ user, onLogout }) => {
           </div>
         </header>
 
-        {!emailVerified && <EmailVerificationBanner user={profile || user} />}
-
         {/* Dashboard Content */}
         <main
           className={`p-4 md:p-8 pb-24 lg:pb-8 transition-all ${emailVerified ? '' : 'pointer-events-none blur-[2px] select-none'}`}
