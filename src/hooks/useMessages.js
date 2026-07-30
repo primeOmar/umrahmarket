@@ -37,7 +37,7 @@ export const useMessages = (bookingId) => {
           data: { messageIds: toMark, bookingId },
         });
       } catch (err) {
-        console.error('[markAsRead]', err.message);
+        
       }
     }, 2000);
   }, [bookingId]);
@@ -61,7 +61,7 @@ export const useMessages = (bookingId) => {
         .map(m => m.id);
       if (unreadIds.length) scheduleBatchMarkRead(unreadIds);
     } catch (err) {
-      console.error('[fetchMessages]', err.message);
+      
       if (!silent) setError(err.message);
     } finally {
       if (!silent) setLoading(false);
@@ -71,7 +71,7 @@ export const useMessages = (bookingId) => {
   // ── 30s fallback polling (only when Realtime is unavailable) ─────────────
   const startSlowPolling = useCallback(() => {
     if (slowPollRef.current) return;
-    console.warn('[Messages] Realtime unavailable — using 30s polling fallback');
+    
     slowPollRef.current = setInterval(() => fetchMessages(true), 30_000);
   }, [fetchMessages]);
 
@@ -211,7 +211,7 @@ export const useMessages = (bookingId) => {
       setMessages(prev => prev.filter(m => m.id !== tempId));
       return false;
     } catch (err) {
-      console.error('[sendMessage]', err.message);
+      
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setError(err.message);
       return false;
@@ -257,7 +257,7 @@ export const useAgentConversations = () => {
       const res = await request({ method: 'get', url: '/messages/agent/conversations' });
       setConversations(res.data?.conversations || []);
     } catch (err) {
-      console.error('[useAgentConversations]', err.message);
+      
     } finally {
       if (!silent) setLoading(false);
     }

@@ -379,7 +379,7 @@ const {
           toast.success(`Loaded ${enrichedDocs.length} document(s)`);
         }
       } catch (docErr) {
-        console.error('Failed to fetch documents:', docErr);
+        
         setDocumentsError(docErr.message);
         toast.error('Could not load documents. Check console.');
       }
@@ -390,7 +390,7 @@ const {
       setAuditLogs(Array.isArray(logsData?.data) ? logsData.data : []);
     } catch (e) {
       const msg = e.message || 'Failed to load dashboard data';
-      console.error('Dashboard load error:', msg);
+      
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -619,7 +619,7 @@ const {
       if (!url) throw new Error('No signed URL returned');
       window.open(url, '_blank');
     } catch (e) {
-      console.error('Failed to fetch signed URL', e);
+      
       toast.error(e.message || 'Failed to open document');
     }
   };

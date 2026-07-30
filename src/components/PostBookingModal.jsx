@@ -360,7 +360,7 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
       }
       setWebcamStarting(false);
     } catch (err) {
-      console.warn('[PostBookingModal] webcam access failed:', err?.message || err);
+      
       stopWebcam();
       setWebcamError('Could not access your camera. You can upload a photo instead.');
       // Don't leave the user stuck — fall back straight to the file picker.
@@ -533,13 +533,7 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
         const data = res?.data;
         if (!data) return;
 
-        console.info('[PostBookingModal] onboarding/status', {
-          packageId,
-          contactComplete: data.contact?.complete,
-          nextOfKinComplete: data.nextOfKin?.complete,
-          idPhotoComplete: data.idPhoto?.complete,
-          allComplete: data.allComplete,
-        });
+        
 
         // Server-verified identity per traveler slot. Always set this (even
         // to an empty map) once the call resolves, so `identityLoaded`
@@ -639,12 +633,12 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
         if (firstIncomplete) {
           setStep(firstIncomplete);
         } else if (data.allComplete) {
-          console.info('[PostBookingModal] everything already complete on load — showing done screen', { packageId });
+          
           setStep('done');
         }
       } catch (err) {
         // Non-fatal — the form still works, it just won't be prefilled/resumed.
-        console.warn('[PostBookingModal] status load failed:', err.message);
+        
       } finally {
         if (!cancelled) setLoadingStatus(false);
       }
@@ -655,7 +649,7 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
 
   const goToNextIncompleteOrClose = useCallback((justCompletedStep, nextCompletedState) => {
     const remaining = STEPS.filter((s) => s !== justCompletedStep && !nextCompletedState[s]);
-    console.info('[PostBookingModal] step complete', { justCompletedStep, nextCompletedState, remaining });
+    
     if (remaining.length > 0) {
       setStep(remaining[0]);
     } else {

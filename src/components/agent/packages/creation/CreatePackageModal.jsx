@@ -1049,7 +1049,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
         try {
           await saveItinerary(savedPkg.id, cleanItinerary);
         } catch (itinErr) {
-          console.error("[CreatePackageModal] itinerary save failed:", itinErr);
+          
           toast.warning(
             isEdit ? "Package updated, itinerary not saved" : "Package created, itinerary not saved",
             "You can update the itinerary from the package list."

@@ -24,6 +24,7 @@ import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
 import EmailVerificationBanner from './EmailVerificationBanner';
+import { isEmailVerified } from '../utils/emailVerification';
 
 // A package's `location` is one of three coverage tiers set by the agent in
 // CreatePackageModal ("Primary Location"), not a single free-text city —
@@ -426,14 +427,9 @@ const usePackages = (showToast) => {
       // Debug: log the first raw package so you can confirm the image field name
       if (raw.length > 0) {
         const sample = raw[0];
-        console.log('[PackageDebug] image fields on first package:', {
-          image:      sample.image,
-          images:     sample.images,
-          image_urls: sample.image_urls,
-          imageUrls:  sample.imageUrls,
-        });
+        
         if (sample.image_urls?.length) {
-          console.log('[PackageDebug] image_urls[0] structure:', JSON.stringify(sample.image_urls[0]));
+          
         }
       }
 
@@ -444,7 +440,7 @@ const usePackages = (showToast) => {
 
       setPackages(packagesList);
     } catch (err) {
-      console.error('Error fetching packages:', err);
+      
       setError(err.message || 'Failed to load packages');
 
       // Fall back to cache if available
@@ -469,7 +465,6 @@ const usePackages = (showToast) => {
 
   return { packages, loading, error, refetch: () => fetchPackages(true) };
 };
-
 
 // ==================== STAT CARD COMPONENT ====================
 const StatCard = ({ icon: Icon, label, value, change, color, darkMode, loading }) => (
@@ -1711,6 +1706,8 @@ const ClientDashboard = ({ user, onLogout }) => {
     return saved ? JSON.parse(saved) : false;
   });
   const [showNotifications, setShowNotifications] = useState(false);
+  const [currentUser, setCurrentUser] = useState(user);
+  const emailVerified = isEmailVerified(currentUser || user);
   
   const [bookings, setBookings] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -1720,6 +1717,10 @@ const ClientDashboard = ({ user, onLogout }) => {
   const [stats, setStats] = useState({ activeBookings: 0, favorites: 0, pastJourneys: 0, rewardPoints: 0 });
 
   const { packages: availablePackages, loading: packagesLoading, error: packagesError, refetch: refetchPackages } = usePackages(showToast);
+
+  useEffect(() => {
+    setCurrentUser(user);
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(darkMode));
@@ -1739,18 +1740,24 @@ const ClientDashboard = ({ user, onLogout }) => {
     if (!user?.id) {
       // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
       // eslint-disable-next-line no-console
-      console.warn('%c[NAV] ClientDashboard session guard bounced to /', 'color:#e11d48;font-weight:bold', {
-        user,
-        userStoreValue: userStore.get(),
-        accessToken: !!tokenStore.get(),
-        refreshToken: !!localStorage.getItem('refresh_token'),
-        justBooked: sessionStorage.getItem('booking_just_confirmed'),
-      });
+      
       // eslint-disable-next-line no-console
-      console.trace('[NAV] call stack');
+      
       navigate('/', { replace: true });
     }
   }, [user?.id, navigate]);
+
+  const refreshEmailStatus = async () => {
+    try {
+      const res = await request({ method: 'get', url: '/auth/me' });
+      const refreshedUser = res?.data?.data?.user;
+      if (!refreshedUser) return;
+      setCurrentUser(refreshedUser);
+      userStore.set(refreshedUser);
+    } catch {
+      // Keep dashboard locked until backend confirms verification.
+    }
+  };
 
     // If there's no user, immediately clear loading states so nothing spins forever
   useEffect(() => {
@@ -1772,7 +1779,7 @@ const ClientDashboard = ({ user, onLogout }) => {
         setFavorites(favList);
         setStats(prev => ({ ...prev, favorites: favList.length }));
       } catch (err) {
-        console.error('[fetchFavourites]', err.message);
+        
         showToast('Failed to load favourites', 'error');
       } finally {
         setLoading(prev => ({ ...prev, favorites: false, stats: false }));
@@ -1809,10 +1816,10 @@ const ClientDashboard = ({ user, onLogout }) => {
             }
           }
         } catch (detailsErr) {
-          console.warn('[fetchBookings] onboarding/missing check failed:', detailsErr.message);
+          
         }
       } catch (err) {
-        console.error('[fetchBookings]', err.message);
+        
         showToast('Could not load bookings', 'error');
       } finally {
         setLoading(prev => ({ ...prev, bookings: false }));
@@ -1825,7 +1832,7 @@ const ClientDashboard = ({ user, onLogout }) => {
         const res = await request({ method: 'get', url: '/messages/count/unread' });
         setUnreadCount(res?.data?.count ?? 0);
       } catch (err) {
-        console.error('[fetchUnreadCount]', err.message);
+        
       } finally {
         setLoading(prev => ({ ...prev, messages: false }));
       }
@@ -1999,12 +2006,10 @@ const ClientDashboard = ({ user, onLogout }) => {
       setBookingsMissingDetails(new Set(missing.map((m) => m.bookingId)));
       return missing;
     } catch (err) {
-      console.warn('[checkMissingDetails]', err.message);
+      
       return [];
     }
   }, []);
-
-
 
   const refreshBookings = useCallback(async () => {
     try {
@@ -2016,7 +2021,7 @@ const ClientDashboard = ({ user, onLogout }) => {
       const rewardPoints = computeRewardPoints(raw);
       setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past, rewardPoints }));
     } catch (err) {
-      console.error('[refreshBookings]', err.message);
+      
     }
   }, []);
 
@@ -2380,8 +2385,14 @@ const ClientDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         </header>
-        {!user?.emailVerified && <EmailVerificationBanner user={user} darkMode={darkMode} />}
-        <main className="p-4 sm:p-6 lg:p-8">{renderContent()}</main>
+        {!emailVerified && <EmailVerificationBanner user={currentUser || user} darkMode={darkMode} />}
+        <main
+          className={`p-4 sm:p-6 lg:p-8 transition-all ${emailVerified ? '' : 'pointer-events-none blur-[2px] select-none'}`}
+          aria-hidden={!emailVerified}
+        >
+          {renderContent()}
+        </main>
+        {!emailVerified && <EmailVerificationBanner user={currentUser || user} darkMode={darkMode} blocking onVerified={refreshEmailStatus} />}
         <footer className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-2 px-4">
           <div className="flex items-center justify-around">
             {menuItems.slice(0, 4).map(item => (

@@ -135,7 +135,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       if (!json?.success) throw new Error(json?.message || 'Rate fetch failed');
       setFxRate(json.usdKes);
     } catch (err) {
-      console.error('[BookingModal] FX rate fetch failed:', err.message);
+      
       setFxRate(130); // safe fallback so modal is usable
       setFxError(true);
     } finally {
@@ -233,12 +233,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   // or on to payment once everyone's done.
   const advanceTravelerVerification = useCallback(async (result, travelerIndex) => {
     const completedIndex = Number.isInteger(travelerIndex) ? travelerIndex : travelerPos;
-    console.info('[passport-handoff]', {
-      action: 'advance-traveler',
-      completedTravelerIndex: completedIndex,
-      queueLength: travelerQueue.length,
-      currentStep: step,
-    });
+    
 
     // Drop the finished traveler's resume snapshot — it recorded a
     // terminal 'success'/'review' step, and MUST NOT be reused as the

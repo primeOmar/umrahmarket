@@ -246,39 +246,21 @@ export default function PassportVerificationModal({
   };
 
   const proceedToPayment = useCallback(() => {
-    console.info('[passport-handoff]', {
-      action: 'modal-proceed',
-      travelerIndex,
-      travelerLabel,
-      step,
-      result,
-      hasOnVerified: typeof onVerified === 'function',
-    });
+    
     stopCamera();
     setAutoAdvancing(true);
     window.setTimeout(() => {
-      console.info('[passport-handoff]', {
-        action: 'modal-onverified-trigger',
-        travelerIndex,
-        travelerLabel,
-        step,
-      });
+      
       onVerified?.(result, travelerIndex);
     }, 900);
   }, [onVerified, result, step, stopCamera, travelerIndex, travelerLabel]);
 
   useEffect(() => {
     if (!['review', 'success'].includes(step)) return;
-    console.info('[passport-handoff]', {
-      action: 'auto-advance-arm',
-      step,
-      travelerIndex,
-      travelerLabel,
-      autoAdvancing,
-    });
+    
     const timer = window.setTimeout(() => {
       if (!autoAdvancing) {
-        console.info('[passport-handoff]', { action: 'auto-advance-trigger', step, travelerIndex, travelerLabel });
+        
         proceedToPayment();
       }
     }, 1200);

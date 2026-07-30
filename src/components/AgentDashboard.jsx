@@ -26,6 +26,7 @@ import { useBookingNotifications } from '../hooks/useBookingNotifications';
 import { getAgentVerificationStatus, requestDocumentReview, getMe, uploadAgentLogo } from '../api';
 import umLogo from '../assets/umramarket.png';
 import EmailVerificationBanner from './EmailVerificationBanner';
+import { isEmailVerified } from '../utils/emailVerification';
 
 // ==================== CHAT SYSTEM COMPONENTS ====================
 
@@ -988,7 +989,7 @@ const UmrahIdCardModal = ({ client, agent, onClose }) => {
 
       doc.save(`Umrah-ID-${client.name.replace(/\s+/g, '-')}.pdf`);
     } catch (err) {
-      console.error('[UmrahIdCardModal] PDF generation failed:', err);
+      
       alert('Could not generate the PDF. Make sure "jspdf" is installed.');
     } finally {
       setDownloading(false);
@@ -1211,7 +1212,7 @@ const BulkIdCardsModal = ({ clients, agent, onClose }) => {
 
       doc.save(`Umrah-ID-Cards-Batch-${clients.length}.pdf`);
     } catch (err) {
-      console.error('[BulkIdCardsModal] PDF generation failed:', err);
+      
       alert('Could not generate the batch PDF. Make sure "jspdf" is installed.');
     } finally {
       setDownloading(false);
@@ -1504,7 +1505,7 @@ const ManifestModal = ({ manifest, agent, onClose }) => {
 
       doc.save(`Manifest-${packageName.replace(/\s+/g, '-')}-${generatedAt.toISOString().slice(0, 10)}.pdf`);
     } catch (err) {
-      console.error('[ManifestModal] PDF generation failed:', err);
+      
       alert('Could not generate the PDF. Make sure "jspdf" and "jspdf-autotable" are installed (npm install jspdf jspdf-autotable).');
     } finally {
       setDownloading(false);
@@ -1875,7 +1876,7 @@ const AgentDashboard = ({ user, onLogout }) => {
       if (!logoUrl) throw new Error('Upload did not return a logo URL');
       applyLogoUrl(logoUrl);
     } catch (err) {
-      console.error('[AgentDashboard] avatar upload failed:', err?.message);
+      
       alert('Logo upload failed. Please try again.');
       applyLogoUrl(prevLogoUrl);
     } finally {
@@ -1899,7 +1900,7 @@ const AgentDashboard = ({ user, onLogout }) => {
         const res = await getMe();
         if (res?.data?.success && res.data?.data?.user) setAgentProfile(res.data.data.user);
       } catch (err) {
-        console.error('[AgentDashboard] profile fetch failed:', err.message);
+        
       } finally {
         setProfileLoading(false);
       }
@@ -1914,6 +1915,19 @@ const AgentDashboard = ({ user, onLogout }) => {
   const displayAgent = profile?.agentNumber || user?.agentNumber || '';
   const avatarLetter = displayName.charAt(0).toUpperCase();
   const logoUrl = profile?.logoUrl || '';
+  const emailVerified = isEmailVerified(profile || user);
+
+  const refreshEmailStatus = async () => {
+    try {
+      const res = await getMe();
+      const refreshedUser = res?.data?.data?.user;
+      if (!refreshedUser) return;
+      setAgentProfile(refreshedUser);
+      localStorage.setItem('user', JSON.stringify(refreshedUser));
+    } catch {
+      // Keep dashboard locked until we can confirm status from backend.
+    }
+  };
   // ────────────────────────────────────────────────────────────────
 
   // ── Document verification status ─────────────────────────────────────────
@@ -1929,7 +1943,7 @@ const AgentDashboard = ({ user, onLogout }) => {
       const data = await getAgentVerificationStatus();
       setVerificationStatus(data);
     } catch (err) {
-      console.error('[AgentDashboard] verification status fetch failed:', err.message);
+      
       // Fail safe: if we can't confirm approval, treat as not-approved
       // rather than silently letting an unverified agent post a package.
       setVerificationStatus({ isApproved: false, hasUploadedDocuments: false, items: {} });
@@ -1989,7 +2003,7 @@ const AgentDashboard = ({ user, onLogout }) => {
   // layer, which is the correct/safe place for that guard — the handler
   // itself doesn't need a second, more fragile copy of the same check.
   const handleAttemptCreatePackage = async () => {
-    console.log('[AgentDashboard] New Package clicked — checking approval status…');
+    
     setPackageModalMode('create');
     setEditingPackage(null);
     setCheckingApproval(true);
@@ -2003,7 +2017,7 @@ const AgentDashboard = ({ user, onLogout }) => {
         setShowVerificationGate(true);
       }
     } catch (err) {
-      console.error('[AgentDashboard] approval check failed:', err.message);
+      
       // Fail safe: if we can't confirm approval right now, don't silently
       // let an unverified (or unknown) agent through — show the gate.
       setShowVerificationGate(true);
@@ -2023,7 +2037,7 @@ const AgentDashboard = ({ user, onLogout }) => {
       await refreshVerificationStatus();
     } catch (err) {
       alert(err?.message || 'Failed to request review. Please try again.');
-      console.error('[AgentDashboard] request review failed:', err?.message);
+      
     } finally {
       setRequestingReview(false);
     }
@@ -2118,15 +2132,15 @@ const AgentDashboard = ({ user, onLogout }) => {
   ];
 
   const handleViewClient = (client) => {
-    console.log('View client:', client);
+    
   };
 
   const handleMessageClient = (client) => {
-    console.log('Message client:', client);
+    
   };
 
   const handleEditClient = (client) => {
-    console.log('Edit client:', client);
+    
   };
 
   const handleEditPackage = (pkg) => {
@@ -2143,12 +2157,12 @@ const AgentDashboard = ({ user, onLogout }) => {
 
   const handleDeletePackage = (pkg) => {
     if (window.confirm('Are you sure you want to delete this package?')) {
-      console.log('Delete package:', pkg);
+      
     }
   };
 
   const handleDocumentUpload = async (files) => {
-    console.log('Uploading documents:', files);
+    
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 2000));
   };
@@ -2156,7 +2170,7 @@ const AgentDashboard = ({ user, onLogout }) => {
   // Fired by CreatePackageModal after a successful create/edit/duplicate.
   // Refreshes both the sidebar package count and PackagesTab's own list.
   const handleSavePackage = (packageData) => {
-    console.log('Package saved:', packageData);
+    
     getAgentPackages()
       .then((data) => {
         const list = Array.isArray(data) ? data : (data.packages ?? data.data ?? []);
@@ -2373,7 +2387,7 @@ const AgentDashboard = ({ user, onLogout }) => {
           Desktop: always offset by the collapsed rail width (lg:ml-16), never fully hidden
           Mobile: no offset (sidebar is overlay drawer)
       */}
-      <div className="transition-all duration-300 lg:ml-16">
+      <div className="transition-all duration-300 lg:ml-16 relative">
         {/* Top Bar */}
         <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
           <div className="px-4 md:px-8 py-3 md:py-4 flex items-center justify-between gap-3">
@@ -2563,10 +2577,13 @@ const AgentDashboard = ({ user, onLogout }) => {
           </div>
         </header>
 
-        {!user?.emailVerified && <EmailVerificationBanner user={user} />}
+        {!emailVerified && <EmailVerificationBanner user={profile || user} />}
 
         {/* Dashboard Content */}
-        <main className="p-4 md:p-8 pb-24 lg:pb-8">
+        <main
+          className={`p-4 md:p-8 pb-24 lg:pb-8 transition-all ${emailVerified ? '' : 'pointer-events-none blur-[2px] select-none'}`}
+          aria-hidden={!emailVerified}
+        >
           {activeTab === 'overview' && (
             <div className="space-y-6 md:space-y-8">
               {/* Overview Header with Office Location Button */}
@@ -3062,6 +3079,10 @@ const AgentDashboard = ({ user, onLogout }) => {
             </div>
           )}
         </main>
+
+        {!emailVerified && (
+          <EmailVerificationBanner user={profile || user} blocking onVerified={refreshEmailStatus} />
+        )}
       </div>
 
       {/* Mobile Bottom Navigation Bar */}

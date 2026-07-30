@@ -95,8 +95,8 @@ const AgentVisitTracker = ({ agent }) => {
           body: JSON.stringify({ visitorInfo, agentInfo }),
           credentials: 'include',
         });
-      } catch (error) {
-        console.error('Error logging agent visit:', error);
+      } catch {
+        return;
       }
     };
 

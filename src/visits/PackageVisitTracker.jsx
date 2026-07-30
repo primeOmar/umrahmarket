@@ -98,8 +98,8 @@ const PackageVisitTracker = ({ packageData }) => {
           body: JSON.stringify({ visitorInfo, packageInfo }),
           credentials: 'include',
         });
-      } catch (error) {
-        console.error('Error logging package visit:', error);
+      } catch {
+        return;
       }
     };
 

@@ -14,6 +14,12 @@ const VerifyEmailPage = () => {
   const [message, setMessage] = useState('');
   const ranOnce = useRef(false);
 
+  // Where to send the user once they hit "Continue" — derived from the
+  // role the backend now returns alongside the verification result. Falls
+  // back to '/' if role is missing (e.g. an old backend deploy, or a stale
+  // response shape), so this never throws or dead-ends.
+  const [dashboardPath, setDashboardPath] = useState('/');
+
   useEffect(() => {
     if (ranOnce.current) return; // StrictMode double-invoke guard
     ranOnce.current = true;
@@ -29,6 +35,27 @@ const VerifyEmailPage = () => {
         if (res.success) {
           setStatus('success');
           setMessage(res.message || 'Your email has been verified.');
+          try {
+            const raw = localStorage.getItem('user');
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed && typeof parsed === 'object') {
+              const nextUser = {
+                ...parsed,
+                emailVerified: true,
+                email_verified: true,
+                emailConfirmedAt: parsed.emailConfirmedAt || new Date().toISOString(),
+              };
+              localStorage.setItem('user', JSON.stringify(nextUser));
+              window.dispatchEvent(new CustomEvent('auth:email-verified'));
+            }
+          } catch {
+            // Ignore local storage parse/set failures.
+          }
+          if (res.role === 'agent') {
+            setDashboardPath('/agent/dashboard');
+          } else if (res.role === 'client') {
+            setDashboardPath('/client/dashboard');
+          }
         } else {
           setStatus('error');
           setMessage(res.error || 'This verification link is invalid or has expired.');
@@ -61,10 +88,10 @@ const VerifyEmailPage = () => {
             <h1 className="text-lg font-bold text-gray-900 mb-1">Email confirmed</h1>
             <p className="text-sm text-gray-500 mb-6">{message}</p>
             <button
-              onClick={() => navigate('/', { replace: true })}
+              onClick={() => navigate(dashboardPath, { replace: true })}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold text-sm hover:opacity-90 transition-opacity"
             >
-              Continue to UmrahMarket
+              {dashboardPath === '/' ? 'Continue to UmrahMarket' : 'Go to Your Dashboard'}
             </button>
           </>
         )}

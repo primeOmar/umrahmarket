@@ -99,7 +99,7 @@ export async function processPackageImages(files) {
   let failedCount = 0;
   for (const s of settled) {
     if (s.status === 'fulfilled') results.push(s.value);
-    else { failedCount += 1; console.error('[imageProcessing] failed to process image:', s.reason); }
+    else { failedCount += 1;  }
   }
   return { results, failedCount };
 }

@@ -62,7 +62,7 @@ export default async function handler(req, res) {
   try {
     html = fs.readFileSync(indexPath, 'utf-8');
   } catch (err) {
-    console.error('[package-meta] could not read dist/index.html', err);
+    
     res.status(500).send('Build output not found');
     return;
   }
@@ -83,7 +83,7 @@ export default async function handler(req, res) {
       if (!r.ok) {
         // Log the exact reason — check Vercel → Deployments → Functions → Logs
         const bodyText = await r.text().catch(() => '');
-        console.error(`[package-meta] backend returned ${r.status} for id=${id}`, bodyText.slice(0, 300));
+        
       } else {
         const data = await r.json();
         // Try every response shape we've seen: {package}, {data:{package}}, or bare object
@@ -91,16 +91,16 @@ export default async function handler(req, res) {
         if (pkg && (pkg.name || pkg.title)) {
           meta = buildMeta(pkg, id);
         } else {
-          console.error('[package-meta] unexpected response shape for id=' + id, JSON.stringify(data).slice(0, 300));
+          
         }
       }
     } catch (err) {
-      console.error('[package-meta] fetch threw for id=' + id, err.message);
+      
       // Fall through to generic defaults — the link still works and opens
       // the app correctly, it just won't have a custom preview this time.
     }
   } else {
-    console.error('[package-meta] no id parsed from URL:', req.url);
+    
   }
 
   const metaTags = `

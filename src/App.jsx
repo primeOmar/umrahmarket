@@ -20,6 +20,7 @@ import VerifiedPage from './components/VerifiedPage';
 import AgentsPage from './components/AgentsPage';
 import AgentDetailPage from './components/AgentDetailPage';
 import VerifyEmailPage from './components/VerifyEmailPage';
+import { isEmailVerified } from './utils/emailVerification';
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
@@ -60,16 +61,6 @@ const ProtectedClientRoute = ({ children, authReady }) => {
   );
   const user = userStore.get();
   if (!user || user.role !== 'client') {
-    // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
-    // eslint-disable-next-line no-console
-    console.warn('%c[NAV] ProtectedClientRoute bounced to /', 'color:#e11d48;font-weight:bold', {
-      from: location.pathname,
-      user,
-      accessToken: !!tokenStore.get(),
-      refreshToken: !!localStorage.getItem('refresh_token'),
-    });
-    // eslint-disable-next-line no-console
-    console.trace('[NAV] call stack');
     return <Navigate to="/" state={{ from: location.pathname }} replace />;
   }
   return children;
@@ -207,6 +198,17 @@ function App() {
     };
     window.addEventListener('session:expired', onExpired);
     return () => window.removeEventListener('session:expired', onExpired);
+  }, []);
+
+  useEffect(() => {
+    const onEmailVerified = () => {
+      const refreshed = userStore.get();
+      if (refreshed && isEmailVerified(refreshed)) {
+        setCurrentUser(refreshed);
+      }
+    };
+    window.addEventListener('auth:email-verified', onEmailVerified);
+    return () => window.removeEventListener('auth:email-verified', onEmailVerified);
   }, []);
 
   // ── Inactivity timeout — log out after 30 min of no interaction ───────────

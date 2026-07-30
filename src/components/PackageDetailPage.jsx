@@ -340,7 +340,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2000);
     } catch (err) {
-      console.error('[handleShare] clipboard fallback failed', err);
+      
       window.prompt('Copy this link:', shareUrl); // last-resort fallback
     }
   }, [packageData]);
@@ -540,7 +540,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                 try {
                   await toggleFavorite?.(packageData);
                 } catch (err) {
-                  console.error('[toggleFavorite]', err);
+                  
                 }
               }}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -1361,7 +1361,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                 try {
                   await toggleFavorite?.(packageData);
                 } catch (err) {
-                  console.error('[toggleFavorite]', err);
+                  
                 }
                 return;
               }

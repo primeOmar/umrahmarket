@@ -1061,16 +1061,20 @@ useEffect(() => {
 
           const payload = buildClientPayload(formData);
           const res = await registerClient(payload);
+          const responseData = res?.data?.data || {};
+          const hasSession = Boolean(responseData.accessToken && responseData.refreshToken);
 
-          // Set user store for authentication
-          const user = res.data?.data?.user || res.data?.user || {
+          const user = responseData.user || res.data?.user || {
             firstName: formData.firstName,
             lastName: formData.lastName,
             email: formData.email,
             phone: payload.phone,
             role: 'client'
           };
-          userStore.set(user);
+
+          if (hasSession) {
+            userStore.set(user);
+          }
 
           // Store user data
           const userData = {
@@ -1084,20 +1088,27 @@ useEffect(() => {
           const goToClientDashboard = () => {
             clearTimeout(redirectTimeoutRef.current);
             setOverlay(null);
-            onAuthSuccess(user);
-            goTo('/client/dashboard?welcome=true');
+            if (hasSession) {
+              onAuthSuccess(user);
+              goTo('/client/dashboard?welcome=true');
+              return;
+            }
+            onClose();
+            setAuthType('login');
           };
 
           setOverlay({
             status: 'success',
             accent: 'emerald',
             title: `Welcome, ${formData.firstName}! 🤲`,
-            message: `Your Umramarket account is ready. We've sent a verification email to ${formData.email} — don't forget to check spam.`,
-            ctaLabel: 'Go to Your Dashboard',
+            message: hasSession
+              ? `Your Umramarket account is ready. We've sent a verification email to ${formData.email} — don't forget to check spam.`
+              : `Account created. We've sent a verification email to ${formData.email}. Please confirm your email, then sign in.`,
+            ctaLabel: hasSession ? 'Go to Your Dashboard' : 'Back to Sign In',
             onCta: goToClientDashboard,
           });
 
-          redirectTimeoutRef.current = setTimeout(goToClientDashboard, 3000);
+          redirectTimeoutRef.current = setTimeout(goToClientDashboard, hasSession ? 3000 : 4500);
 
         } else {
           const validationErrors = validateAgentForm(formData);
@@ -1117,41 +1128,61 @@ useEffect(() => {
           const payload = buildAgentPayload(formData);
           const res = await registerAgent(payload);
 
+          // BUG FIX: this used to unconditionally treat registration as a
+          // logged-in session and redirect to /agent/dashboard. If the
+          // backend ever returns without issuing accessToken/refreshToken
+          // (e.g. the session-cookie step throws, or an older deploy is
+          // still live), the dashboard's getMe()/getagentpackages/etc calls
+          // all 401 with "User not found" and the app's 401 handler bounces
+          // the brand-new agent straight back to "/" looking like their
+          // session "expired" seconds after signing up. Guard the same way
+          // the client branch above does.
+          const responseData = res?.data?.data || {};
+          const hasSession = Boolean(responseData.accessToken && responseData.refreshToken);
+
           // Store agent data
           const agentData = {
-            ...res.data?.data?.user ?? res.data?.user,
+            ...(responseData.user ?? res.data?.user),
             agencyName: formData.agencyName,
             email: formData.email,
             licenseNumber: formData.licenseNumber,
             role: 'agent'
           };
 
-          userStore.set(agentData);
+          if (hasSession) {
+            userStore.set(agentData);
+          }
           localStorage.setItem('agentData', JSON.stringify(agentData));
           sessionStorage.setItem('newAgent', 'true');
 
           const goToAgentDashboard = () => {
             clearTimeout(redirectTimeoutRef.current);
             setOverlay(null);
-            onAuthSuccess(agentData);
-            goTo('/agent/dashboard?welcome=true');
+            if (hasSession) {
+              onAuthSuccess(agentData);
+              goTo('/agent/dashboard?welcome=true');
+              return;
+            }
+            onClose();
+            setAuthType('login');
           };
 
           setOverlay({
             status: 'success',
             accent: 'blue',
             title: `Welcome to the family, ${formData.agencyName}! 🎉`,
-            message: 'Your agency account has been created successfully. Your dashboard is ready with tools to manage clients, bookings, and packages.',
-            ctaLabel: 'Go to Your Dashboard',
+            message: hasSession
+              ? 'Your agency account has been created successfully. Your dashboard is ready with tools to manage clients, bookings, and packages.'
+              : `Account created. We've sent a verification email to ${formData.email}. Please sign in to continue.`,
+            ctaLabel: hasSession ? 'Go to Your Dashboard' : 'Back to Sign In',
             onCta: goToAgentDashboard,
           });
 
-          redirectTimeoutRef.current = setTimeout(goToAgentDashboard, 3000);
+          redirectTimeoutRef.current = setTimeout(goToAgentDashboard, hasSession ? 3000 : 4500);
         }
       }
     } catch (err) {
       const serverData = err?.response?.data;
-      console.error('Auth error:', err);
 
       let serverMsg = serverData?.message || serverData?.error || err.message || 'Something went wrong. Please try again.';
 

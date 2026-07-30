@@ -65,18 +65,6 @@ export const paymentGuard = {
 let _navigate = null;
 export const setNavigator = (fn) => { _navigate = fn; };
 export const goTo = (path, opts, reason) => {
-  // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
-  // eslint-disable-next-line no-console
-  console.warn(`%c[NAV] -> ${path}`, 'color:#e11d48;font-weight:bold', {
-    reason: reason || '(no reason given)',
-    hasNavigator: !!_navigate,
-    accessToken: !!tokenStore.get(),
-    refreshToken: !!localStorage.getItem('refresh_token'),
-    user: userStore.get(),
-    path: window.location.pathname,
-  });
-  // eslint-disable-next-line no-console
-  console.trace('[NAV] call stack');
   if (_navigate) _navigate(path, opts);
   else window.location.href = path; // fallback: bridge not mounted yet (should not happen in practice)
 };
@@ -154,7 +142,6 @@ api.interceptors.request.use((cfg) => {
   }
 
   cfg.headers = headers;
-  if (import.meta.env.DEV) console.debug('[API]', cfg.method?.toUpperCase(), cfg.url, cfg.headers);
   return cfg;
 });
 
@@ -273,7 +260,6 @@ export const registerClient = async (formData) => {
 
 export const registerAgent = async (data) => {
   const res = await request({ method: 'post', url: '/auth/register/agent', data });
-  if (import.meta.env.DEV) console.debug('[registerAgent] accessToken:', res?.data?.accessToken ?? 'NOT IN RESPONSE');
   if (res?.data?.accessToken)  tokenStore.set(res.data.accessToken);
   if (res?.data?.data?.user)   userStore.set(res.data.data.user);
   return res;
