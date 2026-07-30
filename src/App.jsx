@@ -391,7 +391,6 @@ function App() {
               <Footer />
             </>
           } />
-
           {/* FIX: packageId is in the path so Pesapal can't stomp it on redirect */}
           <Route path="/payment/callback/:packageId" element={
             <>
