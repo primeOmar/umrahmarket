@@ -17,7 +17,26 @@ import {
 /**
  * ChatWidget — visitor ↔ agent live chat for Umrah Market.
  *
- * REALTIME REVISION 6 — resume by identity, doorbell sound.
+ * REALTIME REVISION 7 — draggable launcher icon.
+ *
+ * The floating launcher (closed state) can now be dragged anywhere on
+ * screen, in case it sits over something the visitor needs to read or
+ * click. It defaults to the same bottom-6 / right-6 corner as before.
+ * Position is tracked as {right, bottom} px offsets (not left/top) so the
+ * math matches the original Tailwind anchor, and is clamped to the
+ * viewport on every move and on window resize. A pointerdown/up pair
+ * that moves less than DRAG_THRESHOLD_PX is still treated as a click
+ * (opens the chat) — only an actual drag repositions it. Position is
+ * remembered for the browser session via sessionStorage, the same
+ * pattern used for the conversation state below.
+ *
+ * The open chat panel intentionally stays anchored bottom-right rather
+ * than following the dragged icon — simpler, and it's the launcher that
+ * tends to obscure page content, not the panel. Say the word if you'd
+ * rather the panel open next to wherever the icon was dropped instead.
+ *
+ * REALTIME REVISION 6 (still in effect) — resume by identity, doorbell
+ * sound.
  *
  * startConversation() on the backend now resumes an existing non-closed
  * conversation for the same email+phone instead of always creating a new
@@ -77,9 +96,15 @@ const BELL_DELAY_MS = 4000;
 const BELL_WINDOW_MS = 30000;
 const BELL_SESSION_KEY = 'um_chat_bell_played';
 const CONVERSATION_SESSION_KEY = 'um_chat_conversation';
+const LAUNCHER_POSITION_SESSION_KEY = 'um_chat_launcher_pos';
 const ICON_SWAP_MS = 5000;
 const TYPING_BROADCAST_MS = 2000;
 const TYPING_STALE_MS = 5000;
+
+// Default launcher offset — matches the old `fixed bottom-6 right-6` (24px).
+const DEFAULT_LAUNCHER_POS = { right: 24, bottom: 24 };
+const LAUNCHER_EDGE_MARGIN = 8; // keep a sliver of margin so it never sits flush on the edge
+const DRAG_THRESHOLD_PX = 6; // movement below this is treated as a click, not a drag
 
 const PHONE_REGEX = /^\+?[0-9][0-9\s\-()]{6,18}[0-9]$/;
 const sanitizePhoneInput = (value) => value.replace(/[^\d\s+\-()]/g, '');
@@ -141,6 +166,18 @@ const readStoredConversation = () => {
   }
 };
 
+const readStoredLauncherPosition = () => {
+  try {
+    const raw = sessionStorage.getItem(LAUNCHER_POSITION_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.right === 'number' && typeof parsed?.bottom === 'number') return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 const ChatWidget = () => {
   const stored = useRef(readStoredConversation()).current;
 
@@ -163,8 +200,13 @@ const ChatWidget = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [agentTyping, setAgentTyping] = useState(false);
 
+  // Draggable launcher position ({ right, bottom } in px, fixed-positioned)
+  const [launcherPos, setLauncherPos] = useState(() => readStoredLauncherPosition() || DEFAULT_LAUNCHER_POS);
+  const [isDragging, setIsDragging] = useState(false);
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const launcherBtnRef = useRef(null);
 
   const bellPlayedRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
@@ -181,6 +223,9 @@ const ChatWidget = () => {
   const conversationClosedRef = useRef(false);
   const notifiedAgentMsgIdsRef = useRef(new Set());
 
+  // Drag bookkeeping — refs so pointermove doesn't re-render on every pixel
+  const dragStateRef = useRef(null); // { startX, startY, startRight, startBottom, moved, width, height }
+
   useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
   useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
   useEffect(() => { conversationClosedRef.current = conversationClosed; }, [conversationClosed]);
@@ -192,6 +237,85 @@ const ChatWidget = () => {
     const intervalId = setInterval(() => setShowIcon((prev) => !prev), ICON_SWAP_MS);
     return () => clearInterval(intervalId);
   }, []);
+
+  // ---------------------------------------------------------------
+  // Draggable launcher — pointer-based, works for mouse, touch & pen
+  // ---------------------------------------------------------------
+  const clampLauncherPos = useCallback((pos, size) => {
+    const w = size?.width || 60;
+    const h = size?.height || 60;
+    const maxRight = Math.max(LAUNCHER_EDGE_MARGIN, window.innerWidth - w - LAUNCHER_EDGE_MARGIN);
+    const maxBottom = Math.max(LAUNCHER_EDGE_MARGIN, window.innerHeight - h - LAUNCHER_EDGE_MARGIN);
+    return {
+      right: Math.min(Math.max(pos.right, LAUNCHER_EDGE_MARGIN), maxRight),
+      bottom: Math.min(Math.max(pos.bottom, LAUNCHER_EDGE_MARGIN), maxBottom),
+    };
+  }, []);
+
+  // Re-clamp on viewport resize so the icon can't get stranded off-screen.
+  useEffect(() => {
+    const onResize = () => {
+      const rect = launcherBtnRef.current?.getBoundingClientRect();
+      setLauncherPos((prev) => clampLauncherPos(prev, rect));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [clampLauncherPos]);
+
+  const persistLauncherPos = (pos) => {
+    try { sessionStorage.setItem(LAUNCHER_POSITION_SESSION_KEY, JSON.stringify(pos)); } catch { /* ignore */ }
+  };
+
+  const handleLauncherPointerDown = (e) => {
+    // Only left click / primary touch/pen contact starts a drag.
+    if (e.button !== undefined && e.button !== 0) return;
+    const rect = launcherBtnRef.current?.getBoundingClientRect();
+    dragStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startRight: launcherPos.right,
+      startBottom: launcherPos.bottom,
+      moved: false,
+      width: rect?.width,
+      height: rect?.height,
+    };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const handleLauncherPointerMove = (e) => {
+    const drag = dragStateRef.current;
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+      drag.moved = true;
+      setIsDragging(true);
+    }
+    if (!drag.moved) return;
+    // Moving the pointer right/down shrinks the right/bottom offsets.
+    const next = clampLauncherPos(
+      { right: drag.startRight - dx, bottom: drag.startBottom - dy },
+      { width: drag.width, height: drag.height }
+    );
+    setLauncherPos(next);
+  };
+
+  const handleLauncherPointerUp = (e) => {
+    const drag = dragStateRef.current;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    dragStateRef.current = null;
+    setIsDragging(false);
+    if (drag?.moved) {
+      persistLauncherPos(launcherPos);
+      return; // it was a drag — don't also toggle the chat open
+    }
+    toggleOpen();
+  };
+
+  const handleLauncherPointerCancel = () => {
+    dragStateRef.current = null;
+    setIsDragging(false);
+  };
 
   // ---------------------------------------------------------------
   // Audio helpers
@@ -617,19 +741,31 @@ const ChatWidget = () => {
         .wave-middle { animation: wave-burst-middle 2s infinite; }
         .wave-inner { animation: wave-burst-inner 1.5s infinite; }
         @media (prefers-reduced-motion: reduce) { .wave-outer, .wave-middle, .wave-inner { animation: none; } }
+        .launcher-drag-wrap { touch-action: none; }
       `}</style>
 
-      <div className="fixed bottom-6 right-6 z-[90]">
-        {!isOpen ? (
+      {!isOpen ? (
+        <div
+          className="fixed z-[90] launcher-drag-wrap"
+          style={{ right: `${launcherPos.right}px`, bottom: `${launcherPos.bottom}px` }}
+        >
           <button
-            onClick={toggleOpen}
-            aria-label="Chat with an agent"
-            className="relative border-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 rounded-full"
+            ref={launcherBtnRef}
+            onPointerDown={handleLauncherPointerDown}
+            onPointerMove={handleLauncherPointerMove}
+            onPointerUp={handleLauncherPointerUp}
+            onPointerCancel={handleLauncherPointerCancel}
+            aria-label="Chat with an agent. Draggable — press and drag to reposition."
+            className={`relative border-none focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 rounded-full ${isDragging ? 'cursor-grabbing' : 'cursor-pointer'}`}
           >
-            <div className="bursting-launcher bg-green-100 shadow-lg shadow-green-600/40 hover:bg-green-200 transition-colors">
-              <div className="wave-outer"></div>
-              <div className="wave-middle"></div>
-              <div className="wave-inner"></div>
+            <div className={`bursting-launcher bg-green-100 shadow-lg shadow-green-600/40 transition-colors ${isDragging ? '' : 'hover:bg-green-200'}`}>
+              {!isDragging && (
+                <>
+                  <div className="wave-outer"></div>
+                  <div className="wave-middle"></div>
+                  <div className="wave-inner"></div>
+                </>
+              )}
               <MessageCircle className="text-green-400 sm:hidden h-6 w-6" />
               {showIcon ? (
                 <MessageCircle className="text-green-400 hidden sm:block h-7 w-7" />
@@ -643,7 +779,9 @@ const ChatWidget = () => {
               )}
             </div>
           </button>
-        ) : (
+        </div>
+      ) : (
+        <div className="fixed bottom-6 right-6 z-[90]">
           <button
             onClick={toggleOpen}
             aria-label="Close chat"
@@ -651,8 +789,8 @@ const ChatWidget = () => {
           >
             <ChevronDown className="h-6 w-6" />
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {isOpen && (
         <div className="fixed bottom-24 right-4 sm:right-6 z-[90] w-[calc(100vw-2rem)] max-w-sm h-[520px] max-h-[calc(100vh-8rem)] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
