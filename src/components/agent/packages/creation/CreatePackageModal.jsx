@@ -91,6 +91,10 @@ const EXCLUSION_OPTIONS = [
 const EMPTY = {
   name: "", type: "umrah", location: "makkah", description: "",
   price: "", original_price: "", discount: "", duration: "",
+  // Age-tier pricing — `price` above doubles as the required Adult (12+) price.
+  // The other three are optional per-package overrides; a blank tier falls
+  // back to the adult price on save (handled server-side too).
+  child_price: "", minor_child_price: "", infant_price: "",
   available_from: "", available_to: "",
   max_group_size: "50", min_group_size: "1",
   makkah_hotel_name: "", makkah_hotel_rating: "", makkah_hotel_distance: "",
@@ -195,6 +199,19 @@ function sanitizeFormPayload(form) {
     original_price:        sanitizeNumber(form.original_price),
     discount:              sanitizeNumber(form.discount),
     duration:              sanitizeNumber(form.duration),
+    child_price:           sanitizeNumber(form.child_price),
+    minor_child_price:     sanitizeNumber(form.minor_child_price),
+    infant_price:          sanitizeNumber(form.infant_price),
+    // Sent to the API as a single object; packagesApi.js should JSON.stringify
+    // this into the `price_tiers` form-data field the same way it already
+    // does for highlights/inclusions/exclusions. Server falls back any blank
+    // tier to the adult price, so nulls here are fine.
+    price_tiers: {
+      adult:       sanitizeNumber(form.price) ?? 0,
+      child:       form.child_price === ""       ? null : sanitizeNumber(form.child_price),
+      minor_child: form.minor_child_price === "" ? null : sanitizeNumber(form.minor_child_price),
+      infant:      form.infant_price === ""      ? null : sanitizeNumber(form.infant_price),
+    },
     min_group_size:        sanitizeNumber(form.min_group_size),
     max_group_size:        sanitizeNumber(form.max_group_size),
     available_from:        sanitizeDate(form.available_from),
@@ -337,6 +354,7 @@ const FIELD_STEP = {
   makkah_hotel_name: 1, makkah_hotel_rating: 1, makkah_check_in_date: 1, makkah_check_out_date: 1,
   madinah_hotel_name: 1, madinah_hotel_rating: 1, madinah_check_in_date: 1, madinah_check_out_date: 1,
   price: 2, duration: 2, available_to: 2, max_group_size: 2,
+  child_price: 2, minor_child_price: 2, infant_price: 2,
   itinerary: 3,
   images: 4,
 };
@@ -395,6 +413,17 @@ function validateStepFields(stepIdx, form, itinerary, images, existingImageUrls)
   if (stepIdx === 2) {
     if (!form.price || Number(form.price) <= 0) errors.price = "A valid price is required";
     if (!form.duration || Number(form.duration) <= 0) errors.duration = "Trip duration is required";
+    // Age-tier prices are optional (blank = falls back to adult price), but
+    // if the agent enters something it has to be a valid non-negative number.
+    if (form.child_price !== "" && (isNaN(Number(form.child_price)) || Number(form.child_price) < 0)) {
+      errors.child_price = "Enter a valid price or leave blank";
+    }
+    if (form.minor_child_price !== "" && (isNaN(Number(form.minor_child_price)) || Number(form.minor_child_price) < 0)) {
+      errors.minor_child_price = "Enter a valid price or leave blank";
+    }
+    if (form.infant_price !== "" && (isNaN(Number(form.infant_price)) || Number(form.infant_price) < 0)) {
+      errors.infant_price = "Enter a valid price or leave blank";
+    }
     if (
       form.available_from && form.available_to &&
       new Date(form.available_to) < new Date(form.available_from)
@@ -505,8 +534,8 @@ const OptionGrid = ({ options, selected, onChange, color }) => {
 const PriceBreakdown = ({ price }) => {
   const amt = parseFloat(price) || 0;
   if (!amt) return null;
-  const fee = amt * 0.08;
-  const receives = amt * 0.92;
+  const fee = amt * 0.07;
+  const receives = amt * 0.93;
   const fmt = (n) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
     <div
@@ -524,7 +553,7 @@ const PriceBreakdown = ({ price }) => {
         <span className="font-semibold" style={{ color: "#0D3D2B" }}>${fmt(amt)}</span>
       </div>
       <div className="flex justify-between text-sm">
-        <span style={{ color: "#7aaa8a" }}>Platform fee (8%)</span>
+        <span style={{ color: "#7aaa8a" }}>Platform fee 7%)</span>
         <span className="font-semibold" style={{ color: "#dc2626" }}>−${fmt(fee)}</span>
       </div>
       <div
@@ -679,6 +708,14 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       original_price:        pkg.original_price != null ? String(pkg.original_price) : "",
       discount:              pkg.discount != null ? String(pkg.discount) : "",
       duration:              pkg.duration != null ? String(pkg.duration) : "",
+      // Always reflect what's actually saved, so an agent editing a package
+      // sees the real per-tier price (even if it happens to equal the adult
+      // price) rather than a blank field they can't distinguish from an
+      // unset one. Only genuinely missing data (no price_tiers at all, e.g.
+      // a package saved before this feature existed) leaves it blank.
+      child_price:       pkg.price_tiers?.child       != null ? String(pkg.price_tiers.child)       : "",
+      minor_child_price: pkg.price_tiers?.minor_child != null ? String(pkg.price_tiers.minor_child) : "",
+      infant_price:      pkg.price_tiers?.infant      != null ? String(pkg.price_tiers.infant)      : "",
       available_from:        pkg.available_from || "",
       available_to:          pkg.available_to || "",
       max_group_size:        pkg.max_group_size != null ? String(pkg.max_group_size) : "50",
@@ -1012,7 +1049,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
         try {
           await saveItinerary(savedPkg.id, cleanItinerary);
         } catch (itinErr) {
-          console.error("[CreatePackageModal] itinerary save failed:", itinErr);
+          
           toast.warning(
             isEdit ? "Package updated, itinerary not saved" : "Package created, itinerary not saved",
             "You can update the itinerary from the package list."
@@ -1269,7 +1306,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
           {step === 2 && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                <Field label="Your Price (USD)" required error={errors.price}>
+                <Field label="Adult Price (12+ yrs)" required error={errors.price}>
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
                     <InputEl
@@ -1304,36 +1341,58 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                 </Field> */}
               </div>
 
-              <PriceBreakdown price={form.price} />
-
-              {/* Duration (read-only if auto-calculated, editable fallback) */}
-              <Field
-                label="Trip Duration (nights)"
-                required
-                error={errors.duration}
-                hint={!errors.duration && (calcDurationNights(form) ? "auto-calculated from hotel dates" : "tap a preset or enter manually")}
-              >
-                <PresetChips
-                  color="gold"
-                  value={form.duration}
-                  onChange={(v) => set("duration", v)}
-                  options={[7, 10, 14, 21, 30]}
-                  suffix="n"
-                  customPlaceholder="e.g. 14"
-                />
+              {/* Age-tier pricing — all optional, each falls back to the
+                  adult price above if left blank. Wired to the booking modal
+                  next so a client can select how many of each age group. */}
+              <Field label="Pricing by Age Group" hint="optional · leave blank to charge the adult price for that group">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>Child (7–11 yrs)</p>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
+                      <InputEl
+                        type="number" min="0" step="0.01"
+                        value={form.child_price}
+                        onChange={(e) => set("child_price", e.target.value)}
+                        placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
+                        style={errors.child_price ? errorRingStyle : {}}
+                      />
+                    </div>
+                    {errors.child_price && <p className="text-xs mt-1 text-red-500">{errors.child_price}</p>}
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>Minor Child (2–6 yrs)</p>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
+                      <InputEl
+                        type="number" min="0" step="0.01"
+                        value={form.minor_child_price}
+                        onChange={(e) => set("minor_child_price", e.target.value)}
+                        placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
+                        style={errors.minor_child_price ? errorRingStyle : {}}
+                      />
+                    </div>
+                    {errors.minor_child_price && <p className="text-xs mt-1 text-red-500">{errors.minor_child_price}</p>}
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>Infant (under 2 yrs)</p>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
+                      <InputEl
+                        type="number" min="0" step="0.01"
+                        value={form.infant_price}
+                        onChange={(e) => set("infant_price", e.target.value)}
+                        placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
+                        style={errors.infant_price ? errorRingStyle : {}}
+                      />
+                    </div>
+                    {errors.infant_price && <p className="text-xs mt-1 text-red-500">{errors.infant_price}</p>}
+                  </div>
+                </div>
               </Field>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Available From">
-                  <InputEl type="date" value={form.available_from}
-                    onChange={(e) => set("available_from", e.target.value)} sanitize="date" />
-                </Field>
-                <Field label="Available To" error={errors.available_to}>
-                  <InputEl type="date" value={form.available_to}
-                    onChange={(e) => set("available_to", e.target.value)} sanitize="date"
-                    style={errors.available_to ? errorRingStyle : {}} />
-                </Field>
-              </div>
+              <PriceBreakdown price={form.price} />
+              
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Min Group Size">

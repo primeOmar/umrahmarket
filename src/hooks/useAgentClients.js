@@ -13,7 +13,7 @@ export const useAgentClients = () => {
       const res = await request({ method: 'get', url: '/bookings/agent-clients' });
       setClients(res.data?.clients || []);
     } catch (err) {
-      console.error('useAgentClients error:', err);
+      
       setError(err.response?.data?.message || err.message);
     } finally {
       setLoading(false);

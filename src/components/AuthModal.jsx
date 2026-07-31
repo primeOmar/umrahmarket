@@ -19,10 +19,6 @@ import {
 
 // ==================== ANIMATION STYLES ====================
 const animationStyles = `
-  @keyframes confetti {
-    0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
-  }
   @keyframes slideUp {
     from { transform: translateY(20px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
@@ -30,17 +26,6 @@ const animationStyles = `
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
-  }
-  @keyframes progress {
-    0% { width: 0%; }
-    100% { width: 100%; }
-  }
-  @keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-  }
-  @keyframes ping {
-    75%, 100% { transform: scale(2); opacity: 0; }
   }
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -52,37 +37,17 @@ const animationStyles = `
     50% { transform: translateY(-5px) translateX(-5px); }
     75% { transform: translateY(5px) translateX(10px); }
   }
-  .animate-confetti {
-    animation: confetti 3s ease-out forwards;
-  }
   .animate-slideUp {
     animation: slideUp 0.5s ease-out;
   }
   .animate-fadeIn {
     animation: fadeIn 0.3s ease-out;
   }
-  .animate-progress {
-    animation: progress 2s ease-out;
-  }
-  .animate-bounce {
-    animation: bounce 1s infinite;
-  }
-  .animate-ping {
-    animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
-  }
   .animate-pulse {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
   .animate-float {
     animation: float 15s ease-in-out infinite;
-  }
-  .animate-check {
-    stroke-dasharray: 50;
-    stroke-dashoffset: 50;
-    animation: draw 0.8s ease-out forwards;
-  }
-  @keyframes draw {
-    to { stroke-dashoffset: 0; }
   }
 `;
 
@@ -111,6 +76,382 @@ const Alert = ({ type, message }) => {
   );
 };
 
+// ==================== STATUS OVERLAY (loading / success / error) ====================
+const BRAND_NAME = 'Umramarket';
+
+/**
+ * Single React-driven overlay for the auth flow's loading / success / error states.
+ * Replaces the old approach of building popups with document.createElement + innerHTML —
+ * this is state-driven, accessible, and shows the exact backend error message to the user
+ * (no more generic "Something went wrong" swallowing the real reason).
+ */
+const StatusOverlay = ({ overlay, onDismiss }) => {
+  if (!overlay) return null;
+  const { status, accent = 'emerald', title, message, errorDetails, ctaLabel, onCta } = overlay;
+
+  const isBlue = accent === 'blue';
+  const ring = isBlue ? 'border-t-blue-600' : 'border-t-emerald-600';
+  const gradient = isBlue ? 'from-blue-500 to-indigo-600' : 'from-emerald-500 to-teal-600';
+  const textAccent = isBlue ? 'text-blue-700' : 'text-emerald-700';
+
+  return (
+    <div
+      role={status === 'error' ? 'alertdialog' : 'status'}
+      aria-live="polite"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-[3px] animate-fadeIn"
+    >
+      <div className="relative w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl shadow-black/20 border border-gray-100 animate-slideUp">
+        <div className={`h-1 bg-gradient-to-r ${gradient}`} />
+        <div className="p-7 text-center">
+          <div className={`text-[11px] font-bold tracking-widest uppercase mb-5 ${textAccent}`}>
+            {BRAND_NAME}
+          </div>
+
+          {status === 'loading' && (
+            <>
+              <div className={`mx-auto w-12 h-12 mb-4 border-[3px] border-gray-100 rounded-full ${ring} animate-spin`} />
+              <h3 className="text-base font-semibold text-gray-900 mb-1">{title}</h3>
+              <p className="text-sm text-gray-500">{message}</p>
+            </>
+          )}
+
+          {status === 'success' && (
+            <>
+              <div className={`mx-auto w-14 h-14 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center mb-4`}>
+                <CheckCircle className="h-7 w-7 text-white" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">{title}</h3>
+              <p className="text-sm text-gray-500 mb-5">{message}</p>
+              {ctaLabel && (
+                <button
+                  onClick={onCta}
+                  className={`w-full py-3 bg-gradient-to-r ${gradient} text-white font-semibold rounded-xl hover:shadow-lg transition-all duration-300`}
+                >
+                  {ctaLabel}
+                </button>
+              )}
+            </>
+          )}
+
+          {status === 'error' && (
+            <>
+              <div className="mx-auto w-14 h-14 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+                <AlertCircle className="h-7 w-7 text-red-500" />
+              </div>
+              <h3 className="text-base font-semibold text-gray-900 mb-2">{title}</h3>
+              <p className="text-sm text-gray-700 whitespace-pre-line text-left bg-red-50/70 border border-red-100 rounded-xl p-3.5 mb-5 max-h-48 overflow-y-auto">
+                {message}
+              </p>
+              {Array.isArray(errorDetails) && errorDetails.length > 0 && (
+                <ul className="text-xs text-red-600 text-left list-disc list-inside space-y-1 mb-5 -mt-3">
+                  {errorDetails.map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+              )}
+              <button
+                onClick={onDismiss}
+                className="w-full py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors duration-300"
+              >
+                Try Again
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Full ISO-3166 country list with international dial codes, generated from
+ * the `world-countries` dataset. Muslim-travel-relevant countries are pinned
+ * to the top for convenience; the remaining 228 are alphabetical.
+ * Shared numbering zones (NANP "+1", Russia/Kazakhstan "+7") show the zone
+ * code only, matching how it's actually dialed.
+ */
+const COUNTRY_CODES = [
+  { iso: 'SA', name: "Saudi Arabia", dial: '+966', flag: '🇸🇦' },
+  { iso: 'KE', name: "Kenya", dial: '+254', flag: '🇰🇪' },
+  { iso: 'AE', name: "United Arab Emirates", dial: '+971', flag: '🇦🇪' },
+  { iso: 'PK', name: "Pakistan", dial: '+92', flag: '🇵🇰' },
+  { iso: 'IN', name: "India", dial: '+91', flag: '🇮🇳' },
+  { iso: 'NG', name: "Nigeria", dial: '+234', flag: '🇳🇬' },
+  { iso: 'TZ', name: "Tanzania", dial: '+255', flag: '🇹🇿' },
+  { iso: 'UG', name: "Uganda", dial: '+256', flag: '🇺🇬' },
+  { iso: 'GB', name: "United Kingdom", dial: '+44', flag: '🇬🇧' },
+  { iso: 'US', name: "United States", dial: '+1', flag: '🇺🇸' },
+  { iso: 'EG', name: "Egypt", dial: '+20', flag: '🇪🇬' },
+  { iso: 'BD', name: "Bangladesh", dial: '+880', flag: '🇧🇩' },
+  { iso: 'ID', name: "Indonesia", dial: '+62', flag: '🇮🇩' },
+  { iso: 'MY', name: "Malaysia", dial: '+60', flag: '🇲🇾' },
+  { iso: 'TR', name: "T\u00fcrkiye", dial: '+90', flag: '🇹🇷' },
+  { iso: 'ZA', name: "South Africa", dial: '+27', flag: '🇿🇦' },
+  { iso: 'SO', name: "Somalia", dial: '+252', flag: '🇸🇴' },
+  { iso: 'ET', name: "Ethiopia", dial: '+251', flag: '🇪🇹' },
+  { iso: 'FR', name: "France", dial: '+33', flag: '🇫🇷' },
+  { iso: 'DE', name: "Germany", dial: '+49', flag: '🇩🇪' },
+  { iso: 'AF', name: "Afghanistan", dial: '+93', flag: '🇦🇫' },
+  { iso: 'AX', name: "\u00c5land Islands", dial: '+358', flag: '🇦🇽' },
+  { iso: 'AL', name: "Albania", dial: '+355', flag: '🇦🇱' },
+  { iso: 'DZ', name: "Algeria", dial: '+213', flag: '🇩🇿' },
+  { iso: 'AS', name: "American Samoa", dial: '+1', flag: '🇦🇸' },
+  { iso: 'AD', name: "Andorra", dial: '+376', flag: '🇦🇩' },
+  { iso: 'AO', name: "Angola", dial: '+244', flag: '🇦🇴' },
+  { iso: 'AI', name: "Anguilla", dial: '+1', flag: '🇦🇮' },
+  { iso: 'AG', name: "Antigua and Barbuda", dial: '+1', flag: '🇦🇬' },
+  { iso: 'AR', name: "Argentina", dial: '+54', flag: '🇦🇷' },
+  { iso: 'AM', name: "Armenia", dial: '+374', flag: '🇦🇲' },
+  { iso: 'AW', name: "Aruba", dial: '+297', flag: '🇦🇼' },
+  { iso: 'AU', name: "Australia", dial: '+61', flag: '🇦🇺' },
+  { iso: 'AT', name: "Austria", dial: '+43', flag: '🇦🇹' },
+  { iso: 'AZ', name: "Azerbaijan", dial: '+994', flag: '🇦🇿' },
+  { iso: 'BS', name: "Bahamas", dial: '+1', flag: '🇧🇸' },
+  { iso: 'BH', name: "Bahrain", dial: '+973', flag: '🇧🇭' },
+  { iso: 'BB', name: "Barbados", dial: '+1', flag: '🇧🇧' },
+  { iso: 'BY', name: "Belarus", dial: '+375', flag: '🇧🇾' },
+  { iso: 'BE', name: "Belgium", dial: '+32', flag: '🇧🇪' },
+  { iso: 'BZ', name: "Belize", dial: '+501', flag: '🇧🇿' },
+  { iso: 'BJ', name: "Benin", dial: '+229', flag: '🇧🇯' },
+  { iso: 'BM', name: "Bermuda", dial: '+1', flag: '🇧🇲' },
+  { iso: 'BT', name: "Bhutan", dial: '+975', flag: '🇧🇹' },
+  { iso: 'BO', name: "Bolivia", dial: '+591', flag: '🇧🇴' },
+  { iso: 'BA', name: "Bosnia and Herzegovina", dial: '+387', flag: '🇧🇦' },
+  { iso: 'BW', name: "Botswana", dial: '+267', flag: '🇧🇼' },
+  { iso: 'BV', name: "Bouvet Island", dial: '+47', flag: '🇧🇻' },
+  { iso: 'BR', name: "Brazil", dial: '+55', flag: '🇧🇷' },
+  { iso: 'IO', name: "British Indian Ocean Territory", dial: '+246', flag: '🇮🇴' },
+  { iso: 'VG', name: "British Virgin Islands", dial: '+1', flag: '🇻🇬' },
+  { iso: 'BN', name: "Brunei", dial: '+673', flag: '🇧🇳' },
+  { iso: 'BG', name: "Bulgaria", dial: '+359', flag: '🇧🇬' },
+  { iso: 'BF', name: "Burkina Faso", dial: '+226', flag: '🇧🇫' },
+  { iso: 'BI', name: "Burundi", dial: '+257', flag: '🇧🇮' },
+  { iso: 'KH', name: "Cambodia", dial: '+855', flag: '🇰🇭' },
+  { iso: 'CM', name: "Cameroon", dial: '+237', flag: '🇨🇲' },
+  { iso: 'CA', name: "Canada", dial: '+1', flag: '🇨🇦' },
+  { iso: 'CV', name: "Cape Verde", dial: '+238', flag: '🇨🇻' },
+  { iso: 'BQ', name: "Caribbean Netherlands", dial: '+599', flag: '🇧🇶' },
+  { iso: 'KY', name: "Cayman Islands", dial: '+1', flag: '🇰🇾' },
+  { iso: 'CF', name: "Central African Republic", dial: '+236', flag: '🇨🇫' },
+  { iso: 'TD', name: "Chad", dial: '+235', flag: '🇹🇩' },
+  { iso: 'CL', name: "Chile", dial: '+56', flag: '🇨🇱' },
+  { iso: 'CN', name: "China", dial: '+86', flag: '🇨🇳' },
+  { iso: 'CX', name: "Christmas Island", dial: '+61', flag: '🇨🇽' },
+  { iso: 'CC', name: "Cocos (Keeling) Islands", dial: '+61', flag: '🇨🇨' },
+  { iso: 'CO', name: "Colombia", dial: '+57', flag: '🇨🇴' },
+  { iso: 'KM', name: "Comoros", dial: '+269', flag: '🇰🇲' },
+  { iso: 'CK', name: "Cook Islands", dial: '+682', flag: '🇨🇰' },
+  { iso: 'CR', name: "Costa Rica", dial: '+506', flag: '🇨🇷' },
+  { iso: 'HR', name: "Croatia", dial: '+385', flag: '🇭🇷' },
+  { iso: 'CU', name: "Cuba", dial: '+53', flag: '🇨🇺' },
+  { iso: 'CW', name: "Cura\u00e7ao", dial: '+599', flag: '🇨🇼' },
+  { iso: 'CY', name: "Cyprus", dial: '+357', flag: '🇨🇾' },
+  { iso: 'CZ', name: "Czechia", dial: '+420', flag: '🇨🇿' },
+  { iso: 'DK', name: "Denmark", dial: '+45', flag: '🇩🇰' },
+  { iso: 'DJ', name: "Djibouti", dial: '+253', flag: '🇩🇯' },
+  { iso: 'DM', name: "Dominica", dial: '+1', flag: '🇩🇲' },
+  { iso: 'DO', name: "Dominican Republic", dial: '+1', flag: '🇩🇴' },
+  { iso: 'CD', name: "DR Congo", dial: '+243', flag: '🇨🇩' },
+  { iso: 'EC', name: "Ecuador", dial: '+593', flag: '🇪🇨' },
+  { iso: 'SV', name: "El Salvador", dial: '+503', flag: '🇸🇻' },
+  { iso: 'GQ', name: "Equatorial Guinea", dial: '+240', flag: '🇬🇶' },
+  { iso: 'ER', name: "Eritrea", dial: '+291', flag: '🇪🇷' },
+  { iso: 'EE', name: "Estonia", dial: '+372', flag: '🇪🇪' },
+  { iso: 'SZ', name: "Eswatini", dial: '+268', flag: '🇸🇿' },
+  { iso: 'FK', name: "Falkland Islands", dial: '+500', flag: '🇫🇰' },
+  { iso: 'FO', name: "Faroe Islands", dial: '+298', flag: '🇫🇴' },
+  { iso: 'FJ', name: "Fiji", dial: '+679', flag: '🇫🇯' },
+  { iso: 'FI', name: "Finland", dial: '+358', flag: '🇫🇮' },
+  { iso: 'GF', name: "French Guiana", dial: '+594', flag: '🇬🇫' },
+  { iso: 'PF', name: "French Polynesia", dial: '+689', flag: '🇵🇫' },
+  { iso: 'TF', name: "French Southern and Antarctic Lands", dial: '+262', flag: '🇹🇫' },
+  { iso: 'GA', name: "Gabon", dial: '+241', flag: '🇬🇦' },
+  { iso: 'GM', name: "Gambia", dial: '+220', flag: '🇬🇲' },
+  { iso: 'GE', name: "Georgia", dial: '+995', flag: '🇬🇪' },
+  { iso: 'GH', name: "Ghana", dial: '+233', flag: '🇬🇭' },
+  { iso: 'GI', name: "Gibraltar", dial: '+350', flag: '🇬🇮' },
+  { iso: 'GR', name: "Greece", dial: '+30', flag: '🇬🇷' },
+  { iso: 'GL', name: "Greenland", dial: '+299', flag: '🇬🇱' },
+  { iso: 'GD', name: "Grenada", dial: '+1', flag: '🇬🇩' },
+  { iso: 'GP', name: "Guadeloupe", dial: '+590', flag: '🇬🇵' },
+  { iso: 'GU', name: "Guam", dial: '+1', flag: '🇬🇺' },
+  { iso: 'GT', name: "Guatemala", dial: '+502', flag: '🇬🇹' },
+  { iso: 'GG', name: "Guernsey", dial: '+44', flag: '🇬🇬' },
+  { iso: 'GN', name: "Guinea", dial: '+224', flag: '🇬🇳' },
+  { iso: 'GW', name: "Guinea-Bissau", dial: '+245', flag: '🇬🇼' },
+  { iso: 'GY', name: "Guyana", dial: '+592', flag: '🇬🇾' },
+  { iso: 'HT', name: "Haiti", dial: '+509', flag: '🇭🇹' },
+  { iso: 'HN', name: "Honduras", dial: '+504', flag: '🇭🇳' },
+  { iso: 'HK', name: "Hong Kong", dial: '+852', flag: '🇭🇰' },
+  { iso: 'HU', name: "Hungary", dial: '+36', flag: '🇭🇺' },
+  { iso: 'IS', name: "Iceland", dial: '+354', flag: '🇮🇸' },
+  { iso: 'IR', name: "Iran", dial: '+98', flag: '🇮🇷' },
+  { iso: 'IQ', name: "Iraq", dial: '+964', flag: '🇮🇶' },
+  { iso: 'IE', name: "Ireland", dial: '+353', flag: '🇮🇪' },
+  { iso: 'IM', name: "Isle of Man", dial: '+44', flag: '🇮🇲' },
+  { iso: 'IL', name: "Israel", dial: '+972', flag: '🇮🇱' },
+  { iso: 'IT', name: "Italy", dial: '+39', flag: '🇮🇹' },
+  { iso: 'CI', name: "Ivory Coast", dial: '+225', flag: '🇨🇮' },
+  { iso: 'JM', name: "Jamaica", dial: '+1', flag: '🇯🇲' },
+  { iso: 'JP', name: "Japan", dial: '+81', flag: '🇯🇵' },
+  { iso: 'JE', name: "Jersey", dial: '+44', flag: '🇯🇪' },
+  { iso: 'JO', name: "Jordan", dial: '+962', flag: '🇯🇴' },
+  { iso: 'KZ', name: "Kazakhstan", dial: '+7', flag: '🇰🇿' },
+  { iso: 'KI', name: "Kiribati", dial: '+686', flag: '🇰🇮' },
+  { iso: 'XK', name: "Kosovo", dial: '+383', flag: '🇽🇰' },
+  { iso: 'KW', name: "Kuwait", dial: '+965', flag: '🇰🇼' },
+  { iso: 'KG', name: "Kyrgyzstan", dial: '+996', flag: '🇰🇬' },
+  { iso: 'LA', name: "Laos", dial: '+856', flag: '🇱🇦' },
+  { iso: 'LV', name: "Latvia", dial: '+371', flag: '🇱🇻' },
+  { iso: 'LB', name: "Lebanon", dial: '+961', flag: '🇱🇧' },
+  { iso: 'LS', name: "Lesotho", dial: '+266', flag: '🇱🇸' },
+  { iso: 'LR', name: "Liberia", dial: '+231', flag: '🇱🇷' },
+  { iso: 'LY', name: "Libya", dial: '+218', flag: '🇱🇾' },
+  { iso: 'LI', name: "Liechtenstein", dial: '+423', flag: '🇱🇮' },
+  { iso: 'LT', name: "Lithuania", dial: '+370', flag: '🇱🇹' },
+  { iso: 'LU', name: "Luxembourg", dial: '+352', flag: '🇱🇺' },
+  { iso: 'MO', name: "Macau", dial: '+853', flag: '🇲🇴' },
+  { iso: 'MG', name: "Madagascar", dial: '+261', flag: '🇲🇬' },
+  { iso: 'MW', name: "Malawi", dial: '+265', flag: '🇲🇼' },
+  { iso: 'MV', name: "Maldives", dial: '+960', flag: '🇲🇻' },
+  { iso: 'ML', name: "Mali", dial: '+223', flag: '🇲🇱' },
+  { iso: 'MT', name: "Malta", dial: '+356', flag: '🇲🇹' },
+  { iso: 'MH', name: "Marshall Islands", dial: '+692', flag: '🇲🇭' },
+  { iso: 'MQ', name: "Martinique", dial: '+596', flag: '🇲🇶' },
+  { iso: 'MR', name: "Mauritania", dial: '+222', flag: '🇲🇷' },
+  { iso: 'MU', name: "Mauritius", dial: '+230', flag: '🇲🇺' },
+  { iso: 'YT', name: "Mayotte", dial: '+262', flag: '🇾🇹' },
+  { iso: 'MX', name: "Mexico", dial: '+52', flag: '🇲🇽' },
+  { iso: 'FM', name: "Micronesia", dial: '+691', flag: '🇫🇲' },
+  { iso: 'MD', name: "Moldova", dial: '+373', flag: '🇲🇩' },
+  { iso: 'MC', name: "Monaco", dial: '+377', flag: '🇲🇨' },
+  { iso: 'MN', name: "Mongolia", dial: '+976', flag: '🇲🇳' },
+  { iso: 'ME', name: "Montenegro", dial: '+382', flag: '🇲🇪' },
+  { iso: 'MS', name: "Montserrat", dial: '+1', flag: '🇲🇸' },
+  { iso: 'MA', name: "Morocco", dial: '+212', flag: '🇲🇦' },
+  { iso: 'MZ', name: "Mozambique", dial: '+258', flag: '🇲🇿' },
+  { iso: 'MM', name: "Myanmar", dial: '+95', flag: '🇲🇲' },
+  { iso: 'NA', name: "Namibia", dial: '+264', flag: '🇳🇦' },
+  { iso: 'NR', name: "Nauru", dial: '+674', flag: '🇳🇷' },
+  { iso: 'NP', name: "Nepal", dial: '+977', flag: '🇳🇵' },
+  { iso: 'NL', name: "Netherlands", dial: '+31', flag: '🇳🇱' },
+  { iso: 'NC', name: "New Caledonia", dial: '+687', flag: '🇳🇨' },
+  { iso: 'NZ', name: "New Zealand", dial: '+64', flag: '🇳🇿' },
+  { iso: 'NI', name: "Nicaragua", dial: '+505', flag: '🇳🇮' },
+  { iso: 'NE', name: "Niger", dial: '+227', flag: '🇳🇪' },
+  { iso: 'NU', name: "Niue", dial: '+683', flag: '🇳🇺' },
+  { iso: 'NF', name: "Norfolk Island", dial: '+672', flag: '🇳🇫' },
+  { iso: 'KP', name: "North Korea", dial: '+850', flag: '🇰🇵' },
+  { iso: 'MK', name: "North Macedonia", dial: '+389', flag: '🇲🇰' },
+  { iso: 'MP', name: "Northern Mariana Islands", dial: '+1', flag: '🇲🇵' },
+  { iso: 'NO', name: "Norway", dial: '+47', flag: '🇳🇴' },
+  { iso: 'OM', name: "Oman", dial: '+968', flag: '🇴🇲' },
+  { iso: 'PW', name: "Palau", dial: '+680', flag: '🇵🇼' },
+  { iso: 'PS', name: "Palestine", dial: '+970', flag: '🇵🇸' },
+  { iso: 'PA', name: "Panama", dial: '+507', flag: '🇵🇦' },
+  { iso: 'PG', name: "Papua New Guinea", dial: '+675', flag: '🇵🇬' },
+  { iso: 'PY', name: "Paraguay", dial: '+595', flag: '🇵🇾' },
+  { iso: 'PE', name: "Peru", dial: '+51', flag: '🇵🇪' },
+  { iso: 'PH', name: "Philippines", dial: '+63', flag: '🇵🇭' },
+  { iso: 'PN', name: "Pitcairn Islands", dial: '+64', flag: '🇵🇳' },
+  { iso: 'PL', name: "Poland", dial: '+48', flag: '🇵🇱' },
+  { iso: 'PT', name: "Portugal", dial: '+351', flag: '🇵🇹' },
+  { iso: 'PR', name: "Puerto Rico", dial: '+1', flag: '🇵🇷' },
+  { iso: 'QA', name: "Qatar", dial: '+974', flag: '🇶🇦' },
+  { iso: 'CG', name: "Republic of the Congo", dial: '+242', flag: '🇨🇬' },
+  { iso: 'RE', name: "R\u00e9union", dial: '+262', flag: '🇷🇪' },
+  { iso: 'RO', name: "Romania", dial: '+40', flag: '🇷🇴' },
+  { iso: 'RU', name: "Russia", dial: '+7', flag: '🇷🇺' },
+  { iso: 'RW', name: "Rwanda", dial: '+250', flag: '🇷🇼' },
+  { iso: 'BL', name: "Saint Barth\u00e9lemy", dial: '+590', flag: '🇧🇱' },
+  { iso: 'SH', name: "Saint Helena, Ascension and Tristan da Cunha", dial: '+290', flag: '🇸🇭' },
+  { iso: 'KN', name: "Saint Kitts and Nevis", dial: '+1', flag: '🇰🇳' },
+  { iso: 'LC', name: "Saint Lucia", dial: '+1', flag: '🇱🇨' },
+  { iso: 'MF', name: "Saint Martin", dial: '+590', flag: '🇲🇫' },
+  { iso: 'PM', name: "Saint Pierre and Miquelon", dial: '+508', flag: '🇵🇲' },
+  { iso: 'VC', name: "Saint Vincent and the Grenadines", dial: '+1', flag: '🇻🇨' },
+  { iso: 'WS', name: "Samoa", dial: '+685', flag: '🇼🇸' },
+  { iso: 'SM', name: "San Marino", dial: '+378', flag: '🇸🇲' },
+  { iso: 'ST', name: "S\u00e3o Tom\u00e9 and Pr\u00edncipe", dial: '+239', flag: '🇸🇹' },
+  { iso: 'SN', name: "Senegal", dial: '+221', flag: '🇸🇳' },
+  { iso: 'RS', name: "Serbia", dial: '+381', flag: '🇷🇸' },
+  { iso: 'SC', name: "Seychelles", dial: '+248', flag: '🇸🇨' },
+  { iso: 'SL', name: "Sierra Leone", dial: '+232', flag: '🇸🇱' },
+  { iso: 'SG', name: "Singapore", dial: '+65', flag: '🇸🇬' },
+  { iso: 'SX', name: "Sint Maarten", dial: '+1', flag: '🇸🇽' },
+  { iso: 'SK', name: "Slovakia", dial: '+421', flag: '🇸🇰' },
+  { iso: 'SI', name: "Slovenia", dial: '+386', flag: '🇸🇮' },
+  { iso: 'SB', name: "Solomon Islands", dial: '+677', flag: '🇸🇧' },
+  { iso: 'GS', name: "South Georgia", dial: '+500', flag: '🇬🇸' },
+  { iso: 'KR', name: "South Korea", dial: '+82', flag: '🇰🇷' },
+  { iso: 'SS', name: "South Sudan", dial: '+211', flag: '🇸🇸' },
+  { iso: 'ES', name: "Spain", dial: '+34', flag: '🇪🇸' },
+  { iso: 'LK', name: "Sri Lanka", dial: '+94', flag: '🇱🇰' },
+  { iso: 'SD', name: "Sudan", dial: '+249', flag: '🇸🇩' },
+  { iso: 'SR', name: "Suriname", dial: '+597', flag: '🇸🇷' },
+  { iso: 'SJ', name: "Svalbard and Jan Mayen", dial: '+4779', flag: '🇸🇯' },
+  { iso: 'SE', name: "Sweden", dial: '+46', flag: '🇸🇪' },
+  { iso: 'CH', name: "Switzerland", dial: '+41', flag: '🇨🇭' },
+  { iso: 'SY', name: "Syria", dial: '+963', flag: '🇸🇾' },
+  { iso: 'TW', name: "Taiwan", dial: '+886', flag: '🇹🇼' },
+  { iso: 'TJ', name: "Tajikistan", dial: '+992', flag: '🇹🇯' },
+  { iso: 'TH', name: "Thailand", dial: '+66', flag: '🇹🇭' },
+  { iso: 'TL', name: "Timor-Leste", dial: '+670', flag: '🇹🇱' },
+  { iso: 'TG', name: "Togo", dial: '+228', flag: '🇹🇬' },
+  { iso: 'TK', name: "Tokelau", dial: '+690', flag: '🇹🇰' },
+  { iso: 'TO', name: "Tonga", dial: '+676', flag: '🇹🇴' },
+  { iso: 'TT', name: "Trinidad and Tobago", dial: '+1', flag: '🇹🇹' },
+  { iso: 'TN', name: "Tunisia", dial: '+216', flag: '🇹🇳' },
+  { iso: 'TM', name: "Turkmenistan", dial: '+993', flag: '🇹🇲' },
+  { iso: 'TC', name: "Turks and Caicos Islands", dial: '+1', flag: '🇹🇨' },
+  { iso: 'TV', name: "Tuvalu", dial: '+688', flag: '🇹🇻' },
+  { iso: 'UA', name: "Ukraine", dial: '+380', flag: '🇺🇦' },
+  { iso: 'UM', name: "United States Minor Outlying Islands", dial: '+268', flag: '🇺🇲' },
+  { iso: 'VI', name: "United States Virgin Islands", dial: '+1', flag: '🇻🇮' },
+  { iso: 'UY', name: "Uruguay", dial: '+598', flag: '🇺🇾' },
+  { iso: 'UZ', name: "Uzbekistan", dial: '+998', flag: '🇺🇿' },
+  { iso: 'VU', name: "Vanuatu", dial: '+678', flag: '🇻🇺' },
+  { iso: 'VA', name: "Vatican City", dial: '+39', flag: '🇻🇦' },
+  { iso: 'VE', name: "Venezuela", dial: '+58', flag: '🇻🇪' },
+  { iso: 'VN', name: "Vietnam", dial: '+84', flag: '🇻🇳' },
+  { iso: 'WF', name: "Wallis and Futuna", dial: '+681', flag: '🇼🇫' },
+  { iso: 'EH', name: "Western Sahara", dial: '+212', flag: '🇪🇭' },
+  { iso: 'YE', name: "Yemen", dial: '+967', flag: '🇾🇪' },
+  { iso: 'ZM', name: "Zambia", dial: '+260', flag: '🇿🇲' },
+  { iso: 'ZW', name: "Zimbabwe", dial: '+263', flag: '🇿🇼' },
+];
+
+/**
+ * Country dial-code dropdown, meant to sit to the left of a phone number input.
+ * Keeps the numeric part in its own field so validation/formatting stays simple.
+ */
+const CountryCodeSelect = ({ value, onChange, accent = 'emerald', id }) => (
+  <div className="relative flex-shrink-0">
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label="Country code"
+      className={`pl-3 pr-7 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-${accent}-500/30 focus:border-${accent}-400 transition-all duration-300 hover:border-${accent}-300`}
+    >
+      {COUNTRY_CODES.map((c) => (
+        <option key={c.iso} value={c.dial}>
+          {c.flag} {c.dial}
+        </option>
+      ))}
+    </select>
+    <ChevronRight className="absolute right-2 top-1/2 -translate-y-1/2 rotate-90 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+  </div>
+);
+
+/** Strips everything but digits from a locally-entered phone number */
+const sanitizePhoneDigits = (v) => (v || '').replace(/[^\d]/g, '');
+
+/** Combines a dial code + local number into one string for the backend */
+const combinePhone = (countryCode, phone) => {
+  const digits = sanitizePhoneDigits(phone);
+  if (!digits) return '';
+  return `${countryCode || '+254'}${digits}`;
+};
+
 /**
  * Maps frontend state to Backend Client requirements
  * Ensures all required fields are present & trimmed
@@ -120,7 +461,7 @@ const buildClientPayload = (data) => ({
   lastName:  data.lastName?.trim() || '',
   email:     data.email?.trim() || '',
   password:  data.password || '',
-  phone:     data.phone?.trim() || '',
+  phone:     combinePhone(data.countryCode, data.phone),
 });
 
 /**
@@ -134,7 +475,7 @@ const buildAgentPayload = (data) => {
     lastName,
     email:         data.email?.trim().toLowerCase() || '',
     password:      data.password || '',
-    phone:         data.phone?.trim().replace(/\s+/g, '') || '',
+    phone:         combinePhone(data.countryCode, data.phone),
     companyName: data.agencyName?.trim() || '',
     licenseNumber: data.licenseNumber?.trim() || '',
     role:          'agent',
@@ -166,8 +507,10 @@ const validateAgentForm = (data) => {
   else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(data.password))
     errs.push('Password must contain uppercase, lowercase, and a number.');
 
-  if (!data.phone?.trim())
+  if (!sanitizePhoneDigits(data.phone))
     errs.push('Phone number is required.');
+  else if (sanitizePhoneDigits(data.phone).length < 7)
+    errs.push('Please enter a valid phone number.');
 
   return errs;
 };
@@ -188,7 +531,8 @@ const validateClientForm = (data) => {
   
   if (!data.email?.trim()) errs.push('Email is required.');
   if (!data.password || data.password.length < 8) errs.push('Password must be at least 8 characters.');
-  if (!data.phone?.trim()) errs.push('Phone number is required.');
+  if (!sanitizePhoneDigits(data.phone)) errs.push('Phone number is required.');
+  else if (sanitizePhoneDigits(data.phone).length < 7) errs.push('Please enter a valid phone number.');
   
   return errs;
 };
@@ -234,12 +578,20 @@ const ClientForm = React.memo(({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-          <div className="relative group">
-            <Smartphone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-300 pointer-events-none" />
-            <input type="tel" name="phone" value={formData.phone || ''} onChange={onInputChange}
-              placeholder="+1 (555) 000-0000"
-              className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
-              autoComplete="tel" />
+          <div className="flex gap-2">
+            <CountryCodeSelect
+              id="client-country-code"
+              value={formData.countryCode || '+254'}
+              onChange={(val) => onInputChange({ target: { name: 'countryCode', value: val } })}
+              accent="emerald"
+            />
+            <div className="relative group flex-1">
+              <Smartphone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <input type="tel" name="phone" value={formData.phone || ''} onChange={onInputChange}
+                placeholder="712 345 678"
+                className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all duration-300 group-hover:border-emerald-300"
+                autoComplete="tel-national" />
+            </div>
           </div>
         </div>
       </>
@@ -409,12 +761,20 @@ const AgentForm = React.memo(({
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Phone Number <span className="text-blue-500">*</span>
           </label>
-          <div className="relative group">
-            <Smartphone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
-            <input type="tel" name="phone" value={formData.phone || ''} onChange={onInputChange}
-              placeholder="+1 (555) 000-0000"
-              className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
-              required autoComplete="tel" />
+          <div className="flex gap-2">
+            <CountryCodeSelect
+              id="agent-country-code"
+              value={formData.countryCode || '+254'}
+              onChange={(val) => onInputChange({ target: { name: 'countryCode', value: val } })}
+              accent="blue"
+            />
+            <div className="relative group flex-1">
+              <Smartphone className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors duration-300 pointer-events-none" />
+              <input type="tel" name="phone" value={formData.phone || ''} onChange={onInputChange}
+                placeholder="712 345 678"
+                className="w-full pl-12 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all duration-300 group-hover:border-blue-300"
+                required autoComplete="tel-national" />
+            </div>
           </div>
         </div>
       </>
@@ -535,6 +895,7 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
   const [pendingUserId, setPendingUserId] = useState(null);
 
   const [alert, setAlert] = useState({ type: null, message: null });
+  const [overlay, setOverlay] = useState(null); // { status, accent, title, message, errorDetails, ctaLabel, onCta }
 
   const [uploadedFiles, setUploadedFiles] = useState({
     incorporation: null,
@@ -543,9 +904,10 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
   });
 
   const modalRef = useRef(null);
+  const redirectTimeoutRef = useRef(null);
 
   const [formData, setFormData] = useState({
-    email: '', password: '', phone: '',
+    email: '', password: '', phone: '', countryCode: '+254',
     firstName: '', lastName: '',
     agencyName: '', directorFirstName: '', directorLastName: '', licenseNumber: '',
   });
@@ -603,16 +965,21 @@ useEffect(() => {
 
   useEffect(() => {
     const onClickOutside = (e) => {
+      if (overlay) return; // don't close the modal while a loading/success/error overlay is showing
       if (modalRef.current && !modalRef.current.contains(e.target)) onClose();
     };
-    const onEscape = (e) => { if (e.key === 'Escape') onClose(); };
+    const onEscape = (e) => { if (e.key === 'Escape' && !overlay) onClose(); };
     document.addEventListener('mousedown', onClickOutside, true);
     document.addEventListener('keydown', onEscape, true);
     return () => {
       document.removeEventListener('mousedown', onClickOutside, true);
       document.removeEventListener('keydown', onEscape, true);
     };
-  }, [onClose]);
+  }, [onClose, overlay]);
+
+  useEffect(() => {
+    return () => clearTimeout(redirectTimeoutRef.current);
+  }, []);
 
   const handleFileUpload = useCallback((e, docType) => {
     const file = e.target.files[0];
@@ -623,7 +990,7 @@ useEffect(() => {
     setAuthMode(mode);
     clearAlert();
     setFormData({ 
-      email: '', password: '', phone: '', firstName: '', lastName: '',
+      email: '', password: '', phone: '', countryCode: '+254', firstName: '', lastName: '',
       agencyName: '', directorFirstName: '', directorLastName: '', licenseNumber: '' 
     });
   }, []);
@@ -632,60 +999,49 @@ useEffect(() => {
     e.preventDefault();
     if (isLoading) return;
     clearAlert();
+    setOverlay(null);
+    clearTimeout(redirectTimeoutRef.current);
     setIsLoading(true);
 
     try {
       if (authType === 'login') {
-        showSuccess('Authenticating...');
+        setOverlay({
+          status: 'loading',
+          accent: 'emerald',
+          title: 'Signing you in',
+          message: 'Just a moment...',
+        });
 
         const res = await login(formData);
         const user = res.data?.data?.user || res.data?.user;
 
         if (!user) {
+          setOverlay(null);
           showError('Login succeeded but user data is missing. Please try again.');
           setIsLoading(false);
           return;
         }
 
-        // Persist immediately (synchronously, before any popup/delay) so any
+        // Persist immediately (synchronously, before any overlay/delay) so any
         // caller that reads userStore right after onAuthSuccess — e.g.
         // PackageDetailPage resuming a booking — sees the logged-in user.
-        // The register branch below has always done this; login had been
-        // silently skipping it, which is why "Book Now" → login → resume
-        // booking could hand BookingFlow an empty user.
         userStore.set(user);
 
-        const loginPopup = document.createElement('div');
-        loginPopup.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg animate-fadeIn';
-        loginPopup.dataset.authPopup = 'true';
-        loginPopup.innerHTML = `
-          <div class="relative w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/20 animate-slideUp border border-white/20">
-            <div class="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500" />
-            <div class="p-8 text-center">
-              <div class="mx-auto w-20 h-20 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center mb-4 animate-bounce">
-                <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h3 class="text-2xl font-bold text-gray-900 mb-2">Welcome Back! 🎉</h3>
-              <p class="text-gray-600 mb-6">One moment...</p>
-              <div class="w-full bg-gray-200 rounded-full h-2 mb-4 overflow-hidden">
-                <div class="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full animate-progress"></div>
-              </div>
-            </div>
-          </div>
-        `;
-
-        document.body.appendChild(loginPopup);
+        setOverlay({
+          status: 'success',
+          accent: 'emerald',
+          title: 'Welcome back!',
+          message: 'Redirecting you now...',
+        });
 
         // Short, purely cosmetic pause — long enough to read, short enough
         // not to stall someone mid-checkout. userStore is already set above,
         // so anything reacting to onAuthSuccess has correct data immediately.
-        setTimeout(() => {
-          loginPopup.remove();
+        redirectTimeoutRef.current = setTimeout(() => {
+          setOverlay(null);
           onClose();
           onAuthSuccess(user);
-        }, 600);
+        }, 700);
 
       } else {
         if (authMode === 'client') {
@@ -696,178 +1052,63 @@ useEffect(() => {
             return;
           }
 
-          const loadingPopup = document.createElement('div');
-          loadingPopup.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg animate-fadeIn';
-          loadingPopup.dataset.authPopup = 'true';
-          loadingPopup.innerHTML = `
-            <div class="relative w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/20 border border-white/20">
-              <div class="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 animate-pulse" />
-              <div class="p-8 text-center">
-                <div class="mx-auto w-16 h-16 mb-4">
-                  <div class="w-16 h-16 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 mb-2">Creating Your Account</h3>
-                <p class="text-gray-500 text-sm mb-4">Please wait while we set up your pilgrim profile...</p>
-                <div class="flex justify-center space-x-1">
-                  <div class="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style="animation-delay: 0s"></div>
-                  <div class="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
-                  <div class="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
-                </div>
-              </div>
-            </div>
-          `;
-          
-          document.body.appendChild(loadingPopup);
-          
+          setOverlay({
+            status: 'loading',
+            accent: 'emerald',
+            title: 'Creating your account',
+            message: 'Setting up your pilgrim profile...',
+          });
+
           const payload = buildClientPayload(formData);
           const res = await registerClient(payload);
-          
-          loadingPopup.remove();
+          const responseData = res?.data?.data || {};
+          const hasSession = Boolean(responseData.accessToken && responseData.refreshToken);
 
-          // Set user store for authentication
-          const user = res.data?.data?.user || res.data?.user || {
+          const user = responseData.user || res.data?.user || {
             firstName: formData.firstName,
             lastName: formData.lastName,
             email: formData.email,
-            phone: formData.phone,
+            phone: payload.phone,
             role: 'client'
           };
-          userStore.set(user);
+
+          if (hasSession) {
+            userStore.set(user);
+          }
 
           // Store user data
           const userData = {
             firstName: formData.firstName,
             lastName: formData.lastName,
             email: formData.email,
-            phone: formData.phone
+            phone: payload.phone
           };
           localStorage.setItem('userData', JSON.stringify(userData));
 
-          const successPopup = document.createElement('div');
-          successPopup.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg animate-fadeIn';
-          successPopup.dataset.authPopup = 'true';
-          successPopup.innerHTML = `
-            <div class="relative w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/20 border border-white/20 animate-slideUp">
-              <div class="absolute inset-0 pointer-events-none overflow-hidden">
-                ${[...Array(30)].map((_, i) => `
-                  <div class="absolute w-2 h-2 bg-emerald-500 rounded-full animate-confetti"
-                    style="left: ${Math.random() * 100}%; top: -10%; animation-delay: ${Math.random() * 2}s; animation-duration: ${Math.random() * 3 + 2}s; background: ${['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'][Math.floor(Math.random() * 4)]}">
-                  </div>
-                `).join('')}
-              </div>
-              
-              <div class="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500" />
-              
-              <div class="p-8 text-center relative">
-                <div class="relative mx-auto w-28 h-28 mb-6">
-                  <div class="absolute inset-0 bg-emerald-500 rounded-full animate-ping opacity-25"></div>
-                  <div class="absolute inset-2 bg-emerald-100 rounded-full animate-pulse"></div>
-                  <div class="relative w-28 h-28 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center transform transition-transform duration-500 hover:scale-110">
-                    <svg class="w-14 h-14 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                </div>
-                
-                <h2 class="text-3xl font-bold text-gray-900 mb-3">Welcome to the Family, ${formData.firstName}! 🤲</h2>
-                <p class="text-gray-600 mb-6">Your pilgrim account has been created successfully.</p>
-                
-                <!-- Dashboard Preview Cards -->
-                <div class="grid grid-cols-3 gap-4 mb-8">
-                  <div class="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
-                    <div class="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                      <svg class="h-5 w-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p class="text-xs text-gray-600">Track Bookings</p>
-                  </div>
-                  <div class="p-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-100">
-                    <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                      <svg class="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </div>
-                    <p class="text-xs text-gray-600">Save Favorites</p>
-                  </div>
-                  <div class="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-100">
-                    <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                      <svg class="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
-                    </div>
-                    <p class="text-xs text-gray-600">Chat Agents</p>
-                  </div>
-                </div>
-                
-                <!-- Email Verification Card -->
-                <div class="relative bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-5 mb-6 overflow-hidden group">
-                  <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                  <div class="flex items-start gap-4">
-                    <div class="flex-shrink-0 w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                      <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <div class="text-left flex-1">
-                      <p class="text-sm font-semibold text-emerald-800 mb-1">📧 Verification Email Sent</p>
-                      <p class="text-xs text-emerald-700 break-all bg-white/50 p-2 rounded-lg border border-emerald-200 font-mono">
-                        ${formData.email}
-                      </p>
-                      <p class="text-xs text-emerald-600 mt-2 flex items-center gap-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Don't forget to check your spam folder
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <!-- Action Buttons -->
-                <div class="space-y-3">
-                  <a href="/client/dashboard?welcome=true" 
-                    class="inline-block w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold rounded-xl hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-300 transform hover:-translate-y-1 group">
-                    <span class="inline-flex items-center justify-center">
-                      Go to Your Dashboard
-                      <svg class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                      </svg>
-                    </span>
-                  </a>
-                </div>
-                
-                <!-- Auto-redirect Indicator -->
-                <div class="mt-6 flex items-center justify-center gap-2 text-xs text-gray-400">
-                  <div class="w-4 h-4 border-2 border-gray-300 border-t-emerald-500 rounded-full animate-spin"></div>
-                  <span>Redirecting to your dashboard in <span id="countdown">5</span> seconds...</span>
-                </div>
-              </div>
-            </div>
-          `;
-          
-          document.querySelectorAll('[data-auth-popup]').forEach(el => el.remove());
-          document.body.appendChild(successPopup);
-          
-          let countdown = 5;
-          const timer = setInterval(() => {
-            countdown--;
-            const countdownEl = document.getElementById('countdown');
-            if (countdownEl) countdownEl.textContent = countdown;
-            if (countdown <= 0) {
-              clearInterval(timer);
-              // Clean up all popups before calling onAuthSuccess
-              document.querySelectorAll('[data-auth-popup]').forEach(el => el.remove());
+          const goToClientDashboard = () => {
+            clearTimeout(redirectTimeoutRef.current);
+            setOverlay(null);
+            if (hasSession) {
               onAuthSuccess(user);
+              goTo('/client/dashboard?welcome=true');
+              return;
             }
-          }, 1000);
-          
-          setTimeout(() => {
-            clearInterval(timer);
-            // Clean up all popups before calling onAuthSuccess
-            document.querySelectorAll('[data-auth-popup]').forEach(el => el.remove());
-            onAuthSuccess(user);
-          }, 5000);
+            onClose();
+            setAuthType('login');
+          };
+
+          setOverlay({
+            status: 'success',
+            accent: 'emerald',
+            title: `Welcome, ${formData.firstName}! 🤲`,
+            message: hasSession
+              ? `Your Umramarket account is ready. We've sent a verification email to ${formData.email} — don't forget to check spam.`
+              : `Account created. We've sent a verification email to ${formData.email}. Please confirm your email, then sign in.`,
+            ctaLabel: hasSession ? 'Go to Your Dashboard' : 'Back to Sign In',
+            onCta: goToClientDashboard,
+          });
+
+          redirectTimeoutRef.current = setTimeout(goToClientDashboard, hasSession ? 3000 : 4500);
 
         } else {
           const validationErrors = validateAgentForm(formData);
@@ -877,156 +1118,73 @@ useEffect(() => {
             return;
           }
 
-          const agentLoadingPopup = document.createElement('div');
-          agentLoadingPopup.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg animate-fadeIn';
-          agentLoadingPopup.dataset.authPopup = 'true';
-          agentLoadingPopup.innerHTML = `
-            <div class="relative w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/20 border border-white/20">
-              <div class="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 animate-pulse" />
-              <div class="p-8 text-center">
-                <div class="mx-auto w-16 h-16 mb-4 relative">
-                  <div class="absolute inset-0 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                  <div class="absolute inset-2 bg-blue-100 rounded-full animate-pulse"></div>
-                  <Building class="absolute inset-0 m-auto h-6 w-6 text-blue-600" />
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 mb-2">Registering Your Agency</h3>
-                <p class="text-gray-500 text-sm mb-4">Setting up your travel partner profile...</p>
-                <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                  <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full animate-progress" style="width: 70%"></div>
-                </div>
-              </div>
-            </div>
-          `;
-          
-          document.body.appendChild(agentLoadingPopup);
+          setOverlay({
+            status: 'loading',
+            accent: 'blue',
+            title: 'Registering your agency',
+            message: 'Setting up your travel partner profile...',
+          });
 
           const payload = buildAgentPayload(formData);
           const res = await registerAgent(payload);
-          
-          agentLoadingPopup.remove();
+
+          // BUG FIX: this used to unconditionally treat registration as a
+          // logged-in session and redirect to /agent/dashboard. If the
+          // backend ever returns without issuing accessToken/refreshToken
+          // (e.g. the session-cookie step throws, or an older deploy is
+          // still live), the dashboard's getMe()/getagentpackages/etc calls
+          // all 401 with "User not found" and the app's 401 handler bounces
+          // the brand-new agent straight back to "/" looking like their
+          // session "expired" seconds after signing up. Guard the same way
+          // the client branch above does.
+          const responseData = res?.data?.data || {};
+          const hasSession = Boolean(responseData.accessToken && responseData.refreshToken);
 
           // Store agent data
           const agentData = {
-            ...res.data?.data?.user ?? res.data?.user,
+            ...(responseData.user ?? res.data?.user),
             agencyName: formData.agencyName,
             email: formData.email,
             licenseNumber: formData.licenseNumber,
             role: 'agent'
           };
-          
-          userStore.set(agentData);
+
+          if (hasSession) {
+            userStore.set(agentData);
+          }
           localStorage.setItem('agentData', JSON.stringify(agentData));
           sessionStorage.setItem('newAgent', 'true');
 
-          const agentSuccessPopup = document.createElement('div');
-          agentSuccessPopup.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg animate-fadeIn';
-          agentSuccessPopup.dataset.authPopup = 'true';
-          agentSuccessPopup.innerHTML = `
-            <div class="relative w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/20 border border-white/20 animate-slideUp">
-              <div class="absolute inset-0 pointer-events-none overflow-hidden">
-                ${[...Array(30)].map((_, i) => `
-                  <div class="absolute w-2 h-2 bg-blue-500 rounded-full animate-confetti"
-                    style="left: ${Math.random() * 100}%; top: -10%; animation-delay: ${Math.random() * 2}s; animation-duration: ${Math.random() * 3 + 2}s; background: ${['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7'][Math.floor(Math.random() * 4)]}">
-                  </div>
-                `).join('')}
-              </div>
-              
-              <div class="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
-              
-              <div class="p-8 text-center relative">
-                <div class="relative mx-auto w-28 h-28 mb-6">
-                  <div class="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-25"></div>
-                  <div class="absolute inset-2 bg-blue-100 rounded-full animate-pulse"></div>
-                  <div class="relative w-28 h-28 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center transform transition-transform duration-500 hover:scale-110">
-                    <svg class="w-14 h-14 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                </div>
-                
-                <h2 class="text-3xl font-bold text-gray-900 mb-3">Welcome to the Family, ${formData.agencyName}! 🎉</h2>
-                <p class="text-gray-600 mb-6">Your agency account has been created successfully.</p>
-                
-                <div class="grid grid-cols-3 gap-4 mb-8">
-                  <div class="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-                    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                      <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                    </div>
-                    <p class="text-xs text-gray-600">Manage Clients</p>
-                  </div>
-                  <div class="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
-                    <div class="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                      <svg class="h-5 w-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p class="text-xs text-gray-600">Track Bookings</p>
-                  </div>
-                  <div class="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-100">
-                    <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                      <svg class="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                      </svg>
-                    </div>
-                    <p class="text-xs text-gray-600">Create Packages</p>
-                  </div>
-                </div>
-                
-                <div class="space-y-3">
-                  <a href="/agent/dashboard?welcome=true" 
-                    class="inline-block w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-xl hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 transform hover:-translate-y-1 group">
-                    <span class="inline-flex items-center justify-center">
-                      Go to Your Dashboard
-                      <svg class="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                      </svg>
-                    </span>
-                  </a>
-                  
-                  <p class="text-xs text-gray-500 mt-4">
-                    ✨ Your dashboard is ready with all the tools you need to manage your travel business
-                  </p>
-                </div>
-                
-                <div class="mt-6 flex items-center justify-center gap-2 text-xs text-gray-400">
-                  <div class="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
-                  <span>Redirecting to your dashboard in <span id="countdown">5</span> seconds...</span>
-                </div>
-              </div>
-            </div>
-          `;
-          
-          document.querySelectorAll('[data-auth-popup]').forEach(el => el.remove());
-          document.body.appendChild(agentSuccessPopup);
-          
-          let countdown = 5;
-          const timer = setInterval(() => {
-            countdown--;
-            const countdownEl = document.getElementById('countdown');
-            if (countdownEl) countdownEl.textContent = countdown;
-            if (countdown <= 0) {
-              clearInterval(timer);
-              // Clean up all popups before calling onAuthSuccess
-              document.querySelectorAll('[data-auth-popup]').forEach(el => el.remove());
+          const goToAgentDashboard = () => {
+            clearTimeout(redirectTimeoutRef.current);
+            setOverlay(null);
+            if (hasSession) {
               onAuthSuccess(agentData);
+              goTo('/agent/dashboard?welcome=true');
+              return;
             }
-          }, 1000);
-          
-          setTimeout(() => {
-            clearInterval(timer);
-            // Clean up all popups before calling onAuthSuccess
-            document.querySelectorAll('[data-auth-popup]').forEach(el => el.remove());
-            onAuthSuccess(agentData);
-          }, 5000);
+            onClose();
+            setAuthType('login');
+          };
+
+          setOverlay({
+            status: 'success',
+            accent: 'blue',
+            title: `Welcome to the family, ${formData.agencyName}! 🎉`,
+            message: hasSession
+              ? 'Your agency account has been created successfully. Your dashboard is ready with tools to manage clients, bookings, and packages.'
+              : `Account created. We've sent a verification email to ${formData.email}. Please sign in to continue.`,
+            ctaLabel: hasSession ? 'Go to Your Dashboard' : 'Back to Sign In',
+            onCta: goToAgentDashboard,
+          });
+
+          redirectTimeoutRef.current = setTimeout(goToAgentDashboard, hasSession ? 3000 : 4500);
         }
       }
     } catch (err) {
       const serverData = err?.response?.data;
-      console.error('Auth error:', err);
-      
-      let serverMsg = serverData?.message || serverData?.error || err.message || 'Something went wrong.';
+
+      let serverMsg = serverData?.message || serverData?.error || err.message || 'Something went wrong. Please try again.';
 
       if (Array.isArray(serverData?.details) && serverData.details.length) {
         serverMsg = serverData.details
@@ -1043,38 +1201,15 @@ useEffect(() => {
       }
 
       showError(serverMsg);
-      
-      const errorPopup = document.createElement('div');
-      errorPopup.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-lg animate-fadeIn';
-      errorPopup.dataset.authPopup = 'true';
-      errorPopup.innerHTML = `
-        <div class="relative w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl shadow-black/20 border border-white/20">
-          <div class="h-1.5 bg-gradient-to-r from-red-500 to-rose-500" />
-          <div class="p-8 text-center">
-            <div class="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
-              <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </div>
-            <h3 class="text-xl font-bold text-gray-900 mb-2">Registration Failed</h3>
-            <p class="text-gray-600 mb-6">${serverMsg}</p>
-            <button onclick="this.closest('.fixed').remove()" 
-              class="w-full py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors duration-300">
-              Try Again
-            </button>
-          </div>
-        </div>
-      `;
-      
-      document.querySelectorAll('[data-auth-popup]').forEach(el => el.remove());
-      document.body.appendChild(errorPopup);
-      
-      setTimeout(() => {
-        if (document.body.contains(errorPopup)) {
-          errorPopup.remove();
-        }
-      }, 5000);
-      
+
+      clearTimeout(redirectTimeoutRef.current);
+      setOverlay({
+        status: 'error',
+        accent: authMode === 'agent' ? 'blue' : 'emerald',
+        title: authType === 'login' ? 'Sign-in failed' : 'Registration failed',
+        message: serverMsg,
+      });
+
     } finally {
       setIsLoading(false);
     }
@@ -1209,6 +1344,7 @@ const handleGoogleLogin = useCallback(() => {
       handleInputChange, handleTogglePassword, handleSubmit, handleToggleAuthType]);
 
   return (
+    <>
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-lg animate-fadeIn">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {[...Array(20)].map((_, i) => {
@@ -1422,6 +1558,9 @@ const handleGoogleLogin = useCallback(() => {
         )}
       </div>
     </div>
+
+    <StatusOverlay overlay={overlay} onDismiss={() => setOverlay(null)} />
+    </>
   );
 };
 

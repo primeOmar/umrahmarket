@@ -18,10 +18,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { userStore, tokenStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
 import BookingFlow from './BookingFlow';
+import { readPendingBookingFlow } from '../utils/bookingResume';
 import PostBookingModal from './PostBookingModal';
 import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
+import EmailVerificationBanner from './EmailVerificationBanner';
+import { isEmailVerified } from '../utils/emailVerification';
 
 // A package's `location` is one of three coverage tiers set by the agent in
 // CreatePackageModal ("Primary Location"), not a single free-text city —
@@ -68,7 +71,7 @@ const useToast = () => {
 
 // ==================== CONSTANTS ====================
 const CACHE_TTL = 5 * 60 * 1000;
-const CACHE_VERSION = 'v3'; // bump this whenever normalise() changes shape
+const CACHE_VERSION = 'v4'; // bumped: normalise() now includes priceTiers
 
 // Reward points: 2 USD spent = 1 point, earned per successfully booked package.
 const USD_PER_REWARD_POINT = 2;
@@ -101,6 +104,215 @@ const computeRewardPoints = (bookings = []) => {
   }, 0);
 
   return Math.floor(totalUsdSpent / USD_PER_REWARD_POINT);
+};
+
+const parseDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const daysUntil = (date) => {
+  if (!date) return null;
+  const today = startOfDay(new Date());
+  const target = startOfDay(date);
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const getAgeFromDateOfBirth = (value) => {
+  const dob = parseDate(value);
+  if (!dob) return null;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const monthDiff = now.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) age -= 1;
+  return age >= 0 ? age : null;
+};
+
+const getBookingDepartureDate = (booking = {}) => {
+  const pkg = booking.package ?? {};
+  const candidates = [
+    booking.departure_date,
+    booking.departureDate,
+    booking.available_from,
+    pkg.available_from,
+    pkg.start_date,
+    pkg.startDate,
+  ];
+  for (const candidate of candidates) {
+    const parsed = parseDate(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+};
+
+const getTravelerCount = (booking = {}) => {
+  const directCount = Number(
+    booking.total_travelers ??
+    booking.totalTravelers ??
+    booking.traveler_count ??
+    booking.travelerCount ??
+    booking.passenger_count ??
+    booking.passengerCount
+  );
+  if (Number.isFinite(directCount) && directCount > 0) return directCount;
+
+  const byTier = booking.travelers ?? booking.traveler_counts ?? booking.traveller_counts;
+  if (byTier && !Array.isArray(byTier) && typeof byTier === 'object') {
+    const tierCount = ['adult', 'child', 'minor_child', 'infant']
+      .map((k) => Number(byTier[k] ?? 0))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .reduce((sum, n) => sum + n, 0);
+    if (tierCount > 0) return tierCount;
+  }
+
+  const list = [
+    booking.travelers,
+    booking.travellers,
+    booking.passengers,
+    booking.clients,
+    booking.people,
+  ].find((v) => Array.isArray(v));
+  if (Array.isArray(list) && list.length > 0) return list.length;
+
+  return 1;
+};
+
+const getTravelerDetails = (booking = {}) => {
+  const passportRows = [
+    booking.passport_verifications,
+    booking.passportVerifications,
+    booking.passport_details,
+    booking.passportDetails,
+  ].find((v) => Array.isArray(v)) ?? [];
+
+  const list = [
+    booking.traveler_details,
+    booking.travelerDetails,
+    booking.travelers,
+    booking.travellers,
+    booking.passengers,
+    booking.clients,
+    booking.people,
+  ].find((v) => Array.isArray(v));
+
+  if (!Array.isArray(list)) return [];
+
+  const normalizePassportRow = (row, idx) => {
+    const firstName = row?.given_names ?? row?.givenNames ?? row?.first_name ?? row?.firstName ?? '';
+    const lastName = row?.surname ?? row?.last_name ?? row?.lastName ?? '';
+    const fullName = row?.full_name ?? row?.fullName ?? row?.name ?? `${firstName} ${lastName}`.trim();
+    const dob = row?.date_of_birth ?? row?.dateOfBirth ?? row?.dob ?? null;
+    const status = String(row?.status ?? row?.verification_status ?? '').toLowerCase();
+
+    return {
+      id: row?.id ?? row?.traveler_id ?? idx,
+      name: fullName || `Traveler ${idx + 1}`,
+      passportNumber: row?.passport_number ?? row?.passportNumber ?? null,
+      passportExpiry: row?.passport_expiry ?? row?.passportExpiry ?? null,
+      dateOfBirth: dob,
+      age: getAgeFromDateOfBirth(dob),
+      passportVerified: ['verified', 'approved', 'manual_review'].includes(status),
+    };
+  };
+
+  const travelers = list.slice(0, 6).map((traveler, idx) => {
+    const firstName = traveler?.first_name ?? traveler?.firstName ?? '';
+    const lastName = traveler?.last_name ?? traveler?.lastName ?? '';
+    const fullName = traveler?.full_name ?? traveler?.fullName ?? traveler?.name ?? `${firstName} ${lastName}`.trim();
+    const dob = traveler?.date_of_birth ?? traveler?.dateOfBirth ?? traveler?.dob ?? null;
+
+    const passportStatus = String(
+      traveler?.passport_status ?? traveler?.passportStatus ?? traveler?.verification_status ?? ''
+    ).toLowerCase();
+
+    const verifiedFromFlag = traveler?.passport_verified ?? traveler?.passportVerified;
+    const passportVerified = typeof verifiedFromFlag === 'boolean'
+      ? verifiedFromFlag
+      : ['verified', 'approved', 'manual_review'].includes(passportStatus);
+
+    return {
+      id: traveler?.id ?? traveler?.traveler_id ?? idx,
+      name: fullName || `Traveler ${idx + 1}`,
+      passportNumber: traveler?.passport_number ?? traveler?.passportNumber ?? null,
+      passportExpiry: traveler?.passport_expiry ?? traveler?.passportExpiry ?? null,
+      dateOfBirth: dob,
+      age: getAgeFromDateOfBirth(dob),
+      passportVerified,
+    };
+  });
+
+  if (!travelers.length && passportRows.length) {
+    return passportRows.slice(0, 6).map((row, idx) => normalizePassportRow(row, idx));
+  }
+
+  if (passportRows.length) {
+    const byIndex = new Map(
+      passportRows.map((row, idx) => [Number(row?.traveler_index ?? row?.travelerIndex ?? idx), normalizePassportRow(row, idx)])
+    );
+    return travelers.map((traveler, idx) => {
+      const fromPassport = byIndex.get(idx);
+      if (!fromPassport) return traveler;
+      return {
+        ...traveler,
+        name: traveler.name || fromPassport.name,
+        passportNumber: traveler.passportNumber || fromPassport.passportNumber,
+        passportExpiry: traveler.passportExpiry || fromPassport.passportExpiry,
+        dateOfBirth: traveler.dateOfBirth || fromPassport.dateOfBirth,
+        age: traveler.age ?? fromPassport.age,
+        passportVerified: traveler.passportVerified || fromPassport.passportVerified,
+      };
+    });
+  }
+
+  return travelers;
+};
+
+const getPassportProgress = (booking = {}) => {
+  const details = getTravelerDetails(booking);
+  if (details.length > 0) {
+    const verified = details.filter((d) => d.passportVerified).length;
+    return { verified, total: details.length, state: verified === details.length ? 'complete' : 'pending' };
+  }
+
+  const status = String(booking.passport_status ?? booking.passportStatus ?? '').toLowerCase();
+  if (status) {
+    const complete = ['verified', 'approved', 'manual_review'].includes(status);
+    return { verified: complete ? 1 : 0, total: 1, state: complete ? 'complete' : 'pending' };
+  }
+
+  if (typeof booking.passport_verified === 'boolean') {
+    return {
+      verified: booking.passport_verified ? 1 : 0,
+      total: 1,
+      state: booking.passport_verified ? 'complete' : 'pending',
+    };
+  }
+
+  return { verified: 0, total: Math.max(1, getTravelerCount(booking)), state: 'unknown' };
+};
+
+const getHotelSummary = (pkg = {}) => {
+  const hotels = [];
+  if (pkg.makkah_hotel_name || pkg.makkah_hotel_rating || pkg.makkah_hotel_distance) {
+    hotels.push({
+      city: 'Makkah',
+      name: pkg.makkah_hotel_name ?? 'Hotel details pending',
+      rating: pkg.makkah_hotel_rating ? `${pkg.makkah_hotel_rating}★` : null,
+      distance: pkg.makkah_hotel_distance ?? null,
+    });
+  }
+  if (pkg.madinah_hotel_name || pkg.madinah_hotel_rating || pkg.madinah_hotel_distance) {
+    hotels.push({
+      city: 'Madinah',
+      name: pkg.madinah_hotel_name ?? 'Hotel details pending',
+      rating: pkg.madinah_hotel_rating ? `${pkg.madinah_hotel_rating}★` : null,
+      distance: pkg.madinah_hotel_distance ?? null,
+    });
+  }
+  return hotels;
 };
 
 /**
@@ -145,6 +357,16 @@ const normalise = (pkg) => {
     price:         Number(rawPrice),
     originalPrice: Number(rawOriginal),
     discount,
+    // Age-tier pricing (adult/child/minor_child/infant) for the traveler
+    // picker in BookingFlow — any tier the agent left blank on the package
+    // falls back to the adult/base price, so every tier always resolves to
+    // a real number and BookingFlow never has to special-case a missing tier.
+    priceTiers: {
+      adult:       Number(pkg.price_tiers?.adult       ?? rawPrice),
+      child:       Number(pkg.price_tiers?.child       ?? rawPrice),
+      minor_child: Number(pkg.price_tiers?.minor_child ?? rawPrice),
+      infant:      Number(pkg.price_tiers?.infant      ?? rawPrice),
+    },
 
     // trip info
     duration:      Number(pkg.duration_days ?? pkg.durationDays ?? pkg.duration ?? 0),
@@ -205,14 +427,9 @@ const usePackages = (showToast) => {
       // Debug: log the first raw package so you can confirm the image field name
       if (raw.length > 0) {
         const sample = raw[0];
-        console.log('[PackageDebug] image fields on first package:', {
-          image:      sample.image,
-          images:     sample.images,
-          image_urls: sample.image_urls,
-          imageUrls:  sample.imageUrls,
-        });
+        
         if (sample.image_urls?.length) {
-          console.log('[PackageDebug] image_urls[0] structure:', JSON.stringify(sample.image_urls[0]));
+          
         }
       }
 
@@ -223,7 +440,7 @@ const usePackages = (showToast) => {
 
       setPackages(packagesList);
     } catch (err) {
-      console.error('Error fetching packages:', err);
+      
       setError(err.message || 'Failed to load packages');
 
       // Fall back to cache if available
@@ -248,7 +465,6 @@ const usePackages = (showToast) => {
 
   return { packages, loading, error, refetch: () => fetchPackages(true) };
 };
-
 
 // ==================== STAT CARD COMPONENT ====================
 const StatCard = ({ icon: Icon, label, value, change, color, darkMode, loading }) => (
@@ -276,7 +492,7 @@ const StatCard = ({ icon: Icon, label, value, change, color, darkMode, loading }
 );
 
 // ==================== BOOKING CARD COMPONENT ====================
-const BookingCard = ({ booking, darkMode, onView, onCompleteDetails }) => {
+const BookingCard = ({ booking, darkMode, onView, onCompleteDetails, onAddTraveler }) => {
   const getStatusColor = (status) => {
     switch(status?.toLowerCase()) {
       case 'confirmed': return 'bg-emerald-100 text-emerald-700';
@@ -321,6 +537,31 @@ const BookingCard = ({ booking, darkMode, onView, onCompleteDetails }) => {
     : booking.created_at
       ? new Date(booking.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
       : 'TBD';
+
+  const departureDate = getBookingDepartureDate(booking);
+  const departureCountdown = daysUntil(departureDate);
+  const travelerCount = getTravelerCount(booking);
+  const travelerDetails = getTravelerDetails(booking);
+  const passportProgress = getPassportProgress(booking);
+  const hotels = getHotelSummary(pkg);
+
+  const countdownTone = departureCountdown == null
+    ? 'bg-gray-100 text-gray-600'
+    : departureCountdown < 0
+      ? 'bg-slate-100 text-slate-700'
+      : departureCountdown <= 14
+        ? 'bg-red-100 text-red-700'
+        : departureCountdown <= 30
+          ? 'bg-amber-100 text-amber-700'
+          : 'bg-emerald-100 text-emerald-700';
+
+  const countdownText = departureCountdown == null
+    ? 'Departure date not set'
+    : departureCountdown < 0
+      ? `Departed ${Math.abs(departureCountdown)} day${Math.abs(departureCountdown) === 1 ? '' : 's'} ago`
+      : departureCountdown === 0
+        ? 'Departs today'
+        : `${departureCountdown} day${departureCountdown === 1 ? '' : 's'} to departure`;
 
   return (
     <div className={`rounded-2xl overflow-hidden border transition-all duration-300 hover:shadow-xl ${
@@ -371,6 +612,32 @@ const BookingCard = ({ booking, darkMode, onView, onCompleteDetails }) => {
           </div>
         </div>
 
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${countdownTone}`}>
+            {countdownText}
+          </span>
+          {departureDate && (
+            <span className="text-xs text-gray-500">
+              Departure: {departureDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          )}
+        </div>
+
+        <div className={`mb-3 rounded-xl border p-2.5 ${
+          passportProgress.state === 'complete'
+            ? 'border-emerald-200 bg-emerald-50'
+            : passportProgress.state === 'pending'
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-gray-200 bg-gray-50'
+        }`}>
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-gray-700">Passport Status</span>
+            <span className={`font-bold ${passportProgress.state === 'complete' ? 'text-emerald-700' : passportProgress.state === 'pending' ? 'text-amber-700' : 'text-gray-600'}`}>
+              {passportProgress.verified}/{passportProgress.total} verified
+            </span>
+          </div>
+        </div>
+
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-xs text-gray-500 mb-1">Total Paid</p>
@@ -386,12 +653,65 @@ const BookingCard = ({ booking, darkMode, onView, onCompleteDetails }) => {
           )}
         </div>
 
-        <button
-          onClick={() => onView(booking)}
-          className="w-full py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
-        >
-          View Details
-        </button>
+        <div className="mb-3 rounded-xl border border-gray-200 p-2.5">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="font-semibold text-gray-700">Booked Travelers</span>
+            <span className="font-bold text-gray-900">{travelerCount}</span>
+          </div>
+          {travelerDetails.length > 0 ? (
+            <div className="space-y-1.5">
+              {travelerDetails.map((traveler) => (
+                <div key={traveler.id} className="text-xs text-gray-600 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-gray-700">{traveler.name}</p>
+                    <p className="truncate text-[11px] text-gray-500">
+                      {traveler.age != null ? `Age ${traveler.age}` : 'Age —'}
+                      {traveler.dateOfBirth ? ` · DOB ${new Date(traveler.dateOfBirth).toLocaleDateString('en-GB')}` : ''}
+                      {traveler.passportNumber ? ` · ${traveler.passportNumber}` : ''}
+                    </p>
+                  </div>
+                  <span className={`px-1.5 py-0.5 rounded-full ${traveler.passportVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {traveler.passportVerified ? 'Passport OK' : 'Passport Pending'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">Traveler details will appear once submitted.</p>
+          )}
+        </div>
+
+        <div className="mb-4 rounded-xl border border-gray-200 p-2.5">
+          <p className="text-xs font-semibold text-gray-700 mb-1.5">Hotels</p>
+          {hotels.length > 0 ? (
+            <div className="space-y-1">
+              {hotels.map((hotel) => (
+                <p key={hotel.city} className="text-xs text-gray-600">
+                  <span className="font-semibold">{hotel.city}:</span> {hotel.name}
+                  {hotel.rating ? ` · ${hotel.rating}` : ''}
+                  {hotel.distance ? ` · ${hotel.distance}` : ''}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">Hotel assignment will be shared by your agent.</p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => onView(booking)}
+            className="py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            View Details
+          </button>
+          <button
+            onClick={() => onAddTraveler?.(booking)}
+            className="py-2.5 border border-emerald-300 text-emerald-700 text-sm font-semibold rounded-lg hover:bg-emerald-50 transition-colors"
+          >
+            Add Person
+          </button>
+        </div>
 
         {/* Required-details nudge — contact info / next of kin / passport photo
              still missing for this booking. Takes priority over the face-photo
@@ -1386,6 +1706,8 @@ const ClientDashboard = ({ user, onLogout }) => {
     return saved ? JSON.parse(saved) : false;
   });
   const [showNotifications, setShowNotifications] = useState(false);
+  const [currentUser, setCurrentUser] = useState(user);
+  const emailVerified = isEmailVerified(currentUser || user);
   
   const [bookings, setBookings] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -1395,6 +1717,10 @@ const ClientDashboard = ({ user, onLogout }) => {
   const [stats, setStats] = useState({ activeBookings: 0, favorites: 0, pastJourneys: 0, rewardPoints: 0 });
 
   const { packages: availablePackages, loading: packagesLoading, error: packagesError, refetch: refetchPackages } = usePackages(showToast);
+
+  useEffect(() => {
+    setCurrentUser(user);
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(darkMode));
@@ -1414,18 +1740,24 @@ const ClientDashboard = ({ user, onLogout }) => {
     if (!user?.id) {
       // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
       // eslint-disable-next-line no-console
-      console.warn('%c[NAV] ClientDashboard session guard bounced to /', 'color:#e11d48;font-weight:bold', {
-        user,
-        userStoreValue: userStore.get(),
-        accessToken: !!tokenStore.get(),
-        refreshToken: !!localStorage.getItem('refresh_token'),
-        justBooked: sessionStorage.getItem('booking_just_confirmed'),
-      });
+      
       // eslint-disable-next-line no-console
-      console.trace('[NAV] call stack');
+      
       navigate('/', { replace: true });
     }
   }, [user?.id, navigate]);
+
+  const refreshEmailStatus = async () => {
+    try {
+      const res = await request({ method: 'get', url: '/auth/me' });
+      const refreshedUser = res?.data?.data?.user;
+      if (!refreshedUser) return;
+      setCurrentUser(refreshedUser);
+      userStore.set(refreshedUser);
+    } catch {
+      // Keep dashboard locked until backend confirms verification.
+    }
+  };
 
     // If there's no user, immediately clear loading states so nothing spins forever
   useEffect(() => {
@@ -1447,7 +1779,7 @@ const ClientDashboard = ({ user, onLogout }) => {
         setFavorites(favList);
         setStats(prev => ({ ...prev, favorites: favList.length }));
       } catch (err) {
-        console.error('[fetchFavourites]', err.message);
+        
         showToast('Failed to load favourites', 'error');
       } finally {
         setLoading(prev => ({ ...prev, favorites: false, stats: false }));
@@ -1484,10 +1816,10 @@ const ClientDashboard = ({ user, onLogout }) => {
             }
           }
         } catch (detailsErr) {
-          console.warn('[fetchBookings] onboarding/missing check failed:', detailsErr.message);
+          
         }
       } catch (err) {
-        console.error('[fetchBookings]', err.message);
+        
         showToast('Could not load bookings', 'error');
       } finally {
         setLoading(prev => ({ ...prev, bookings: false }));
@@ -1500,7 +1832,7 @@ const ClientDashboard = ({ user, onLogout }) => {
         const res = await request({ method: 'get', url: '/messages/count/unread' });
         setUnreadCount(res?.data?.count ?? 0);
       } catch (err) {
-        console.error('[fetchUnreadCount]', err.message);
+        
       } finally {
         setLoading(prev => ({ ...prev, messages: false }));
       }
@@ -1534,30 +1866,74 @@ const ClientDashboard = ({ user, onLogout }) => {
     { id: 'settings', icon: Settings, label: 'Settings', count: 0 }
   ];
 
+  const [bookingPkg, setBookingPkg] = useState(null);
+
   const handleViewPackage = (pkg) => navigate(`/package/${pkg.id}`);
- const handleBookPackage = async (pkg) => {
-  if (!user?.id) {
-    showToast('Your session has expired. Please sign in to book.', 'error');
-    setTimeout(() => { onLogout?.(); navigate('/'); }, 1500);
-    return;
-  }
+  const handleBookPackage = useCallback(async (pkg) => {
+    if (!user?.id) {
+      showToast('Your session has expired. Please sign in to book.', 'error');
+      setTimeout(() => { onLogout?.(); navigate('/'); }, 1500);
+      return;
+    }
 
-  // Check if user already has a confirmed/pending booking
-  const existing = bookings.find(b =>
-    String(b.package_id) === String(pkg.id) &&
-    ['confirmed', 'pending'].includes(b.status?.toLowerCase())
+    // Check if user already has a confirmed/pending booking
+    const existing = bookings.find(b =>
+      String(b.package_id) === String(pkg.id) &&
+      ['confirmed', 'pending'].includes(b.status?.toLowerCase())
+    );
+    if (existing) {
+      showToast('You have already booked this package', 'info');
+      return;
+    }
+
+    // Open the booking flow — BookingFlow itself checks passport verification
+    // status for this package first and shows the passport step automatically
+    // if it isn't verified yet, before ever reaching payment.
+    setBookingPkg(pkg);
+  }, [bookings, navigate, onLogout, showToast, user?.id]);
+  const handleViewBooking = (booking) => navigate(
+    `/package/${booking.package_id ?? booking.package?.id}`,
+    { state: { fromBooking: true, booking } }
   );
-  if (existing) {
-    showToast('You have already booked this package', 'info');
-    return;
-  }
+  const handleAddTraveler = useCallback((booking) => {
+    const packageId = booking?.package_id ?? booking?.package?.id;
+    if (!packageId) {
+      showToast('Package details unavailable for this booking.', 'error');
+      return;
+    }
 
-  // Open the booking flow — BookingFlow itself checks passport verification
-  // status for this package first and shows the passport step automatically
-  // if it isn't verified yet, before ever reaching payment.
-  setBookingPkg(pkg);
-};
-  const handleViewBooking = (booking) => navigate(`/package/${booking.package_id ?? booking.package?.id}`);
+    const sourcePkg = booking?.package ?? {};
+    const normalizedPkg = normalise({
+      id: packageId,
+      name: sourcePkg.name,
+      description: sourcePkg.description,
+      image_urls: sourcePkg.image_urls,
+      image: sourcePkg.image,
+      duration: sourcePkg.duration,
+      package_type: sourcePkg.package_type,
+      location: sourcePkg.location,
+      makkah_hotel_distance: sourcePkg.makkah_hotel_distance,
+      makkah_hotel_rating: sourcePkg.makkah_hotel_rating,
+      agencyName: sourcePkg.agent_name ?? booking?.agency_name,
+      price: sourcePkg.price_per_person ?? sourcePkg.price,
+      price_tiers: sourcePkg.price_tiers,
+      available_seats: sourcePkg.available_seats,
+      average_rating: sourcePkg.average_rating,
+    });
+
+    setBookingPkg(normalizedPkg);
+    showToast('Add another traveler for this package.', 'info');
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!user?.id || bookingPkg) return;
+    const pending = readPendingBookingFlow(user.id);
+    if (!pending?.packageId) return;
+    const pendingPkg = availablePackages?.find((candidate) => String(candidate.id) === String(pending.packageId));
+    if (!pendingPkg) return;
+    showToast(`We found your unfinished booking for ${pending.packageTitle || 'this package'}. Continuing from where you left off.`, 'info');
+    handleBookPackage(pendingPkg);
+  }, [availablePackages, bookingPkg, handleBookPackage, showToast, user?.id]);
 
   // ── Deep-link: HeroSection's "Book Now" sends guests here as
   // /client/dashboard?bookPackage=<id> once they're logged in. Open the
@@ -1615,9 +1991,6 @@ const ClientDashboard = ({ user, onLogout }) => {
   // Kept for the explicit "remove" button in the Favorites tab
   const handleUnfavourite = (pkg) => handleToggleFavourite(pkg);
 
-  // ── Booking modal state ──────────────────────────────────────────────────
-  const [bookingPkg, setBookingPkg] = useState(null);
-
   // ── Post-booking details modal (contacts / next-of-kin / passport photo) ──
   // { id, package_id, package } of the booking still missing one of these.
   const [postBookingTarget, setPostBookingTarget] = useState(null);
@@ -1633,12 +2006,10 @@ const ClientDashboard = ({ user, onLogout }) => {
       setBookingsMissingDetails(new Set(missing.map((m) => m.bookingId)));
       return missing;
     } catch (err) {
-      console.warn('[checkMissingDetails]', err.message);
+      
       return [];
     }
   }, []);
-
-
 
   const refreshBookings = useCallback(async () => {
     try {
@@ -1650,7 +2021,7 @@ const ClientDashboard = ({ user, onLogout }) => {
       const rewardPoints = computeRewardPoints(raw);
       setStats(prev => ({ ...prev, activeBookings: active, pastJourneys: past, rewardPoints }));
     } catch (err) {
-      console.error('[refreshBookings]', err.message);
+      
     }
   }, []);
 
@@ -1746,6 +2117,11 @@ const ClientDashboard = ({ user, onLogout }) => {
         );
 
       case 'bookings':
+        {
+          const totalBookings = bookings.length;
+          const totalTravelers = bookings.reduce((sum, booking) => sum + getTravelerCount(booking), 0);
+          const totalPaid = bookings.reduce((sum, booking) => sum + Number(booking?.amount_paid ?? 0), 0);
+
         return (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1757,6 +2133,28 @@ const ClientDashboard = ({ user, onLogout }) => {
                 <RefreshCw className="h-4 w-4" /> Refresh
               </button>
             </div>
+
+            {bookings.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className={`rounded-xl border p-3 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                  <p className="text-xs text-gray-500 mb-1">Total Bookings</p>
+                  <p className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{totalBookings}</p>
+                </div>
+                <div className={`rounded-xl border p-3 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                  <p className="text-xs text-gray-500 mb-1">Total Travelers</p>
+                  <p className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{totalTravelers}</p>
+                </div>
+                <div className={`rounded-xl border p-3 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                  <p className="text-xs text-gray-500 mb-1">Amount Paid</p>
+                  <p className="text-xl font-bold text-emerald-600">KES {totalPaid.toLocaleString()}</p>
+                </div>
+              </div>
+            )}
+
+            <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Existing packages cannot be booked twice from discovery. Use <span className="font-semibold">Add Person</span> on a booking card to book for another traveler on the same package.
+            </p>
+
             {loading.bookings ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -1784,6 +2182,7 @@ const ClientDashboard = ({ user, onLogout }) => {
                     booking={booking}
                     darkMode={darkMode}
                     onView={handleViewBooking}
+                    onAddTraveler={handleAddTraveler}
                     onCompleteDetails={bookingsMissingDetails.has(booking.id)
                       ? (b) => setPostBookingTarget(b)
                       : undefined}
@@ -1793,6 +2192,7 @@ const ClientDashboard = ({ user, onLogout }) => {
             )}
           </div>
         );
+        }
 
       case 'favorites':
         return (
@@ -1985,7 +2385,13 @@ const ClientDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         </header>
-        <main className="p-4 sm:p-6 lg:p-8">{renderContent()}</main>
+        <main
+          className={`p-4 sm:p-6 lg:p-8 transition-all ${emailVerified ? '' : 'pointer-events-none blur-[2px] select-none'}`}
+          aria-hidden={!emailVerified}
+        >
+          {renderContent()}
+        </main>
+        {!emailVerified && <EmailVerificationBanner user={currentUser || user} darkMode={darkMode} blocking onVerified={refreshEmailStatus} />}
         <footer className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-2 px-4">
           <div className="flex items-center justify-around">
             {menuItems.slice(0, 4).map(item => (

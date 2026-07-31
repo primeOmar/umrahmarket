@@ -48,7 +48,7 @@ const AgentProfileSettings = ({ logoUrl: logoUrlProp, onLogoUpdated } = {}) => {
           });
         }
       } catch (err) {
-        console.error('[AgentProfileSettings] load failed:', err?.message);
+        
         if (!cancelled) setBanner({ type: 'error', message: 'Could not load your profile. Please refresh and try again.' });
       } finally {
         if (!cancelled) setLoading(false);
@@ -115,7 +115,7 @@ const AgentProfileSettings = ({ logoUrl: logoUrlProp, onLogoUpdated } = {}) => {
       onLogoUpdated?.(logoUrl);
       setBanner({ type: 'success', message: 'Logo updated.' });
     } catch (err) {
-      console.error('[AgentProfileSettings] logo upload failed:', err?.message);
+      
       setForm((f) => ({ ...f, logoUrl: prevLogoUrl }));
       onLogoUpdated?.(prevLogoUrl);
       setBanner({ type: 'error', message: 'Logo upload failed. Please try again.' });
@@ -142,7 +142,7 @@ const AgentProfileSettings = ({ logoUrl: logoUrlProp, onLogoUpdated } = {}) => {
       });
       setBanner({ type: 'success', message: 'Profile updated — clients will see these changes on your agency page.' });
     } catch (err) {
-      console.error('[AgentProfileSettings] save failed:', err?.message);
+      
       setBanner({ type: 'error', message: err?.message || 'Failed to save changes. Please try again.' });
     } finally {
       setSaving(false);

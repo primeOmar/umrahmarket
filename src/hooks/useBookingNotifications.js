@@ -95,12 +95,7 @@ export const useBookingNotifications = (agentPackages = []) => {
           const label = packageName || 'your package';
 
           if (!packageName) {
-            console.warn(
-              '[useBookingNotifications] No package name for package_id:',
-              booking.package_id,
-              '— map keys:',
-              Object.keys(packageMapRef.current)
-            );
+            
           }
 
           const notif = {
@@ -135,10 +130,10 @@ export const useBookingNotifications = (agentPackages = []) => {
       .subscribe((status, err) => {
         // Log subscription state to help debug connectivity issues
         if (status === 'SUBSCRIBED') {
-          console.log('[useBookingNotifications] ✅ Subscribed:', channelName);
+          
         }
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('[useBookingNotifications] ❌ Channel error:', status, err);
+          
         }
       });
 

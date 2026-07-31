@@ -1,5 +1,8 @@
-import React, { useState } from "react";
-import { X, Plus, Star, ChevronDown, MapPin, Building2, AlertCircle } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  X, Plus, Star, ChevronDown, ChevronLeft, ChevronRight, MapPin, Building2,
+  AlertCircle, Calendar,
+} from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sanitisation helpers
@@ -416,6 +419,317 @@ export const PresetChips = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Date helpers (local-time, no UTC shifting — a "YYYY-MM-DD" string always
+// means that calendar day, regardless of the browser's timezone)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/** "YYYY-MM-DD" -> local Date at midnight, or null */
+function parseYMD(str) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(str || ""))) return null;
+  const [y, m, d] = str.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+/** local Date -> "YYYY-MM-DD" */
+function formatYMD(dt) {
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+}
+
+/** local Date -> "Mon, 12 Aug 2027" (short, readable, unambiguous) */
+function formatDisplay(dt) {
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
+  return `${weekday}, ${dt.getDate()} ${MONTHS[dt.getMonth()].slice(0, 3)} ${dt.getFullYear()}`;
+}
+
+const sameDay = (a, b) => !!a && !!b && a.getTime() === b.getTime();
+const addMonths = (dt, n) => new Date(dt.getFullYear(), dt.getMonth() + n, 1);
+const stripTime = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+
+function buildMonthGrid(viewDate) {
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const startWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DateRangePicker
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A single popover calendar shared by both the check-in and check-out
+// fields. The whole point: once you pick check-in, the SAME calendar view
+// stays open — already on the right month — and just switches into
+// "pick check-out" mode with the check-in day highlighted as the anchor.
+// No re-opening a second picker that resets back to today and forces you
+// to scroll forward through months you just navigated past.
+//
+export const DateRangePicker = ({
+  checkIn,
+  checkOut,
+  onChangeCheckIn,
+  onChangeCheckOut,
+  errorCheckIn,
+  errorCheckOut,
+}) => {
+  const checkInDate  = parseYMD(checkIn);
+  const checkOutDate = parseYMD(checkOut);
+
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState("checkin"); // "checkin" | "checkout"
+  const [viewDate, setViewDate] = useState(checkInDate || new Date());
+  const [hoverDate, setHoverDate] = useState(null);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    const onEsc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+
+  const openFor = (field) => {
+    setMode(field);
+    // Anchor the view on whichever date is most relevant — never on
+    // "today" if the user has already been browsing a future month.
+    const anchor =
+      field === "checkin"
+        ? checkInDate || checkOutDate
+        : checkOutDate || checkInDate;
+    setViewDate(anchor || new Date());
+    setHoverDate(null);
+    setOpen(true);
+  };
+
+  const handleDayClick = (day) => {
+    if (mode === "checkin") {
+      onChangeCheckIn(formatYMD(day));
+      // Existing check-out no longer valid against the new check-in — clear it.
+      if (checkOutDate && day.getTime() >= checkOutDate.getTime()) {
+        onChangeCheckOut("");
+      }
+      // Stay open, same month in view, just switch to picking check-out.
+      setMode("checkout");
+      setHoverDate(null);
+      return;
+    }
+    // mode === "checkout"
+    if (checkInDate && day.getTime() <= checkInDate.getTime()) {
+      // Picked on/before check-in — treat it as restarting the range.
+      onChangeCheckIn(formatYMD(day));
+      onChangeCheckOut("");
+      setMode("checkout");
+      setHoverDate(null);
+      return;
+    }
+    onChangeCheckOut(formatYMD(day));
+    setOpen(false);
+  };
+
+  const cells = buildMonthGrid(viewDate);
+  const today = stripTime(new Date());
+
+  const rangeStart = checkInDate;
+  const rangeEnd =
+    mode === "checkout" && checkInDate && !checkOutDate
+      ? hoverDate // live preview while hunting for check-out
+      : checkOutDate;
+
+  const pillBaseStyle = (hasError, isActiveMode) => ({
+    background: hasError ? "#FEF6F6" : "#EEF5EE",
+    border: hasError
+      ? "1px solid #f3a5a5"
+      : isActiveMode && open
+      ? "1px solid #C9A84C"
+      : "1px solid #C8DFC8",
+    boxShadow: isActiveMode && open ? "0 0 0 3px rgba(201,168,76,0.15)" : "none",
+  });
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Check-in" error={errorCheckIn}>
+          <button
+            type="button"
+            onClick={() => openFor("checkin")}
+            className={`${inputCls} flex items-center justify-between gap-2 text-left`}
+            style={pillBaseStyle(errorCheckIn, mode === "checkin")}
+          >
+            <span className={checkInDate ? "" : "opacity-50"}>
+              {checkInDate ? formatDisplay(checkInDate) : "Select date"}
+            </span>
+            <Calendar className="h-4 w-4 flex-shrink-0" style={{ color: "#7aaa8a" }} />
+          </button>
+        </Field>
+        <Field label="Check-out" error={errorCheckOut}>
+          <button
+            type="button"
+            onClick={() => openFor("checkout")}
+            className={`${inputCls} flex items-center justify-between gap-2 text-left`}
+            style={pillBaseStyle(errorCheckOut, mode === "checkout")}
+          >
+            <span className={checkOutDate ? "" : "opacity-50"}>
+              {checkOutDate ? formatDisplay(checkOutDate) : "Select date"}
+            </span>
+            <Calendar className="h-4 w-4 flex-shrink-0" style={{ color: "#7aaa8a" }} />
+          </button>
+        </Field>
+      </div>
+
+      {open && (
+        <div
+          className="absolute left-0 right-0 z-50 mt-2 rounded-2xl p-4 shadow-xl"
+          style={{ background: "#FDFDF9", border: "1px solid #C8DFC8" }}
+        >
+          {/* Mode indicator — tells the user exactly what tapping a day will do */}
+          <p
+            className="text-xs font-bold uppercase tracking-widest mb-3"
+            style={{ color: "#C9A84C" }}
+          >
+            {mode === "checkin" ? "Select check-in date" : "Now select check-out date"}
+          </p>
+
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button
+              type="button"
+              onClick={() => setViewDate((v) => addMonths(v, -1))}
+              className="p-1.5 rounded-lg transition-colors hover:bg-black/5"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="h-4 w-4" style={{ color: "#0D3D2B" }} />
+            </button>
+            <span className="text-sm font-bold" style={{ color: "#0D3D2B" }}>
+              {MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}
+            </span>
+            <button
+              type="button"
+              onClick={() => setViewDate((v) => addMonths(v, 1))}
+              className="p-1.5 rounded-lg transition-colors hover:bg-black/5"
+              aria-label="Next month"
+            >
+              <ChevronRight className="h-4 w-4" style={{ color: "#0D3D2B" }} />
+            </button>
+          </div>
+
+          {/* Weekday header */}
+          <div className="grid grid-cols-7 mb-1">
+            {WEEKDAYS.map((w) => (
+              <div
+                key={w}
+                className="text-center text-[10px] font-bold uppercase"
+                style={{ color: "#7aaa8a" }}
+              >
+                {w}
+              </div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((day, i) => {
+              if (!day) return <div key={`empty-${i}`} />;
+
+              const isStart = sameDay(day, rangeStart);
+              const isEnd = sameDay(day, rangeEnd);
+              const inRange =
+                rangeStart &&
+                rangeEnd &&
+                day.getTime() > Math.min(rangeStart.getTime(), rangeEnd.getTime()) &&
+                day.getTime() < Math.max(rangeStart.getTime(), rangeEnd.getTime());
+              const isToday = sameDay(day, today);
+              const disabled =
+                mode === "checkout" && checkInDate && day.getTime() <= checkInDate.getTime();
+
+              const col = i % 7;
+              const stripRounded = isStart
+                ? "rounded-l-full"
+                : isEnd
+                ? "rounded-r-full"
+                : col === 0
+                ? "rounded-l-full"
+                : col === 6
+                ? "rounded-r-full"
+                : "";
+
+              return (
+                <div
+                  key={formatYMD(day)}
+                  className={`relative flex items-center justify-center h-9 ${
+                    (inRange || isStart || isEnd) ? stripRounded : ""
+                  }`}
+                  style={
+                    inRange || isStart || isEnd
+                      ? { background: "rgba(201,168,76,0.14)" }
+                      : {}
+                  }
+                >
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => handleDayClick(day)}
+                    onMouseEnter={() => mode === "checkout" && setHoverDate(day)}
+                    className="h-8 w-8 flex items-center justify-center rounded-full text-xs font-semibold transition-colors"
+                    style={
+                      isStart || isEnd
+                        ? { background: "#0D3D2B", color: "#fff" }
+                        : disabled
+                        ? { color: "#C8DFC8", cursor: "not-allowed" }
+                        : isToday
+                        ? { color: "#C9A84C", border: "1px solid #C9A84C" }
+                        : { color: "#0D3D2B" }
+                    }
+                    onMouseOver={(e) => {
+                      if (!disabled && !isStart && !isEnd) e.currentTarget.style.background = "#EEF5EE";
+                    }}
+                    onMouseOut={(e) => {
+                      if (!disabled && !isStart && !isEnd) e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    {day.getDate()}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {checkInDate && (
+            <button
+              type="button"
+              onClick={() => { onChangeCheckIn(""); onChangeCheckOut(""); setMode("checkin"); setHoverDate(null); }}
+              className="mt-3 text-xs font-semibold underline"
+              style={{ color: "#7aaa8a" }}
+            >
+              Clear dates
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HotelBlock
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -489,26 +803,14 @@ export const HotelBlock = ({ city, icon, formData, set, required = false, errors
         />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Check-in" error={errors.checkIn}>
-          <InputEl
-            type="date"
-            value={formData[`${city}_check_in_date`]}
-            onChange={(e) => set(`${city}_check_in_date`, e.target.value)}
-            sanitize="date"
-            style={errors.checkIn ? errorRingStyle : {}}
-          />
-        </Field>
-        <Field label="Check-out" error={errors.checkOut}>
-          <InputEl
-            type="date"
-            value={formData[`${city}_check_out_date`]}
-            onChange={(e) => set(`${city}_check_out_date`, e.target.value)}
-            sanitize="date"
-            style={errors.checkOut ? errorRingStyle : {}}
-          />
-        </Field>
-      </div>
+      <DateRangePicker
+        checkIn={formData[`${city}_check_in_date`]}
+        checkOut={formData[`${city}_check_out_date`]}
+        onChangeCheckIn={(v) => set(`${city}_check_in_date`, sanitizeDate(v))}
+        onChangeCheckOut={(v) => set(`${city}_check_out_date`, sanitizeDate(v))}
+        errorCheckIn={errors.checkIn}
+        errorCheckOut={errors.checkOut}
+      />
 
       {formData[`${city}_check_in_date`] && formData[`${city}_check_out_date`] && (
         <p className="text-xs font-semibold" style={{ color: "#C9A84C" }}>

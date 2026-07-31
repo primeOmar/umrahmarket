@@ -19,7 +19,7 @@
 //               "missing details" nudge will bring it back next time any
 //               step is still incomplete — dismissing is not a hard block.
 //   onComplete() — called once all three steps are confirmed complete
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   X, Mail, Phone, Users, Camera, Upload, CheckCircle, AlertCircle,
   Loader2, ChevronRight, ChevronLeft, ShieldCheck, User as UserIcon,
@@ -105,6 +105,67 @@ function splitPhone(fullPhone) {
   return { dial: '+254', local: fullPhone.replace(/^\+/, '') };
 }
 
+function getBookingTravelerCount(booking = {}) {
+  const direct = Number(
+    booking?.total_travelers ??
+    booking?.totalTravelers ??
+    booking?.traveler_count ??
+    booking?.travelerCount ??
+    booking?.passenger_count ??
+    booking?.passengerCount
+  );
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const fromArray = [
+    booking?.traveler_details,
+    booking?.travelerDetails,
+    booking?.travelers,
+    booking?.travellers,
+    booking?.passengers,
+    booking?.clients,
+    booking?.passport_verifications,
+    booking?.passportVerifications,
+  ].find((v) => Array.isArray(v));
+
+  return Array.isArray(fromArray) && fromArray.length > 0 ? fromArray.length : 1;
+}
+
+function getBookingTravelers(booking = {}) {
+  const list = [
+    booking?.traveler_details,
+    booking?.travelerDetails,
+    booking?.travelers,
+    booking?.travellers,
+    booking?.passengers,
+    booking?.clients,
+    booking?.passport_verifications,
+    booking?.passportVerifications,
+  ].find((v) => Array.isArray(v));
+
+  const total = getBookingTravelerCount(booking);
+  const out = Array.from({ length: total }).map((_, idx) => ({
+    index: idx,
+    label: `Traveler ${idx + 1}`,
+    name: `Traveler ${idx + 1}`,
+  }));
+
+  if (!Array.isArray(list)) return out;
+
+  list.forEach((row, idx) => {
+    const travelerIndex = Number(row?.traveler_index ?? row?.travelerIndex ?? idx);
+    if (!Number.isFinite(travelerIndex) || travelerIndex < 0 || travelerIndex >= out.length) return;
+    const given = row?.given_names ?? row?.givenNames ?? row?.first_name ?? row?.firstName ?? '';
+    const surname = row?.surname ?? row?.last_name ?? row?.lastName ?? '';
+    const fullName = row?.full_name ?? row?.fullName ?? row?.name ?? `${given} ${surname}`.trim();
+    out[travelerIndex] = {
+      ...out[travelerIndex],
+      name: fullName || out[travelerIndex].name,
+    };
+  });
+
+  return out;
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const FieldError = ({ children }) =>
@@ -173,6 +234,8 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
   const pkg = booking?.package ?? {};
   const packageId = booking?.package_id ?? pkg?.id;
   const packageName = pkg?.name ?? 'your package';
+  const bookingTravelers = useMemo(() => getBookingTravelers(booking), [booking]);
+  const travelerTotal = Math.max(1, bookingTravelers.length);
 
   const [step, setStep] = useState('contact');
   const [completed, setCompleted] = useState({ contact: false, nextOfKin: false, idPhoto: false });
@@ -199,12 +262,39 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
   // face-framing crop below so what gets submitted is always a proper
   // head-and-shoulders passport-style photo, never a full-body shot) ─────
   const [idPhotoErrors, setIdPhotoErrors] = useState({});
-  const [idPhotoFile, setIdPhotoFile] = useState(null);
-  const [idPhotoPreview, setIdPhotoPreview] = useState(null);
+  const [activeTravelerIndex, setActiveTravelerIndex] = useState(0);
+  const [idPhotoFilesByTraveler, setIdPhotoFilesByTraveler] = useState({});
+  const [idPhotoPreviewsByTraveler, setIdPhotoPreviewsByTraveler] = useState({});
+  const [travelerPhotoDone, setTravelerPhotoDone] = useState({});
   const [submittingIdPhoto, setSubmittingIdPhoto] = useState(false);
   const [idPhotoMessage, setIdPhotoMessage] = useState(null); // { text, tone: 'info'|'error'|'success' }
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
+
+  // ── traveler identity, sourced from the server (GET /onboarding/status →
+  // travelers[]) rather than from the `booking` prop. This is the DB record
+  // of who each traveler slot actually belongs to (name + masked passport
+  // number, captured during the passport scan step). It's what gets shown
+  // to the client for confirmation before a photo can be taken/uploaded,
+  // and its `verificationId` is echoed back on submit so the server can
+  // reject the write if the slot's identity changed underneath us. Keyed
+  // by travelerIndex. `null` while still loading.
+  const [travelerIdentities, setTravelerIdentities] = useState(null);
+  // Which traveler indices the user has explicitly confirmed ("Yes, this is
+  // [Name]") in this modal session. Capture/upload controls stay locked for
+  // a traveler until their identity card is confirmed — this is the actual
+  // guard against attaching a photo to the wrong person on a multi-traveler
+  // booking; everything else here is just supporting UI/plumbing for it.
+  const [confirmedTravelers, setConfirmedTravelers] = useState({});
+
+  const identityLoaded = travelerIdentities !== null;
+  const activeIdentity = travelerIdentities?.[activeTravelerIndex] ?? null;
+  const activeTraveler = activeIdentity?.hasIdentity
+    ? { index: activeTravelerIndex, name: activeIdentity.name }
+    : (bookingTravelers[activeTravelerIndex] ?? { index: activeTravelerIndex, name: `Traveler ${activeTravelerIndex + 1}` });
+  const activeConfirmed = Boolean(confirmedTravelers[activeTravelerIndex]);
+  const idPhotoFile = idPhotoFilesByTraveler[activeTravelerIndex] ?? null;
+  const idPhotoPreview = idPhotoPreviewsByTraveler[activeTravelerIndex] ?? null;
 
   // ── Face-crop step: shown for every source (live webcam still, native
   // camera photo, or gallery upload) so the user positions/zooms their own
@@ -246,6 +336,11 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
   // browser back, successful submit) — never leave the light on.
   useEffect(() => () => { webcamStreamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
   useEffect(() => () => { if (cropSource?.url) URL.revokeObjectURL(cropSource.url); }, [cropSource]);
+  useEffect(() => () => {
+    Object.values(idPhotoPreviewsByTraveler).forEach((url) => {
+      if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url);
+    });
+  }, [idPhotoPreviewsByTraveler]);
 
   const openWebcam = useCallback(async () => {
     setIdPhotoErrors((p) => ({ ...p, file: undefined }));
@@ -265,7 +360,7 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
       }
       setWebcamStarting(false);
     } catch (err) {
-      console.warn('[PostBookingModal] webcam access failed:', err?.message || err);
+      
       stopWebcam();
       setWebcamError('Could not access your camera. You can upload a photo instead.');
       // Don't leave the user stuck — fall back straight to the file picker.
@@ -405,10 +500,11 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
         if (!blob) return;
         const file = new File([blob], `id-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
         setIdPhotoErrors((p) => ({ ...p, file: undefined }));
-        setIdPhotoFile(file);
-        setIdPhotoPreview((prev) => {
-          if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-          return URL.createObjectURL(file);
+        setIdPhotoFilesByTraveler((prev) => ({ ...prev, [activeTravelerIndex]: file }));
+        setIdPhotoPreviewsByTraveler((prev) => {
+          const oldUrl = prev[activeTravelerIndex];
+          if (typeof oldUrl === 'string' && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+          return { ...prev, [activeTravelerIndex]: URL.createObjectURL(file) };
         });
         closeCropStep();
       }, 'image/jpeg', 0.92);
@@ -437,18 +533,54 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
         const data = res?.data;
         if (!data) return;
 
-        console.info('[PostBookingModal] onboarding/status', {
-          packageId,
-          contactComplete: data.contact?.complete,
-          nextOfKinComplete: data.nextOfKin?.complete,
-          idPhotoComplete: data.idPhoto?.complete,
-          allComplete: data.allComplete,
+        
+
+        // Server-verified identity per traveler slot. Always set this (even
+        // to an empty map) once the call resolves, so `identityLoaded`
+        // flips and the UI stops showing a loading state for it.
+        const identityByIndex = {};
+        (Array.isArray(data.travelers) ? data.travelers : []).forEach((t, idx) => {
+          const idxNum = Number(t?.travelerIndex ?? idx);
+          if (!Number.isFinite(idxNum) || idxNum < 0 || idxNum >= travelerTotal) return;
+          identityByIndex[idxNum] = {
+            hasIdentity: Boolean(t?.hasIdentity),
+            name: t?.name || null,
+            passportNumberMasked: t?.passportNumberMasked || null,
+            dateOfBirth: t?.dateOfBirth || null,
+            verificationId: t?.verificationId || null,
+          };
         });
+        setTravelerIdentities(identityByIndex);
+
+        const initialDoneMap = {};
+        const photoRows = Array.isArray(data.idPhoto?.travelerPhotos)
+          ? data.idPhoto.travelerPhotos
+          : Array.isArray(data.idPhoto?.photos)
+            ? data.idPhoto.photos
+            : Array.isArray(data.idPhoto?.items)
+              ? data.idPhoto.items
+              : [];
+
+        photoRows.forEach((row, idx) => {
+          const rowIndex = Number(row?.travelerIndex ?? row?.traveler_index ?? idx);
+          if (!Number.isFinite(rowIndex) || rowIndex < 0 || rowIndex >= travelerTotal) return;
+          const url = row?.url ?? row?.facePhotoUrl ?? row?.photoUrl ?? null;
+          initialDoneMap[rowIndex] = Boolean(row?.complete ?? url);
+        });
+
+        if (!photoRows.length && data.idPhoto?.url) initialDoneMap[0] = true;
+        if (!photoRows.length && data.idPhoto?.complete) {
+          for (let i = 0; i < travelerTotal; i += 1) initialDoneMap[i] = true;
+        }
+
+        const initialPhotoComplete = Object.keys(initialDoneMap).length
+          ? Object.values(initialDoneMap).filter(Boolean).length >= travelerTotal
+          : !!data.idPhoto?.complete;
 
         setCompleted({
           contact: !!data.contact?.complete,
           nextOfKin: !!data.nextOfKin?.complete,
-          idPhoto: !!data.idPhoto?.complete,
+          idPhoto: initialPhotoComplete,
         });
 
         if (data.contact?.email) setContact((c) => ({ ...c, email: data.contact.email }));
@@ -470,34 +602,54 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
           setKinCountryCode(dial);
           if (savedRelationship && !isKnownOption) setRelationshipOther(savedRelationship);
         }
-        if (data.idPhoto?.url) setIdPhotoPreview(data.idPhoto.url);
+        const previewMap = {};
+        const doneMap = { ...initialDoneMap };
+
+        photoRows.forEach((row, idx) => {
+          const rowIndex = Number(row?.travelerIndex ?? row?.traveler_index ?? idx);
+          if (!Number.isFinite(rowIndex) || rowIndex < 0 || rowIndex >= travelerTotal) return;
+          const url = row?.url ?? row?.facePhotoUrl ?? row?.photoUrl ?? null;
+          if (url) previewMap[rowIndex] = url;
+          doneMap[rowIndex] = Boolean(row?.complete ?? url);
+        });
+
+        if (!photoRows.length && data.idPhoto?.url) {
+          previewMap[0] = data.idPhoto.url;
+          doneMap[0] = true;
+        }
+
+        setIdPhotoPreviewsByTraveler((prev) => ({ ...prev, ...previewMap }));
+        setTravelerPhotoDone(doneMap);
+
+        const firstPhotoIncomplete = Array.from({ length: travelerTotal }).findIndex((_, idx) => !doneMap[idx]);
+        setActiveTravelerIndex(firstPhotoIncomplete >= 0 ? firstPhotoIncomplete : 0);
 
         // Jump straight to the first incomplete step.
         const firstIncomplete = STEPS.find((s) => !(
           s === 'contact' ? data.contact?.complete
             : s === 'nextOfKin' ? data.nextOfKin?.complete
-              : data.idPhoto?.complete
+              : Object.keys(doneMap).length ? Object.values(doneMap).filter(Boolean).length >= travelerTotal : data.idPhoto?.complete
         ));
         if (firstIncomplete) {
           setStep(firstIncomplete);
         } else if (data.allComplete) {
-          console.info('[PostBookingModal] everything already complete on load — showing done screen', { packageId });
+          
           setStep('done');
         }
       } catch (err) {
         // Non-fatal — the form still works, it just won't be prefilled/resumed.
-        console.warn('[PostBookingModal] status load failed:', err.message);
+        
       } finally {
         if (!cancelled) setLoadingStatus(false);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [packageId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [packageId, travelerTotal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goToNextIncompleteOrClose = useCallback((justCompletedStep, nextCompletedState) => {
     const remaining = STEPS.filter((s) => s !== justCompletedStep && !nextCompletedState[s]);
-    console.info('[PostBookingModal] step complete', { justCompletedStep, nextCompletedState, remaining });
+    
     if (remaining.length > 0) {
       setStep(remaining[0]);
     } else {
@@ -606,8 +758,26 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
   // ── Step 3 submit — direct upload, no OCR. The file here is always the
   // already-cropped output of the crop step, not the raw source photo. ───
   const submitIdPhoto = async () => {
+    if (!idPhotoFile && travelerPhotoDone[activeTravelerIndex]) {
+      const nextPending = Array.from({ length: travelerTotal }).findIndex((_, idx) => !travelerPhotoDone[idx]);
+      if (nextPending >= 0) {
+        setActiveTravelerIndex(nextPending);
+        setIdPhotoMessage({ text: 'This traveler already has a saved photo. Continue with the next traveler.', tone: 'info' });
+      } else {
+        const next = { ...completed, idPhoto: true };
+        setCompleted(next);
+        goToNextIncompleteOrClose('idPhoto', next);
+      }
+      return;
+    }
+
     const errs = {};
     if (!idPhotoFile) errs.file = 'Please take or upload a clear photo with a plain background.';
+    if (!activeIdentity?.hasIdentity) {
+      errs.file = 'Passport details for this traveler have not been captured yet. Please complete their passport scan first.';
+    } else if (!activeConfirmed) {
+      errs.file = `Please confirm this photo is for ${activeIdentity.name} before uploading.`;
+    }
     setIdPhotoErrors(errs);
     if (Object.keys(errs).length) return;
 
@@ -617,6 +787,13 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
     try {
       const form = new FormData();
       form.append('packageId', packageId);
+      if (booking?.id) form.append('bookingId', booking.id);
+      form.append('travelerIndex', String(activeTravelerIndex));
+      // Echoes back the identity the user was shown and confirmed on screen
+      // — the server independently verifies this still matches the DB
+      // record for this traveler slot before saving anything. See
+      // saveFacePhoto's identity-binding check.
+      form.append('travelerVerificationId', String(activeIdentity.verificationId));
       form.append('face', idPhotoFile);
 
       const res = await request({
@@ -628,16 +805,45 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
 
       const data = res?.data;
       if (data?.success !== false) {
-        setIdPhotoMessage({ text: data?.message || 'Photo saved.', tone: 'success' });
-        const next = { ...completed, idPhoto: true };
-        setCompleted(next);
-        setTimeout(() => goToNextIncompleteOrClose('idPhoto', next), 700);
+        const savedUrl = data?.url ?? data?.facePhotoUrl ?? data?.photoUrl;
+        if (savedUrl) {
+          setIdPhotoPreviewsByTraveler((prev) => {
+            const old = prev[activeTravelerIndex];
+            if (typeof old === 'string' && old.startsWith('blob:')) URL.revokeObjectURL(old);
+            return { ...prev, [activeTravelerIndex]: savedUrl };
+          });
+        }
+
+        const nextDoneMap = { ...travelerPhotoDone, [activeTravelerIndex]: true };
+        setTravelerPhotoDone(nextDoneMap);
+        const allDone = Array.from({ length: travelerTotal }).every((_, idx) => Boolean(nextDoneMap[idx]));
+
+        if (allDone) {
+          setIdPhotoMessage({ text: data?.message || 'All traveler photos saved.', tone: 'success' });
+          const next = { ...completed, idPhoto: true };
+          setCompleted(next);
+          setTimeout(() => goToNextIncompleteOrClose('idPhoto', next), 700);
+        } else {
+          const nextTraveler = Array.from({ length: travelerTotal }).findIndex((_, idx) => !nextDoneMap[idx]);
+          if (nextTraveler >= 0) setActiveTravelerIndex(nextTraveler);
+          setIdPhotoMessage({ text: data?.message || 'Photo saved. Continue with the next traveler.', tone: 'success' });
+          setIdPhotoErrors({});
+        }
       } else {
         setIdPhotoMessage({ text: data?.error || data?.message || 'Could not save photo. Please try again.', tone: 'error' });
       }
     } catch (err) {
       const msg = err?.response?.data?.error || err?.response?.data?.message || err.message || 'Could not save photo. Please try again.';
       setIdPhotoMessage({ text: msg, tone: 'error' });
+      // Drop the stale confirmation for this traveler — a failed upload
+      // (especially a 409 identity mismatch, meaning the record we showed
+      // the user is no longer what's in the DB) means what was on screen
+      // can no longer be trusted. Force a fresh look before retrying.
+      setConfirmedTravelers((prev) => {
+        const next = { ...prev };
+        delete next[activeTravelerIndex];
+        return next;
+      });
     } finally {
       setSubmittingIdPhoto(false);
     }
@@ -842,6 +1048,114 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
                     so make sure it's sharp, well-lit, and shows your face clearly.
                   </p>
 
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-emerald-900">
+                        Traveler photos {Object.values(travelerPhotoDone).filter(Boolean).length}/{travelerTotal}
+                      </p>
+                      <p className="text-xs text-emerald-700">
+                        Current: {activeTraveler.name}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {bookingTravelers.map((traveler) => {
+                        const isActive = activeTravelerIndex === traveler.index;
+                        const isDone = Boolean(travelerPhotoDone[traveler.index]);
+                        return (
+                          <button
+                            key={traveler.index}
+                            type="button"
+                            onClick={() => {
+                              setActiveTravelerIndex(traveler.index);
+                              setIdPhotoErrors({});
+                              setIdPhotoMessage(null);
+                            }}
+                            className={`text-left rounded-md px-2.5 py-2 text-xs border transition-colors ${
+                              isActive
+                                ? 'border-emerald-500 bg-white text-emerald-800'
+                                : isDone
+                                  ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
+                                  : 'border-emerald-100 bg-white text-gray-700 hover:bg-emerald-100'
+                            }`}
+                          >
+                            <p className="font-semibold truncate">{traveler.name}</p>
+                            <p className="text-[11px]">
+                              {isDone ? 'Photo saved' : 'Photo pending'}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ── Identity confirmation gate ──────────────────────────────
+                      This is the actual fix for "wrong photo attached to wrong
+                      traveler" on multi-traveler bookings: before any capture or
+                      upload control is shown, the client fetches this traveler's
+                      real name and passport number from the server (never from a
+                      client-side label) and makes the user explicitly confirm it.
+                      Only after that confirmation do the camera/upload buttons
+                      render at all — see `activeConfirmed` below. */}
+                  {!identityLoaded ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading traveler details…
+                    </div>
+                  ) : !activeIdentity?.hasIdentity ? (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 flex items-start gap-2.5">
+                      <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-amber-900">Passport details missing</p>
+                        <p className="text-xs text-amber-800 mt-0.5">
+                          We can't accept an ID photo for this traveler until their passport has been scanned and
+                          verified — that's what a photo would otherwise be attached to. Please complete their
+                          passport step first.
+                        </p>
+                      </div>
+                    </div>
+                  ) : !activeConfirmed ? (
+                    <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <UserIcon className="h-4 w-4 text-emerald-700" />
+                        <p className="text-sm font-semibold text-emerald-900">Confirm who this photo is for</p>
+                      </div>
+                      <div className="rounded-md bg-white border border-emerald-200 px-3 py-2.5 text-sm">
+                        <p className="font-semibold text-gray-900">{activeIdentity.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {activeIdentity.passportNumberMasked ? `Passport ${activeIdentity.passportNumberMasked}` : 'Passport on file'}
+                          {activeIdentity.dateOfBirth ? ` · DOB ${new Date(activeIdentity.dateOfBirth).toLocaleDateString('en-GB')}` : ''}
+                        </p>
+                      </div>
+                      <p className="text-xs text-emerald-800">
+                        Double-check this matches the traveler you're photographing — the photo will be permanently
+                        attached to this passport record and used on their Umrah ID card.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmedTravelers((prev) => ({ ...prev, [activeTravelerIndex]: true }))}
+                        className="w-full py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle className="h-4 w-4" /> Yes, this is {activeIdentity.name.split(' ')[0]} — continue
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 flex items-center justify-between gap-2 text-xs">
+                        <span className="text-emerald-800">
+                          <span className="font-semibold">Uploading for:</span> {activeIdentity.name}
+                          {activeIdentity.passportNumberMasked ? ` · ${activeIdentity.passportNumberMasked}` : ''}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmedTravelers((prev) => {
+                            const next = { ...prev };
+                            delete next[activeTravelerIndex];
+                            return next;
+                          })}
+                          className="text-emerald-700 underline hover:text-emerald-900 flex-shrink-0"
+                        >
+                          Not right?
+                        </button>
+                      </div>
                   <div>
                     {/* Two separate inputs, on purpose. A single <input capture> wrapped
                         in a <label> is unreliable across mobile browsers — some skip the
@@ -1042,6 +1356,8 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
                     )}
                     <FieldError>{idPhotoErrors.file}</FieldError>
                   </div>
+                    </>
+                  )}
 
                   <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
                     <li>Plain, light-colored background — no patterns or clutter behind you</li>
@@ -1078,7 +1394,11 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
                       className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60 flex items-center justify-center gap-2"
                     >
                       {submittingIdPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                      {submittingIdPhoto ? 'Saving…' : 'Save Photo'}
+                      {submittingIdPhoto
+                        ? 'Saving…'
+                        : (Object.values(travelerPhotoDone).filter(Boolean).length + 1 >= travelerTotal
+                          ? 'Save Final Photo'
+                          : 'Save & Next Traveler')}
                     </button>
                   </div>
                 </div>
@@ -1093,14 +1413,14 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
                   <div>
                     <h3 className="text-gray-900 font-semibold text-base">All set!</h3>
                     <p className="text-sm text-gray-500 mt-1">
-                      Your contact details, next-of-kin, and Umrah ID photo are all on file for {packageName}.
+                      Your contact details, next-of-kin, and Umrah ID photos are all on file for {packageName}.
                     </p>
                   </div>
                   <div className="w-full space-y-1.5 text-left text-sm">
                     {STEPS.map((s) => (
                       <div key={s} className="flex items-center gap-2 text-gray-600">
                         <CheckCircle className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                        {STEP_LABELS[s]}
+                        {s === 'idPhoto' ? `${STEP_LABELS[s]} (${travelerTotal}/${travelerTotal})` : STEP_LABELS[s]}
                       </div>
                     ))}
                   </div>

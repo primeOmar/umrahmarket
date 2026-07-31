@@ -14,15 +14,14 @@ const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
 // ─── Token & user stores ───────────────────────────────────────────────────────
 let _accessToken = localStorage.getItem('access_token') || null;
 
+// ─── Token & user stores ───────────────────────────────────────────────────────
 export const tokenStore = {
-  get: () => _accessToken,
+  get: () => localStorage.getItem('access_token'),
   set: (token) => {
-    _accessToken = token;
     if (token) localStorage.setItem('access_token', token);
     else localStorage.removeItem('access_token');
   },
   clear: () => {
-    _accessToken = null;
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
@@ -66,18 +65,6 @@ export const paymentGuard = {
 let _navigate = null;
 export const setNavigator = (fn) => { _navigate = fn; };
 export const goTo = (path, opts, reason) => {
-  // TEMPORARY DIAGNOSTIC — remove once the redirect bug is confirmed fixed.
-  // eslint-disable-next-line no-console
-  console.warn(`%c[NAV] -> ${path}`, 'color:#e11d48;font-weight:bold', {
-    reason: reason || '(no reason given)',
-    hasNavigator: !!_navigate,
-    accessToken: !!tokenStore.get(),
-    refreshToken: !!localStorage.getItem('refresh_token'),
-    user: userStore.get(),
-    path: window.location.pathname,
-  });
-  // eslint-disable-next-line no-console
-  console.trace('[NAV] call stack');
   if (_navigate) _navigate(path, opts);
   else window.location.href = path; // fallback: bridge not mounted yet (should not happen in practice)
 };
@@ -155,7 +142,6 @@ api.interceptors.request.use((cfg) => {
   }
 
   cfg.headers = headers;
-  if (import.meta.env.DEV) console.debug('[API]', cfg.method?.toUpperCase(), cfg.url, cfg.headers);
   return cfg;
 });
 
@@ -258,10 +244,14 @@ export const registerClient = async (formData) => {
   });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
-    await supabase.auth.setSession({
-      access_token:  res.data.data.accessToken,
-      refresh_token: res.data.data.refreshToken || '',
-    });
+    try {
+      await supabase.auth.setSession({
+        access_token:  res.data.data.accessToken,
+        refresh_token: res.data.data.refreshToken || '',
+      });
+    } catch {
+      // Ignore Supabase session-sync errors; the backend JWT is still valid for app requests.
+    }
   }
   if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
@@ -270,7 +260,6 @@ export const registerClient = async (formData) => {
 
 export const registerAgent = async (data) => {
   const res = await request({ method: 'post', url: '/auth/register/agent', data });
-  if (import.meta.env.DEV) console.debug('[registerAgent] accessToken:', res?.data?.accessToken ?? 'NOT IN RESPONSE');
   if (res?.data?.accessToken)  tokenStore.set(res.data.accessToken);
   if (res?.data?.data?.user)   userStore.set(res.data.data.user);
   return res;
@@ -284,10 +273,14 @@ export const login = async (formData) => {
   });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
-    await supabase.auth.setSession({
-      access_token:  res.data.data.accessToken,
-      refresh_token: res.data.data.refreshToken || '',
-    });
+    try {
+      await supabase.auth.setSession({
+        access_token:  res.data.data.accessToken,
+        refresh_token: res.data.data.refreshToken || '',
+      });
+    } catch {
+      // Ignore Supabase session-sync errors; the backend JWT is still valid for app requests.
+    }
   }
   if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
@@ -298,10 +291,14 @@ export const googleLogin = async (idToken) => {
   const res = await request({ method: 'post', url: '/auth/google', data: { idToken } });
   if (res?.data?.data?.accessToken) {
     tokenStore.set(res.data.data.accessToken);
-    await supabase.auth.setSession({
-      access_token:  res.data.data.accessToken,
-      refresh_token: res.data.data.refreshToken || '',
-    });
+    try {
+      await supabase.auth.setSession({
+        access_token:  res.data.data.accessToken,
+        refresh_token: res.data.data.refreshToken || '',
+      });
+    } catch {
+      // Ignore Supabase session-sync errors; the backend JWT is still valid for app requests.
+    }
   }
   if (res?.data?.data?.refreshToken) localStorage.setItem('refresh_token', res.data.data.refreshToken);
   if (res?.data?.data?.user) userStore.set(res.data.data.user);
@@ -330,6 +327,16 @@ export const getMe = () => request({ method: 'get', url: '/auth/me' });
 
 export const requestPasswordReset = (email) =>
   request({ method: 'post', url: '/auth/password-reset/request', data: { email } });
+
+// ─── Email confirmation ─────────────────────────────────────────────────────
+// Confirms the account using the token from the emailed verification link.
+export const verifyEmail = (token) =>
+  request({ method: 'post', url: '/auth/verify-email', data: { token } }).then((r) => r.data);
+
+// Requests a fresh confirmation email (60s cooldown enforced server-side).
+// Backend always returns a generic success message — no email-enumeration signal.
+export const resendVerificationEmail = (email) =>
+  request({ method: 'post', url: '/auth/verify-email/resend', data: { email } }).then((r) => r.data);
 
 // ─── Uploads ──────────────────────────────────────────────────────────────────
 // NOTE: DocumentsTab.jsx previously called these endpoints with raw fetch()
@@ -393,17 +400,22 @@ export const uploadAgentDocuments = (files, agentId) => {
 };
 
 // ─── Passport verification ──────────────────────────────────────────────────
+// Every traveler on a booking (adult/child/minor_child/infant) needs their
+// OWN passport verified — `travelerIndex` (0-based, assigned in booking
+// order) identifies which one. Defaults to 0 so single-traveler callers
+// don't need to change anything.
+
 // Step 1: validate typed details + 6-month rule (no image, server-authoritative)
-export const checkPassport = ({ packageId, passportExpiry }) =>
+export const checkPassport = ({ packageId, passportExpiry, travelerIndex = 0 }) =>
   request({
     method: 'post',
     url: '/passport/check',
-    data: { packageId, passportExpiry },
+    data: { packageId, passportExpiry, travelerIndex },
   }).then((r) => r.data);
 
 // Step 2: OCR the photo and confirm it matches the typed details.
 // `details` = { packageId, passportNumber, passportCountry, passportExpiry,
-//               surname, givenNames, dateOfBirth, nationality }
+//               surname, givenNames, dateOfBirth, nationality, travelerIndex }
 // `file` = a File/Blob of the passport photo.
 export const verifyPassportImage = (details, file) => {
   const form = new FormData();
@@ -418,12 +430,22 @@ export const verifyPassportImage = (details, file) => {
   }).then((r) => r.data);
 };
 
-// Latest verification status for a (user, package).
-export const getPassportStatus = (packageId) =>
+// Latest verification status for a single (user, package, traveler).
+export const getPassportStatus = (packageId, travelerIndex = 0) =>
   request({
     method: 'get',
     url: '/passport/status',
-    params: { packageId },
+    params: { packageId, travelerIndex },
+  }).then((r) => r.data);
+
+// Verification status for EVERY traveler on a booking in one call — tells
+// BookingFlow whether everyone already has a verified passport, and if not,
+// which traveler (by index) still needs one.
+export const getPassportStatusBatch = (packageId, totalTravelers = 1) =>
+  request({
+    method: 'get',
+    url: '/passport/status-batch',
+    params: { packageId, totalTravelers },
   }).then((r) => r.data);
 
 // ─── Agent document verification (per-item, agent-facing) ───────────────────
@@ -461,9 +483,10 @@ export const uploadAgentLogo = (file) => {
 export default {
   registerClient, registerAgent, login, googleLogin,
   logout, refreshToken, getMe, requestPasswordReset,
+  verifyEmail, resendVerificationEmail,
   uploadAgentDocuments, getAgentDocuments, uploadAgentDocument, saveOfficeMapsUrl,
   tokenStore, userStore,
-  checkPassport, verifyPassportImage, getPassportStatus,
+  checkPassport, verifyPassportImage, getPassportStatus, getPassportStatusBatch,
   getAgentVerificationStatus, requestDocumentReview,
   getAgentProfile, updateAgentProfile, uploadAgentLogo,
 };
