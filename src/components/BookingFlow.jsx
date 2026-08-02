@@ -931,7 +931,17 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
           {/* ══ SELECT METHOD ══ */}
           {step === 'select' && (
             <div className="space-y-3">
-              <p className="text-sm text-gray-500 mb-1">Choose a payment method:</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm text-gray-500">Choose a payment method:</p>
+                <button
+                  type="button"
+                  onClick={() => setStep('currency')}
+                  className="text-xs font-medium text-emerald-600 hover:underline flex items-center gap-1 flex-shrink-0"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  {currency === 'KES' ? 'Paying in KES' : 'Paying in USD'} · Change
+                </button>
+              </div>
 
               <button onClick={() => setStep('card')}
                 className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition-all group text-left">
