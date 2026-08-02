@@ -369,18 +369,12 @@ function App() {
             </>
           } />
 
-          <Route path="/auth/google/callback" element={
-            <>
-              <GoogleCallback />
-              <Footer />
-            </>
-          } />
-          <Route path="/auth/google/done" element={
-            <>
-              <GoogleDone />
-              <Footer />
-            </>
-          } />
+          {/* Google OAuth popup routes — deliberately NO <Footer />. These render
+              inside the small popup window, not the main tab, and are meant to
+              close themselves (see GoogleCallback.jsx / GoogleDone.jsx). Site
+              chrome here just flashes uselessly right before window.close(). */}
+          <Route path="/auth/google/callback" element={<GoogleCallback />} />
+          <Route path="/auth/google/done" element={<GoogleDone />} />
           <Route path="/verified" element={
             <>
               <VerifiedPage />
@@ -393,23 +387,17 @@ function App() {
               <Footer />
             </>
           } />
-          {/* FIX: packageId is in the path so Pesapal can't stomp it on redirect */}
-          <Route path="/payment/callback/:packageId" element={
-            <>
-              <PaymentCallback />
-              <Footer />
-            </>
-          } />
+          {/* FIX: packageId is in the path so Pesapal can't stomp it on redirect.
+              No <Footer /> here either — same reasoning as the Google OAuth
+              routes above: this tab is meant to self-close via
+              PaymentCallback.jsx's window.close(), so site chrome would just
+              flash uselessly first. */}
+          <Route path="/payment/callback/:packageId" element={<PaymentCallback />} />
           {/* Fallback: if PESAPAL_CALLBACK_URL is ever misconfigured without the
               packageId segment, still hit the verify page instead of falling
               through to "*" → homepage. PaymentCallback already falls back to
               the packageId stored in localStorage in this case. */}
-          <Route path="/payment/callback" element={
-            <>
-              <PaymentCallback />
-              <Footer />
-            </>
-          } />
+          <Route path="/payment/callback" element={<PaymentCallback />} />
 
           {/* ─────────────────────────────────────────────────────────────────── */}
           {/* SUPERADMIN ROUTES - Restricted Access                             */}

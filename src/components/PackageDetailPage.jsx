@@ -13,6 +13,7 @@ import { getItinerary, getPackageById, normalise } from './agent/packages/servic
 import AuthModal from './AuthModal';
 import BookingFlow from './BookingFlow';
 import PackageVisitTracker from '../visits/PackageVisitTracker';
+import { useFxRate } from '../hooks/useFxRate';
 // ─────────────────────────────────────────────────────────────────────────────
 // GalleryCarousel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,6 +224,12 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   const { id }    = useParams();
   const navigate  = useNavigate();
   const location  = useLocation();
+
+  // Package prices are stored in USD. `usdKes` from this hook is the
+  // SELLING rate (mid + margin) — the same rate a KES-paying client is
+  // actually charged at checkout — so the figure shown here matches what
+  // they'll pay, not a raw mid-market conversion.
+  const { fmtKes, usdToKes, fxLoading: fxRateLoading } = useFxRate();
 
   const handleBack = () => {
     const user = currentUser || userStore.get();
@@ -831,9 +838,16 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                 {/* Price */}
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-baseline">
-                      <span className="text-3xl font-bold text-gray-900">${formatPrice(packageData.price)}</span>
-                      <span className="text-gray-500 ml-2">per person</span>
+                    <div>
+                      <div className="flex items-baseline">
+                        <span className="text-3xl font-bold text-gray-900">${formatPrice(packageData.price)}</span>
+                        <span className="text-gray-500 ml-2">per person</span>
+                      </div>
+                      {!fxRateLoading && (
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          ≈ {fmtKes(usdToKes(packageData.price || 0))} <span className="text-gray-400">at today's rate</span>
+                        </p>
+                      )}
                     </div>
                     {packageData.originalPrice > packageData.price && (
                       <div className="text-right">

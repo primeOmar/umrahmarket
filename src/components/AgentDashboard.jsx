@@ -1954,6 +1954,23 @@ const AgentDashboard = ({ user, onLogout }) => {
 
   useEffect(() => { refreshVerificationStatus(); }, []);
 
+  // ── Proactive "you haven't uploaded documents yet" prompt ────────────────
+  // The gate modal above only ever appeared reactively, when the agent
+  // clicked "create package" and got blocked. New agents who haven't tried
+  // that yet had no reason to know verification was even required. Surface
+  // the same modal automatically, once, right after the dashboard loads —
+  // but only when nothing has been uploaded at all; an agent who's already
+  // mid-review or fixing a rejection has already seen this and doesn't
+  // need to be re-nagged every time they open the dashboard.
+  const autoUploadPromptShownRef = useRef(false);
+  useEffect(() => {
+    if (verificationLoading || !verificationStatus || autoUploadPromptShownRef.current) return;
+    autoUploadPromptShownRef.current = true;
+    if (!verificationStatus.isApproved && !verificationStatus.hasUploadedDocuments) {
+      setShowVerificationGate(true);
+    }
+  }, [verificationLoading, verificationStatus]);
+
   // DocumentsTab (./agent/documents/DocumentsTab) handles its own uploads
   // and isn't available here to hook a completion callback into directly.
   // Re-checking verification status whenever the agent navigates away from
@@ -2310,7 +2327,22 @@ const AgentDashboard = ({ user, onLogout }) => {
             <div className={`transition-all duration-200 overflow-hidden flex-1 min-w-0 ${sidebarHovered ? 'lg:opacity-100 lg:w-auto' : 'lg:opacity-0 lg:w-0'}`}>
               <h3 className="font-semibold text-gray-900 text-sm truncate">{displayName}</h3>
               {displayAgent && <p className="text-xs text-gray-500 truncate font-mono">{displayAgent}</p>}
-              <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
+              {/* Was hardcoded to "Verified" regardless of actual status —
+                  "Verified" now only shows once isAgentApproved is actually
+                  true (superadmin-approved). Every other state gets its own
+                  honest label instead of implying approval that hasn't
+                  happened yet. */}
+              {verificationLoading ? (
+                <span className="inline-block mt-1 px-2 py-0.5 bg-gray-100 text-gray-400 rounded-full text-[10px]">Checking…</span>
+              ) : isAgentApproved ? (
+                <span className="inline-block mt-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px]">Verified</span>
+              ) : verificationStatus?.anyRejected ? (
+                <span className="inline-block mt-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px]">Action needed</span>
+              ) : verificationStatus?.hasUploadedAllRequired ? (
+                <span className="inline-block mt-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px]">Under review</span>
+              ) : (
+                <span className="inline-block mt-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px]">Not verified</span>
+              )}
             </div>
           </div>
         </div>
@@ -2533,29 +2565,12 @@ const AgentDashboard = ({ user, onLogout }) => {
                     </>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleAvatarPick}
-                  title="Change profile picture"
-                  className="relative w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold overflow-hidden group cursor-pointer flex-shrink-0"
-                >
-                  {profileLoading ? (
-                    <Loader className="h-4 w-4 animate-spin" />
-                  ) : logoUrl ? (
-                    <img src={logoUrl} alt={displayName} className="w-full h-full object-cover" />
-                  ) : (
-                    avatarLetter
-                  )}
-                  <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {uploadingAvatar ? (
-                      <Loader className="h-3 w-3 text-white animate-spin" />
-                    ) : (
-                      <Camera className="h-3 w-3 text-white" />
-                    )}
-                  </span>
-                </button>
+                {/* Topbar avatar removed — redundant with the sidebar rail avatar.
+                    Logo now lives in exactly two places: the sidebar rail
+                    (editable) and Settings > Agency Profile (editable), which
+                    already stay in sync via applyLogoUrl / onLogoUpdated. */}
 
-                {/* Hidden input shared by sidebar + topbar avatar buttons */}
+                {/* Hidden input shared by sidebar avatar + Settings tab */}
                 <input
                   ref={avatarFileInputRef}
                   type="file"

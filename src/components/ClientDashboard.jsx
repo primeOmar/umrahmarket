@@ -767,8 +767,21 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
     'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
 
   // Package prices are stored in USD; show live KES conversion as the
-  // headline figure since that's what clients in Kenya actually pay.
-  const { fmtKes, loading: fxLoading } = useFxRate();
+  // headline figure since that's what clients in Kenya actually pay. The
+  // rate the hook returns (`usdKes`) is the SELLING rate — i.e. the actual
+  // rate a KES-paying client is charged, not the raw mid-market rate — so
+  // this number matches what they'll see at checkout.
+  //
+  // Fixed two pre-existing bugs here:
+  //  1. the hook returns `fxLoading`, not `loading` — destructuring
+  //     `loading: fxLoading` from it always produced `undefined`, so the
+  //     loading branch below never fired.
+  //  2. `pkg.price` is a USD figure — it must be converted with
+  //     `usdToKes()` before being handed to `fmtKes()`, which only
+  //     formats a number that's already in KES. Passing it straight
+  //     through was rendering the raw USD number with a "KES" label.
+  const { fmtKes, usdToKes, fxLoading } = useFxRate();
+  const priceKes = usdToKes(pkg.price || 0);
 
   return (
     <div className="group cursor-pointer" onClick={() => onView(pkg)}>
@@ -787,7 +800,7 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
         <div className="absolute bottom-2 left-2">
           <div className="flex items-baseline gap-1">
             <span className="text-sm sm:text-base font-bold text-white leading-none">
-              {fxLoading ? `$${(pkg.price || 0).toLocaleString()}` : fmtKes(pkg.price || 0)}
+              {fxLoading ? `$${(pkg.price || 0).toLocaleString()}` : fmtKes(priceKes)}
             </span>
             <span className="text-[10px] text-white/75">/ person</span>
           </div>
@@ -798,6 +811,7 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
             </span>
           )}
         </div>
+
 
         {/* Duration badge */}
         {pkg.duration > 0 && (
@@ -951,6 +965,11 @@ const FilterOption = ({ label, selected, onClick, darkMode }) => (
 
 // ==================== PACKAGE DISCOVERY SECTION ====================
 const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], loading = false, error = null, onRetry, favorites = [], onToggleFav, bookings = [] }) => {
+  // Shared with PackageCard's grid view — module-level cache in the hook
+  // means this doesn't trigger a second network fetch. Used so the list
+  // view shows the same selling-rate KES price as the grid view, instead of
+  // the raw USD figure it was showing before.
+  const { fmtKes, usdToKes, fxLoading } = useFxRate();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({
@@ -1491,7 +1510,14 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <h3 className={`font-semibold text-sm truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{pkg.name}</h3>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-emerald-600 font-bold text-sm">${(pkg.price || 0).toLocaleString()}</span>
+                    <div className="text-right">
+                      <span className="text-emerald-600 font-bold text-sm block">
+                        {fxLoading ? `$${(pkg.price || 0).toLocaleString()}` : fmtKes(usdToKes(pkg.price || 0))}
+                      </span>
+                      <span className={`text-[10px] block ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        ${(pkg.price || 0).toLocaleString()} USD
+                      </span>
+                    </div>
                     {onToggleFav && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onToggleFav(pkg); }}

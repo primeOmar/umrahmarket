@@ -363,6 +363,16 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   const fmtUsd       = (usd) => `$${fmt(usd)}`;
   const fmtSelected  = (usd) => (currency === 'USD' ? fmtUsd(usd) : fmtKes(usd));
 
+  // M-Pesa only ever settles in KES. If the client is sitting on the M-Pesa
+  // step and flips the currency toggle to USD (it stays visible in the
+  // header across every step), bounce them back to the method picker rather
+  // than leaving them on a screen that can no longer be submitted.
+  useEffect(() => {
+    if (currency === 'USD' && step === 'mpesa') {
+      setStep('select');
+    }
+  }, [currency, step]);
+
   // ── CARD (Pesapal Hosted Checkout) ────────────────────────────────────────
   // Flow:
   //   1. POST /api/payments/card/initiate → backend submits order to Pesapal
@@ -854,30 +864,29 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                 </div>
               </button>
 
-              <button onClick={() => setStep('mpesa')}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-green-400 hover:bg-green-50/40 transition-all group text-left">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center flex-shrink-0 shadow-lg shadow-green-100 group-hover:scale-105 transition-transform">
-                  <span className="text-white font-black text-[10px] leading-none text-center">M<br />PESA</span>
+              {/* M-Pesa only settles in KES (Safaricom requirement) — hidden
+                  when the client has chosen to pay in USD. They still see
+                  why, rather than the option just silently disappearing. */}
+              {currency === 'KES' ? (
+                <button onClick={() => setStep('mpesa')}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-green-400 hover:bg-green-50/40 transition-all group text-left">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center flex-shrink-0 shadow-lg shadow-green-100 group-hover:scale-105 transition-transform">
+                    <span className="text-white font-black text-[10px] leading-none text-center">M<br />PESA</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm">M-Pesa</p>
+                    <p className="text-xs text-gray-500 mt-0.5">STK push to your phone — instant</p>
+                  </div>
+                  <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">Popular</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 p-3 bg-gray-50 border border-dashed border-gray-200 rounded-xl text-xs text-gray-500">
+                  <Globe className="h-4 w-4 flex-shrink-0" />
+                  M-Pesa isn't available for USD — switch to KES above to pay by M-Pesa, or continue with card below.
                 </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">M-Pesa</p>
-                  <p className="text-xs text-gray-500 mt-0.5">STK push to your phone — instant</p>
-                </div>
-                <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">Popular</span>
-              </button>
+              )}
 
-              <button onClick={() => setStep('bank')}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50/40 transition-all group text-left">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-100 group-hover:scale-105 transition-transform">
-                  <Globe className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">Bank Transfer</p>
-                  <p className="text-xs text-gray-500 mt-0.5">EFT / wire — 1–2 business days</p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-gray-400" />
-              </button>
-
+             
               <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl text-xs text-blue-700">
                 <Shield className="h-4 w-4 flex-shrink-0" />
                 All payments are encrypted and processed securely.
