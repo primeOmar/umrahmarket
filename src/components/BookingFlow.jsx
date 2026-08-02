@@ -118,6 +118,13 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   const [fxLoading, setFxLoading] = useState(true);
   const [fxError,   setFxError]   = useState(false);
   const [currency,  setCurrency]  = useState('KES');  // 'KES' | 'USD'
+  // Currency must be an explicit, deliberate choice — not a silently-applied
+  // default. Gates entry to 'select': the client can't reach the payment
+  // method screen until they've actively tapped KES or USD on the dedicated
+  // 'currency' step (see checkPassportBatch below). The small pill toggle in
+  // the header is only shown once this is true, so it reads as "change your
+  // mind" rather than a way to bypass the initial prompt.
+  const [currencyConfirmed, setCurrencyConfirmed] = useState(false);
 
   const pollRef   = useRef(null);
   const unmounted = useRef(false);
@@ -158,7 +165,13 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
         setStep('passport');
       } else if (pending.step === 'passport-check') {
         setStep('passport-check');
+      } else if (pending.step === 'currency') {
+        setStep('currency');
       } else if (pending.step === 'select') {
+        // Reaching 'select' in the prior session means they already got
+        // past the currency gate — don't re-ask, and un-hide the header's
+        // "change currency" toggle to match.
+        setCurrencyConfirmed(true);
         setStep('select');
       } else if (pending.step === 'travelers') {
         setStep('travelers');
@@ -207,7 +220,10 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     try {
       const data = await getPassportStatusBatch(pkg.id, queue.length);
       if (data?.allCanProceed) {
-        setStep('select');
+        // Currency is a one-time, explicit choice per booking — once made,
+        // later re-runs of this check (e.g. after editing traveler counts)
+        // go straight back to 'select' instead of re-prompting.
+        setStep(currencyConfirmed ? 'select' : 'currency');
         return;
       }
       const nextIdx = Number.isInteger(data?.nextIncompleteIndex) ? data.nextIncompleteIndex : 0;
@@ -226,7 +242,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       // and let the user retry rather than silently granting/denying access.
       setStep('passport-check-error');
     }
-  }, [pkg.id, user, onClose, onRequireAuth]);
+  }, [pkg.id, user, onClose, onRequireAuth, currencyConfirmed]);
 
   // Called when a single traveler's passport just came back verified/
   // manual_review — advances to the next unverified traveler in the queue,
@@ -372,6 +388,16 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       setStep('select');
     }
   }, [currency, step]);
+
+  // The only way currencyConfirmed ever becomes true — tapping one of the
+  // two cards on the dedicated 'currency' step. Selecting IS continuing:
+  // there's no separate "confirm" tap, matching how every other choice in
+  // this flow (payment method, etc.) already works.
+  const chooseCurrency = (c) => {
+    setCurrency(c);
+    setCurrencyConfirmed(true);
+    setStep('select');
+  };
 
   // ── CARD (Pesapal Hosted Checkout) ────────────────────────────────────────
   // Flow:
@@ -700,7 +726,12 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
               </div>
             </div>
 
-            {/* currency toggle + live rate status */}
+            {/* currency toggle + live rate status — only shown once the
+                client has made the initial explicit choice on the
+                'currency' step below; before that, this small pill isn't
+                shown at all so there's no way to quietly bypass the big,
+                deliberate prompt with something easy to miss. */}
+            {currencyConfirmed && (
             <div className="flex items-center justify-between">
               <div className="inline-flex bg-gray-200/70 rounded-lg p-0.5">
                 {['KES', 'USD'].map(c => (
@@ -729,6 +760,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                 <span className="text-[11px] text-gray-400">1 USD ≈ {fmt(fxRate)} KES</span>
               )}
             </div>
+            )}
           </div>
         )}
 
@@ -843,6 +875,59 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
             </div>
           )}
 
+          {/* ══ CURRENCY — mandatory, explicit choice ══
+              Reached once (per booking) right after passport verification
+              clears. There's no pre-selected default and no way to fall
+              through to payment methods without tapping one of these — see
+              chooseCurrency() and checkPassportBatch() above. */}
+          {step === 'currency' && (
+            <div className="space-y-3">
+              <div className="text-center mb-1">
+                <p className="text-base font-bold text-gray-900">How would you like to pay?</p>
+                <p className="text-xs text-gray-500 mt-1">Choose a currency to continue — you can switch it later if you need to.</p>
+              </div>
+
+              <button
+                onClick={() => chooseCurrency('KES')}
+                className="w-full flex items-center justify-between gap-3 p-4 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition-all text-left"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-gray-900 text-sm">Kenyan Shillings</p>
+                    <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">M-Pesa or Card</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {fxLoading ? 'Loading price…' : fmtKes(totalUSD)}
+                  </p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
+              </button>
+
+              <button
+                onClick={() => chooseCurrency('USD')}
+                className="w-full flex items-center justify-between gap-3 p-4 rounded-2xl border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50/40 transition-all text-left"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-gray-900 text-sm">US Dollars</p>
+                    <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">Card only</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{fmtUsd(totalUSD)}</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
+              </button>
+
+              {!fxLoading && fxRate && (
+                <p className="text-[11px] text-gray-400 text-center pt-1">1 USD ≈ {fmt(fxRate)} KES · live rate</p>
+              )}
+              {!fxLoading && fxError && !fxRate && (
+                <button onClick={fetchFxRate} className="text-[11px] text-red-500 underline block mx-auto">
+                  Rate unavailable — retry
+                </button>
+              )}
+            </div>
+          )}
+
           {/* ══ SELECT METHOD ══ */}
           {step === 'select' && (
             <div className="space-y-3">
@@ -886,7 +971,18 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                 </div>
               )}
 
-             
+              <button onClick={() => setStep('bank')}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50/40 transition-all group text-left">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-100 group-hover:scale-105 transition-transform">
+                  <Globe className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900 text-sm">Bank Transfer</p>
+                  <p className="text-xs text-gray-500 mt-0.5">EFT / wire — 1–2 business days</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+              </button>
+
               <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl text-xs text-blue-700">
                 <Shield className="h-4 w-4 flex-shrink-0" />
                 All payments are encrypted and processed securely.
