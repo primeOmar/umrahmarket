@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield, ShieldCheck, ArrowLeft, X, ScanLine,
-  Building2, Landmark, FileCheck, BadgeCheck, Radio,
+  Building2, Landmark, FileCheck, BadgeCheck, Store,
   ExternalLink, Copy, Check,
 } from 'lucide-react';
 import Header from './Header';
@@ -14,8 +14,8 @@ const DOCUMENTS = [
     icon: Building2,
     title: 'Certificate of Incorporation',
     issuer: 'Registrar of Companies, Kenya',
-    number: 'PVT-XXXXXX',
-    issued: '2020',
+    number: 'PVT-7V7SB9Z',
+    issued: '2026',
     status: 'Active',
     verify: {
       type: 'portal',
@@ -53,8 +53,8 @@ const DOCUMENTS = [
     icon: FileCheck,
     title: 'Tax Compliance Certificate',
     issuer: 'Kenya Revenue Authority (KRA)',
-    number: 'P051890766M',
-    issued: '2020',
+    number: 'P052564055L',
+    issued: '2026',
     status: 'Active',
     verify: {
       type: 'portal',
@@ -73,7 +73,7 @@ const DOCUMENTS = [
     title: 'Ministry of Hajj Recognition',
     issuer: 'Saudi Ministry of Hajj & Umrah',
     number: 'MH/KE/2021/0034',
-    issued: '2021',
+    issued: '2026',
     status: 'Active',
     verify: {
       type: 'manual',
@@ -84,21 +84,21 @@ const DOCUMENTS = [
     },
   },
   {
-    id: 'ca-licence',
-    icon: Radio,
-    title: 'Communications Licence',
-    issuer: 'Communications Authority of Kenya',
-    number: 'CA/DD/ICT/0298/2022',
-    issued: '2022',
+    id: 'nairobi-trade-licence',
+    icon: Store,
+    title: 'Unified Business Permit (Trade Licence)',
+    issuer: 'Nairobi City County',
+    number: 'UBP430395',
+    issued: '2026',
     status: 'Active',
     verify: {
       type: 'portal',
-      portalUrl: 'https://ca.go.ke',
-      portalLabel: 'ca.go.ke',
+      portalUrl: 'https://nairobiservices.go.ke',
+      portalLabel: 'nairobiservices.go.ke',
       steps: [
-        'Go to the Communications Authority of Kenya\u2019s licensee register.',
-        'Search using the licence number shown above.',
-        'Confirm the licensee name and status match this certificate.',
+        'Scan the E-Verify QR code printed on the permit, or go to nairobiservices.go.ke directly.',
+        'Enter the licence number shown above.',
+        'Confirm the business name, Umrah Market Limited, and permit status match this certificate.',
       ],
     },
   },
