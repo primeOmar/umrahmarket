@@ -137,7 +137,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     setFxError(false);
     try {
       const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
-      const r    = await fetch(apiBase + '/fx/rate');
+      const r    = await fetch(apiBase + '/api/fx/rate');
       const json = await r.json();
       if (!json?.success) throw new Error(json?.message || 'Rate fetch failed');
       setFxRate(json.usdKes);

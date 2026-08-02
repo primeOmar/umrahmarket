@@ -14,7 +14,7 @@ export function useFxRate() {
   useEffect(() => {
     if (_cache) return; // already fetched this session
     let alive = true;
-    fetch(`${API}/fx/rate`, { credentials: 'include' })
+    fetch(`${API}/api/fx/rate`, { credentials: 'include' })
       .then(r => r.json())
       .then(json => {
         if (!alive) return;
