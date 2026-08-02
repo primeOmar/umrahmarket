@@ -962,7 +962,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
               {/* M-Pesa only settles in KES (Safaricom requirement) — hidden
                   when the client has chosen to pay in USD. They still see
                   why, rather than the option just silently disappearing. */}
-              {currency === 'KES' ? (
+             {/*  {currency === 'KES' ? (
                 <button onClick={() => setStep('mpesa')}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-green-400 hover:bg-green-50/40 transition-all group text-left">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center flex-shrink-0 shadow-lg shadow-green-100 group-hover:scale-105 transition-transform">
@@ -979,7 +979,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                   <Globe className="h-4 w-4 flex-shrink-0" />
                   M-Pesa isn't available for USD — switch to KES above to pay by M-Pesa, or continue with card below.
                 </div>
-              )}
+              )} */}
 
               
 

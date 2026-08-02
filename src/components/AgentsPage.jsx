@@ -43,7 +43,10 @@ const AgentsPage = () => {
     try {
       const res = await request({ method: 'get', url: '/agents' });
       const list = Array.isArray(res.data) ? res.data : (res.data?.agents || []);
-      setAgents(list);
+      const verifiedOnly = list.filter(
+        (a) => a.verificationStatus === 'verified' || a.verificationStatus === 'approved'
+      );
+      setAgents(verifiedOnly);
     } catch (err) {
       setError(err.message || 'Failed to load agents');
     } finally {
