@@ -971,17 +971,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                 </div>
               )}
 
-              <button onClick={() => setStep('bank')}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50/40 transition-all group text-left">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-100 group-hover:scale-105 transition-transform">
-                  <Globe className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">Bank Transfer</p>
-                  <p className="text-xs text-gray-500 mt-0.5">EFT / wire — 1–2 business days</p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-gray-400" />
-              </button>
+              
 
               <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl text-xs text-blue-700">
                 <Shield className="h-4 w-4 flex-shrink-0" />
