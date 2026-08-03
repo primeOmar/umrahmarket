@@ -261,7 +261,7 @@ const AgentsPage = () => {
       </div>
 
       {/* Reviews */}
-      <div className="bg-white border-t border-gray-100">
+      {/* <div className="bg-white border-t border-gray-100">
         <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24 sm:pb-10">
           <div className="flex items-center gap-2 mb-1">
             <Star className="h-5 w-5 text-emerald-600" />
@@ -309,7 +309,7 @@ const AgentsPage = () => {
             </div>
           )}
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };
