@@ -6,6 +6,18 @@ const API_BASE  = (process.env.API_BASE || 'https://your-backend.onrender.com').
 const SITE_URL  = 'https://www.umrahmarket.net';
 const FALLBACK_IMAGE = `${SITE_URL}/og-default.jpg`;
 
+function toSlug(value = '') {
+  const text = String(value)
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+  return text || 'umrah-package';
+}
+
 function escapeHtml(str = '') {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -19,6 +31,7 @@ function escapeHtml(str = '') {
 // applied to the RAW package object returned by GET /api/packages/:id
 function buildMeta(pkg, id) {
   const title = pkg.name || pkg.title || 'Umrah Package';
+  const slug = toSlug(title);
 
   const price = pkg.price ? `$${Number(pkg.price).toLocaleString('en-US')}` : '';
   const distance = pkg.makkah_hotel_distance
@@ -50,12 +63,14 @@ function buildMeta(pkg, id) {
     title: price ? `${title} — from ${price}/person` : title,
     description: description || 'Compare verified Umrah and Hajj packages from trusted travel agents.',
     image,
-    url: `${SITE_URL}/package/${id}`,
+    url: `${SITE_URL}/umra-package/${slug}/${id}`,
   };
 }
 
 export default async function handler(req, res) {
-  const id = req.query.id || req.url.split('/package/')[1]?.split(/[?#]/)[0];
+  const id = req.query.id
+    || req.url.split('/package/')[1]?.split(/[?#]/)[0]
+    || req.url.split('/umra-package/')[1]?.split('/')[1]?.split(/[?#]/)[0];
 
   const indexPath = path.join(process.cwd(), 'dist', 'index.html');
   let html;
@@ -71,7 +86,7 @@ export default async function handler(req, res) {
     title: 'UmrahMarket — Verified Umrah & Hajj Packages',
     description: 'Compare verified Umrah and Hajj packages from trusted travel agents.',
     image: FALLBACK_IMAGE,
-    url: `${SITE_URL}/package/${id || ''}`,
+    url: `${SITE_URL}${id ? `/umra-package/umrah-package/${id}` : ''}`,
   };
 
   if (id) {

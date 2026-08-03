@@ -306,7 +306,58 @@ function App() {
           } />
 
           {/* Detail */}
+          <Route path="/umra-package/:slug/:id" element={
+            <>
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <PackageDetailPage
+                packages={packages}
+                loading={pkgLoading}
+                favorites={favorites}
+                toggleFavorite={toggleFavorite}
+                currentUser={currentUser}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <Footer />
+            </>
+          } />
+
+          {/* Legacy package routes kept for compatibility */}
           <Route path="/package/:id" element={
+            <>
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <PackageDetailPage
+                packages={packages}
+                loading={pkgLoading}
+                favorites={favorites}
+                toggleFavorite={toggleFavorite}
+                currentUser={currentUser}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <Footer />
+            </>
+          } />
+
+          <Route path="/package/:id/:slug" element={
             <>
               <Header
                 currentUser={currentUser}

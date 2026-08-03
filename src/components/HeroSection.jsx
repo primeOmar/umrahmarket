@@ -7,6 +7,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import AuthModal from './AuthModal';
 import { userStore } from '../api';
+import { createPackagePath } from '../utils/packageSeo';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props:
@@ -45,8 +46,8 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
 
   // NEW: Book Now / View details handler for guests
 // Logic: Details are public - no login required
-  const handleViewDetails = (packageId) => {
-    navigate(`/package/${packageId}`);
+  const handleViewDetails = (packageId, packageTitle) => {
+    navigate(createPackagePath(packageId, packageTitle));
   };
 
   // Logic: Book Now is protected - redirects to dashboard with the ID
@@ -629,10 +630,10 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                   <div
                     key={pkg.id}
                     className="group cursor-pointer"
-                    onClick={() => handleViewDetails(pkg.id)}
+                    onClick={() => handleViewDetails(pkg.id, pkg.title || pkg.name)}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewDetails(pkg.id); } }}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewDetails(pkg.id, pkg.title || pkg.name); } }}
                   >
                     <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-2.5 bg-gray-100">
                       {/* Blurred backdrop — a zoomed, softened copy fills the
@@ -704,7 +705,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                       
                       <div className="mt-2">
                         <button
-                          onClick={e => { e.stopPropagation(); handleViewDetails(pkg.id); }}
+                          onClick={e => { e.stopPropagation(); handleViewDetails(pkg.id, pkg.title || pkg.name); }}
                           className="w-full px-3 py-2 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-md shadow-emerald-600/10 text-center"
                         >
                           View Details

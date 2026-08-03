@@ -1,9 +1,10 @@
 {
-  
-    "rewrites": [
-      { "source": "/(.*)", "destination": "/index.html" }
-    ],
-  
+  "rewrites": [
+    { "source": "/umra-package/:slug/:id", "destination": "/api/package-meta?id=:id" },
+    { "source": "/package/:id/:slug", "destination": "/api/package-meta?id=:id" },
+    { "source": "/package/:id", "destination": "/api/package-meta?id=:id" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
   "functions": {
     "api/package-meta.js": {
       "includeFiles": "dist/index.html"

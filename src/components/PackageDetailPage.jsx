@@ -15,6 +15,7 @@ import BookingFlow from './BookingFlow';
 import PackageVisitTracker from '../visits/PackageVisitTracker';
 import { useFxRate } from '../hooks/useFxRate';
 import Seo from './Seo';
+import { createPackagePath } from '../utils/packageSeo';
 // ─────────────────────────────────────────────────────────────────────────────
 // GalleryCarousel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,8 +275,20 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   }, [id, preloadedPkg]);
 
   const packageData = preloadedPkg ?? fetchedPkg;
+  const packagePath = packageData ? createPackagePath(packageData) : null;
   const readOnlyFromBooking = Boolean(location.state?.fromBooking);
   const bookingContext = location.state?.booking ?? null;
+
+  // Canonicalize URL once package data is known:
+  // - old legacy links (/package/:id or /package/:id/:slug)
+  // - wrong/outdated slug for the same id
+  useEffect(() => {
+    if (!packageData || !packagePath) return;
+    const currentPath = location.pathname;
+    if (currentPath !== packagePath) {
+      navigate(packagePath, { replace: true, state: location.state });
+    }
+  }, [packageData, packagePath, location.pathname, location.state, navigate]);
 
   // Scroll to top whenever the viewed package changes
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [id]);
@@ -312,7 +325,8 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   const handleShare = useCallback(async () => {
     if (!packageData) return;
 
-    const shareUrl = `${window.location.origin}/package/${packageData.id}`;
+    const sharePath = createPackagePath(packageData);
+    const shareUrl = `${window.location.origin}${sharePath}`;
 
     const priceLine = packageData.price ? `from $${formatPrice(packageData.price)}/person` : '';
     const metaBits = [
@@ -469,7 +483,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
     <Seo
       title={`${packageData.title || packageData.name || 'Umrah Package'} | UmrahMarket`}
       description={packageData.description || 'Compare verified Umrah and Hajj packages from trusted travel agents.'}
-      canonical={`${window.location.origin}/package/${packageData.id}`}
+      canonical={`${window.location.origin}${packagePath}`}
       image={safeImages[0]}
       type="product"
       jsonLd={{
@@ -478,13 +492,13 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
         name: packageData.title || packageData.name || 'Umrah Package',
         description: packageData.description || 'Compare verified Umrah and Hajj packages from trusted travel agents.',
         image: safeImages,
-        url: `${window.location.origin}/package/${packageData.id}`,
+        url: `${window.location.origin}${packagePath}`,
         offers: packageData.price ? {
           '@type': 'Offer',
           priceCurrency: 'USD',
           price: String(packageData.price),
           availability: 'https://schema.org/InStock',
-          url: `${window.location.origin}/package/${packageData.id}`,
+          url: `${window.location.origin}${packagePath}`,
         } : undefined,
       }}
     />
@@ -856,7 +870,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                       <span className="text-xl font-bold text-gray-900">${formatPrice(pkg.price)}</span>
                       <span className="text-gray-500 text-sm ml-2">per person</span>
                     </div>
-                    <button onClick={() => navigate(`/package/${pkg.id}`)} className="w-full mt-4 py-2 border border-emerald-600 text-emerald-600 font-medium rounded-lg hover:bg-emerald-50 transition-colors">
+                    <button onClick={() => navigate(createPackagePath(pkg))} className="w-full mt-4 py-2 border border-emerald-600 text-emerald-600 font-medium rounded-lg hover:bg-emerald-50 transition-colors">
                       View details
                     </button>
                   </div>

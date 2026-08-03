@@ -25,6 +25,7 @@ import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
 import EmailVerificationBanner from './EmailVerificationBanner';
 import { isEmailVerified } from '../utils/emailVerification';
+import { createPackagePath } from '../utils/packageSeo';
 
 // A package's `location` is one of three coverage tiers set by the agent in
 // CreatePackageModal ("Primary Location"), not a single free-text city —
@@ -1489,8 +1490,8 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
               key={pkg.id}
               pkg={pkg}
               darkMode={darkMode}
-              onView={onPackageSelect || (p => navigate(`/package/${p.id}`))}
-              onBook={onBook || (p => navigate(`/package/${p.id}`))}
+              onView={onPackageSelect || (p => navigate(createPackagePath(p)))}
+              onBook={onBook || (p => navigate(createPackagePath(p)))}
               isFav={favorites.some(f => String(f.id) === String(pkg.id))}
               onToggleFav={onToggleFav}
               isBooked={isPackageBooked(pkg.id)}
@@ -1500,7 +1501,7 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
       ) : (
         <div className="space-y-3">
           {filteredAndSorted.map(pkg => (
-            <div key={pkg.id} onClick={() => onPackageSelect?.(pkg) || navigate(`/package/${pkg.id}`)} className={`flex rounded-2xl overflow-hidden border cursor-pointer transition-all hover:shadow-md ${
+            <div key={pkg.id} onClick={() => onPackageSelect?.(pkg) || navigate(createPackagePath(pkg))} className={`flex rounded-2xl overflow-hidden border cursor-pointer transition-all hover:shadow-md ${
               darkMode ? 'bg-gray-800 border-gray-700 hover:border-emerald-600' : 'bg-white border-gray-100 hover:border-emerald-300'
             }`}>
               <div className="w-32 h-28 flex-shrink-0 overflow-hidden relative">
@@ -1905,7 +1906,7 @@ const ClientDashboard = ({ user, onLogout }) => {
 
   const [bookingPkg, setBookingPkg] = useState(null);
 
-  const handleViewPackage = (pkg) => navigate(`/package/${pkg.id}`);
+  const handleViewPackage = (pkg) => navigate(createPackagePath(pkg));
   const handleBookPackage = useCallback(async (pkg) => {
     if (!user?.id) {
       showToast('Your session has expired. Please sign in to book.', 'error');
@@ -1929,7 +1930,7 @@ const ClientDashboard = ({ user, onLogout }) => {
     setBookingPkg(pkg);
   }, [bookings, navigate, onLogout, showToast, user?.id]);
   const handleViewBooking = (booking) => navigate(
-    `/package/${booking.package_id ?? booking.package?.id}`,
+    createPackagePath(booking.package_id ?? booking.package?.id, booking.package?.name || booking.package?.title),
     { state: { fromBooking: true, booking } }
   );
   const handleAddTraveler = useCallback((booking) => {
