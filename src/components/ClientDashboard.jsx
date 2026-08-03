@@ -1962,11 +1962,21 @@ const ClientDashboard = ({ user, onLogout }) => {
     showToast('Add another traveler for this package.', 'info');
   }, [showToast]);
 
+  // Attempts the "continue an unfinished booking" resume exactly once per
+  // dashboard mount. Without resumeAttemptedRef, this effect re-runs every
+  // time bookingPkg changes — including the moment the user closes
+  // BookingFlow (bookingPkg: pkg → null) — which would read the still-there
+  // persisted flow and immediately reopen the exact booking they just
+  // closed, in a loop the user could never escape.
+  const resumeAttemptedRef = useRef(false);
   useEffect(() => {
+    if (resumeAttemptedRef.current) return;
     if (!user?.id || bookingPkg) return;
+    if (!availablePackages?.length) return; // wait for packages before deciding — but don't mark "attempted" yet
+    resumeAttemptedRef.current = true;       // one decision per mount, whatever the outcome
     const pending = readPendingBookingFlow(user.id);
     if (!pending?.packageId) return;
-    const pendingPkg = availablePackages?.find((candidate) => String(candidate.id) === String(pending.packageId));
+    const pendingPkg = availablePackages.find((candidate) => String(candidate.id) === String(pending.packageId));
     if (!pendingPkg) return;
     showToast(`We found your unfinished booking for ${pending.packageTitle || 'this package'}. Continuing from where you left off.`, 'info');
     handleBookPackage(pendingPkg);

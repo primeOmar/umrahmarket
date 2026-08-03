@@ -315,9 +315,19 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   }, [step]);
 
   const handleClose = useCallback(() => {
-    if (step === 'success') onSuccess?.(successBooking);
+    if (step === 'success') {
+      onSuccess?.(successBooking);
+    } else {
+      // Any explicit close before payment actually starts is the user
+      // abandoning this attempt — clear the resume data so ClientDashboard's
+      // "continue where you left off" effect doesn't immediately reopen the
+      // exact booking they just closed. (The 'success' branch above already
+      // has this cleared by the persistence effect once step became
+      // 'success', so it's skipped here to avoid a redundant call.)
+      if (user?.id) clearPendingBookingFlow(user.id);
+    }
     onClose?.();
-  }, [step, successBooking, onSuccess, onClose]);
+  }, [step, successBooking, onSuccess, onClose, user?.id]);
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape' && canClose) handleClose(); };
