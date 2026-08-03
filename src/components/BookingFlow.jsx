@@ -67,12 +67,13 @@ const Field = ({ label, error, children }) => (
 const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
   // step machine:
+  // 'agent-blocked' (agents can't book — sell packages, not buy them) →
   // 'travelers' (pick counts) → 'passport-check' (loading, checks EVERY
   //   traveler at once) → 'passport' (current traveler in travelerQueue needs
   //   verification, repeats until all are done) → 'select' → 'card' | 'mpesa' | 'bank'
   // any method → 'processing' → 'success' | 'error'
   // 'mpesa' → 'polling' → 'success' | 'error'
-  const [step,     setStep]     = useState('travelers');
+  const [step,     setStep]     = useState(() => (user?.role === 'agent' ? 'agent-blocked' : 'travelers'));
   const [errorMsg, setErrorMsg] = useState('');
 
   // travelers — how many people this booking is for, broken down by age
@@ -206,6 +207,16 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       onRequireAuth?.();
     }
   }, [user, onClose, onRequireAuth]);
+
+  // Defense-in-depth, same reasoning as the guard above: callers should
+  // already keep agents from ever reaching "Book Now", but if `user`
+  // resolves or changes to an agent after this component is already
+  // mounted, don't let a stale 'travelers' step slip through.
+  useEffect(() => {
+    if (user?.role === 'agent' && step !== 'agent-blocked') {
+      setStep('agent-blocked');
+    }
+  }, [user?.role, step]);
 
   // Passport must be verified for EVERY traveler on THIS booking before
   // payment is allowed — not just the account holder's own passport. Only
@@ -700,7 +711,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
         </div>
 
         {/* package summary */}
-        {step !== 'success' && (
+        {step !== 'success' && step !== 'agent-blocked' && (
           <div className="px-5 py-3 bg-gray-50 border-b flex-shrink-0 space-y-2">
             <div className="flex items-center gap-3">
               <img src={pkg.image} alt={pkg.title} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
@@ -766,6 +777,28 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
         {/* scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-5">
+
+          {/* ══ AGENT BLOCKED — agents sell packages, they don't book them ══ */}
+          {step === 'agent-blocked' && (
+            <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+              <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
+                <Shield className="h-7 w-7 text-amber-600" />
+              </div>
+              <div>
+                <p className="font-bold text-gray-900">Agent accounts can't book packages</p>
+                <p className="text-sm text-gray-500 mt-1 max-w-xs">
+                  You're signed in as an agent. Booking is only available on client
+                  accounts — this account is for listing and managing your own
+                  packages.
+                </p>
+              </div>
+              <button onClick={handleClose}
+                className="w-full max-w-xs py-3 font-bold text-white rounded-xl"
+                style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
+                Got it
+              </button>
+            </div>
+          )}
 
           {/* ══ PASSPORT CHECK (loading) ══ */}
           {step === 'passport-check' && (

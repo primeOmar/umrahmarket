@@ -1773,6 +1773,17 @@ const ClientDashboard = ({ user, onLogout }) => {
     }
   }, [user?.id, navigate]);
 
+  // ── Role guard: agents manage/sell packages, they don't book them.
+  // Bounces them to their own dashboard so an agent account can never sit
+  // inside the client experience — whether they land here via a stale
+  // link, a shared /client/dashboard URL, or HeroSection's "Book Now"
+  // handler (which navigates here without checking role first).
+  useEffect(() => {
+    if (user?.role === 'agent') {
+      navigate('/agent/dashboard', { replace: true });
+    }
+  }, [user?.role, navigate]);
+
   const refreshEmailStatus = async () => {
     try {
       const res = await request({ method: 'get', url: '/auth/me' });
@@ -2273,6 +2284,11 @@ const ClientDashboard = ({ user, onLogout }) => {
       default: return null;
     }
   };
+
+  // Placed after every hook above (rules-of-hooks), right before the render
+  // — the effect above fires the actual navigate(), this just stops an
+  // agent's browser from painting the client dashboard for a frame first.
+  if (user?.role === 'agent') return null;
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>

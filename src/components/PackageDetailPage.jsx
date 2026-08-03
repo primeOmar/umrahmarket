@@ -4,8 +4,8 @@ import {
   MapPin, Calendar, Users, Hotel, Clock, DollarSign,
   Wifi, Coffee, Car, Dumbbell, Utensils, Tv, Wind,
   Droplets, Bed, Bath, Users as UsersIcon, Maximize2,
-  Minus, Plus, Phone, Mail, CreditCard,
-  Lock, User, Globe, Info, X, Loader2, AlertCircle
+  Phone, Mail,
+  User, Info, X, Loader2, AlertCircle
 } from 'lucide-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { userStore, tokenStore } from '../api';
@@ -354,24 +354,13 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [showAllAmenities, setShowAllAmenities] = useState(false);
-  const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingPkg,      setBookingPkg]      = useState(null);
   const [showAuthModal,    setShowAuthModal]    = useState(false);
-  const [payStep,          setPayStep]          = useState('select');   // 'select' | 'card' | 'mpesa' | 'mpesa-pin' | 'bank' | 'processing' | 'done'
-  const [payMethod,        setPayMethod]        = useState(null);
-  const [cardInfo,         setCardInfo]         = useState({ number: '', expiry: '', cvc: '', name: '' });
-  const [mpesaPhone,       setMpesaPhone]       = useState('');
-  const [mpesaPin,         setMpesaPin]         = useState(['', '', '', '']);
-  const [guests,           setGuests]           = useState({ adults: 1, children: 0 });
-
-  const pinRefs = [useRef(), useRef(), useRef(), useRef()];
 
   // Stores the fact that a guest tried to favourite this package before being
   // sent to login — mirrors HeroSection's pendingFavouriteId pattern so the
   // action resumes automatically once they authenticate.
   const pendingFavouriteRef = useRef(false);
-
-  const closeModal = () => { setShowBookingModal(false); setPayStep('select'); setPayMethod(null); setCardInfo({ number: '', expiry: '', cvc: '', name: '' }); setMpesaPhone(''); setMpesaPin(['', '', '', '']); };
 
   // When onBook prop is provided (from ClientDashboard), delegate upward.
   // When used standalone (direct URL), open the local BookingModal.
@@ -386,7 +375,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   // "Book Now" / favourite click so the check can never drift between spots.
   const isLoggedIn = () => !!(currentUser || userStore.get() || tokenStore.get());
   const formatPrice  = (p) => Number(p).toLocaleString('en-US');
-  const calculateTotal = () => !packageData ? 0 : guests.adults * packageData.price + guests.children * packageData.price * 0.5;
 
   const getAge = (rawDob) => {
     if (!rawDob) return null;
@@ -427,28 +415,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
       };
     });
   }, [bookingContext]);
-
-  // Format card number with spaces
-  const fmtCard = (v) => v.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim();
-  // Format expiry MM/YY
-  const fmtExpiry = (v) => { const d = v.replace(/\D/g, '').slice(0, 4); return d.length > 2 ? `${d.slice(0,2)}/${d.slice(2)}` : d; };
-
-  // M-Pesa PIN input handler
-  const handlePinInput = (i, val) => {
-    if (!/^\d?$/.test(val)) return;
-    const next = [...mpesaPin]; next[i] = val;
-    setMpesaPin(next);
-    if (val && i < 3) pinRefs[i + 1].current?.focus();
-  };
-  const handlePinKey = (i, e) => {
-    if (e.key === 'Backspace' && !mpesaPin[i] && i > 0) pinRefs[i - 1].current?.focus();
-  };
-
-  const simulatePayment = () => {
-    setPayMethod(payStep === 'mpesa-pin' ? 'mpesa' : payStep);
-    setPayStep('processing');
-    setTimeout(() => setPayStep('done'), 3000);
-  };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -866,51 +832,31 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                   </div>
                 </div>
 
-                {/* Guests */}
-                <div className="space-y-4 mb-6">
+                {/* Per-traveler pricing — real price_tiers from the database.
+                    Traveler counts and the actual total are picked in the
+                    next step (BookingFlow), which is the single source of
+                    truth for both — this just previews what each tier costs. */}
+                <div className="space-y-2 mb-6">
                   {[
-                    { key: 'adults',   label: 'Adults',   sub: 'Age 12+',   min: 1, price: packageData.price },
-                    { key: 'children', label: 'Children', sub: 'Ages 2–11', min: 0, price: packageData.price * 0.5 },
-                  ].map(({ key, label, sub, min, price }) => (
-                    <div key={key} className="bg-gray-50 p-4 rounded-xl flex items-center justify-between">
+                    { key: 'adult',       label: 'Adults',         sub: '12+ yrs' },
+                    { key: 'child',       label: 'Children',       sub: '7–11 yrs' },
+                    { key: 'minor_child', label: 'Young children', sub: '2–6 yrs' },
+                    { key: 'infant',      label: 'Infants',        sub: 'Under 2 yrs' },
+                  ].map(({ key, label, sub }) => (
+                    <div key={key} className="bg-gray-50 px-4 py-3 rounded-xl flex items-center justify-between">
                       <div>
                         <div className="font-semibold text-gray-900 flex items-center gap-2"><User className="h-4 w-4 text-emerald-600" />{label}</div>
-                        <div className="text-sm text-gray-500">{sub} · ${formatPrice(price)}/person</div>
+                        <div className="text-xs text-gray-500">{sub}</div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <button onClick={() => setGuests(prev => ({ ...prev, [key]: Math.max(min, prev[key] - 1) }))}
-                          className="w-9 h-9 flex items-center justify-center border border-gray-300 bg-white rounded-full hover:border-emerald-500 transition-all">
-                          <Minus className="h-4 w-4 text-gray-600" />
-                        </button>
-                        <span className="font-bold text-xl text-gray-900 w-6 text-center">{guests[key]}</span>
-                        <button onClick={() => setGuests(prev => ({ ...prev, [key]: prev[key] + 1 }))}
-                          className="w-9 h-9 flex items-center justify-center border border-gray-300 bg-white rounded-full hover:border-emerald-500 transition-all">
-                          <Plus className="h-4 w-4 text-gray-600" />
-                        </button>
-                      </div>
+                      <div className="font-bold text-gray-900">${formatPrice(packageData.priceTiers?.[key] ?? packageData.price)}</div>
                     </div>
                   ))}
                 </div>
 
-                {/* Summary */}
-                <div className="border-t border-gray-200 pt-5 mb-6 space-y-2">
-                  {guests.adults > 0 && <div className="flex justify-between text-sm text-gray-700"><span>Adults × {guests.adults}</span><span>${formatPrice(packageData.price * guests.adults)}</span></div>}
-                  {guests.children > 0 && <div className="flex justify-between text-sm text-gray-700"><span>Children × {guests.children}</span><span>${formatPrice(packageData.price * 0.5 * guests.children)}</span></div>}
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 space-y-1">
-                    {['All taxes & fees included','No hidden charges','Verified package'].map(t => (
-                      <div key={t} className="flex items-center text-xs text-emerald-700 gap-2"><CheckCircle className="h-3 w-3 flex-shrink-0" />{t}</div>
-                    ))}
-                  </div>
-                  <div className="border-t border-gray-300 pt-4 flex justify-between items-center">
-                    <div>
-                      <div className="font-bold text-lg text-gray-900">Total</div>
-                      <div className="text-xs text-gray-500">{guests.adults + guests.children} traveler{guests.adults + guests.children !== 1 ? 's' : ''}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-2xl text-gray-900">${formatPrice(calculateTotal())}</div>
-                      <div className="text-xs text-gray-500">Final price</div>
-                    </div>
-                  </div>
+                <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 space-y-1 mb-6">
+                  {['All taxes & fees included','No hidden charges','Verified package'].map(t => (
+                    <div key={t} className="flex items-center text-xs text-emerald-700 gap-2"><CheckCircle className="h-3 w-3 flex-shrink-0" />{t}</div>
+                  ))}
                 </div>
 
                 <button
@@ -922,7 +868,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                     }
                   }}
                   className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold rounded-xl hover:shadow-xl hover:scale-[1.02] transform transition-all duration-300">
-                  Book Now · ${formatPrice(calculateTotal())}
+                  Book Now
                 </button>
 
                 <div className="mt-6 pt-6 border-t border-gray-200 grid grid-cols-2 gap-4 text-center">
@@ -968,364 +914,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
           </div>
         )}
       </main>
-      {/* ── Payment Modal ── */}
-      {showBookingModal && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4"
-             style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
-          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl"
-               style={{ maxHeight: '95vh', overflowY: 'auto' }}>
-
-            {/* ── Header ── */}
-            <div className="sticky top-0 bg-white z-10 px-6 pt-5 pb-4 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {payStep !== 'select' && payStep !== 'done' && payStep !== 'processing' && (
-                    <button onClick={() => setPayStep('select')}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition">
-                      <ChevronLeft className="h-4 w-4 text-gray-600" />
-                    </button>
-                  )}
-                  <div>
-                    <h2 className="font-bold text-gray-900 text-lg leading-tight">
-                      {payStep === 'select'      && 'Choose payment'}
-                      {payStep === 'card'        && 'Card details'}
-                      {payStep === 'mpesa'       && 'M-Pesa payment'}
-                      {payStep === 'mpesa-pin'   && 'Enter M-Pesa PIN'}
-                      {payStep === 'bank'        && 'Bank transfer'}
-                      {payStep === 'processing'  && 'Processing…'}
-                      {payStep === 'done'        && 'Payment confirmed!'}
-                    </h2>
-                    {payStep !== 'done' && payStep !== 'processing' && (
-                      <p className="text-xs text-gray-500 mt-0.5">Total: <span className="font-semibold text-emerald-600">${formatPrice(calculateTotal())}</span></p>
-                    )}
-                  </div>
-                </div>
-                <button onClick={closeModal}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition">
-                  <X className="h-4 w-4 text-gray-600" />
-                </button>
-              </div>
-
-              {/* Security badge */}
-              {payStep !== 'done' && payStep !== 'processing' && (
-                <div className="mt-3 flex items-center gap-1.5 text-xs text-gray-500">
-                  <Lock className="h-3 w-3 text-emerald-600" />
-                  <span>256-bit SSL encrypted · PCI DSS compliant</span>
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-5">
-
-              {/* ── Order summary pill ── */}
-              {payStep !== 'done' && payStep !== 'processing' && (
-                <div className="mb-5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 p-4 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0">
-                    <img src={safeImages[0]} alt={packageData?.title} className="w-full h-full object-cover" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900 text-sm truncate">{packageData?.title}</div>
-                    <div className="text-xs text-gray-500">{guests.adults} adult{guests.adults !== 1 ? 's' : ''}{guests.children > 0 ? ` · ${guests.children} child${guests.children !== 1 ? 'ren' : ''}` : ''}</div>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="font-bold text-gray-900">${formatPrice(calculateTotal())}</div>
-                    <div className="text-xs text-gray-500">incl. tax</div>
-                  </div>
-                </div>
-              )}
-
-              {/* ══ STEP: SELECT METHOD ══ */}
-              {payStep === 'select' && (
-                <div className="space-y-3">
-                  {/* Card */}
-                  <button onClick={() => setPayStep('card')}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition-all duration-200 group text-left">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-200 group-hover:scale-105 transition-transform">
-                      <CreditCard className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-gray-900">Credit / Debit Card</div>
-                      <div className="text-xs text-gray-500 mt-0.5">Visa, Mastercard, Amex — instant</div>
-                    </div>
-                    <div className="flex gap-1">
-                      {['#1A1F71','#EB001B','#F79E1B'].map((c,i) => (
-                        <div key={i} className="w-7 h-5 rounded" style={{ background: i === 2 ? 'linear-gradient(135deg,#EB001B,#F79E1B)' : c, opacity: 0.85 }} />
-                      ))}
-                    </div>
-                  </button>
-
-                  {/* M-Pesa */}
-                  <button onClick={() => setPayStep('mpesa')}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-green-400 hover:bg-green-50/40 transition-all duration-200 group text-left">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center flex-shrink-0 shadow-lg shadow-green-200 group-hover:scale-105 transition-transform">
-                      <span className="text-white font-black text-xs leading-none text-center">M<br/>PESA</span>
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-gray-900">M-Pesa</div>
-                      <div className="text-xs text-gray-500 mt-0.5">STK push to your phone — instant</div>
-                    </div>
-                    <div className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">Popular</div>
-                  </button>
-
-                  {/* Bank */}
-                  <button onClick={() => setPayStep('bank')}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50/40 transition-all duration-200 group text-left">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-200 group-hover:scale-105 transition-transform">
-                      <Globe className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-gray-900">Bank Transfer</div>
-                      <div className="text-xs text-gray-500 mt-0.5">EFT / wire — 1–2 business days</div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-gray-400" />
-                  </button>
-                </div>
-              )}
-
-              {/* ══ STEP: CARD ══ */}
-              {payStep === 'card' && (
-                <div className="space-y-4">
-                  {/* Card preview */}
-                  <div className="relative h-44 rounded-2xl overflow-hidden select-none"
-                       style={{ background: 'linear-gradient(135deg,#1a1f71 0%,#2563eb 60%,#0ea5e9 100%)' }}>
-                    <div className="absolute inset-0 opacity-10"
-                         style={{ backgroundImage: 'radial-gradient(circle at 20% 80%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
-                    <div className="absolute top-5 left-5 right-5 flex justify-between items-start">
-                      <div className="w-8 h-6 rounded bg-yellow-300/90" style={{ background: 'linear-gradient(135deg,#fbbf24,#f59e0b)' }} />
-                      <div className="text-white font-black text-lg tracking-wider opacity-90">VISA</div>
-                    </div>
-                    <div className="absolute bottom-5 left-5 right-5">
-                      <div className="text-white/60 text-xs mb-1 font-mono tracking-widest">
-                        {cardInfo.number || '•••• •••• •••• ••••'}
-                      </div>
-                      <div className="flex justify-between items-end mt-2">
-                        <div>
-                          <div className="text-white/50 text-[10px] uppercase tracking-wider">Card holder</div>
-                          <div className="text-white font-semibold text-sm">{cardInfo.name || 'YOUR NAME'}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-white/50 text-[10px] uppercase tracking-wider">Expires</div>
-                          <div className="text-white font-semibold text-sm">{cardInfo.expiry || 'MM/YY'}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Fields */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Card number</label>
-                    <input value={cardInfo.number} onChange={e => setCardInfo(p => ({ ...p, number: fmtCard(e.target.value) }))}
-                      placeholder="1234 5678 9012 3456" inputMode="numeric"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Cardholder name</label>
-                    <input value={cardInfo.name} onChange={e => setCardInfo(p => ({ ...p, name: e.target.value.toUpperCase() }))}
-                      placeholder="AS ON CARD"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none uppercase font-semibold text-gray-900 transition-colors" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Expiry</label>
-                      <input value={cardInfo.expiry} onChange={e => setCardInfo(p => ({ ...p, expiry: fmtExpiry(e.target.value) }))}
-                        placeholder="MM/YY" inputMode="numeric"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">CVC</label>
-                      <input value={cardInfo.cvc} onChange={e => setCardInfo(p => ({ ...p, cvc: e.target.value.replace(/\D/g,'').slice(0,4) }))}
-                        placeholder="•••" inputMode="numeric" type="password"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
-                    </div>
-                  </div>
-
-                  <button onClick={simulatePayment} disabled={!cardInfo.number || !cardInfo.name || !cardInfo.expiry || !cardInfo.cvc}
-                    className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
-                    <Lock className="h-4 w-4" />
-                    Pay ${formatPrice(calculateTotal())} securely
-                  </button>
-                </div>
-              )}
-
-              {/* ══ STEP: MPESA PHONE ══ */}
-              {payStep === 'mpesa' && (
-                <div className="space-y-5">
-                  <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex gap-3 items-start">
-                    <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-black text-[10px] leading-none text-center">M<br/>PESA</span>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-green-900 text-sm">STK Push payment</div>
-                      <div className="text-xs text-green-700 mt-0.5">We'll send a secure prompt to your Safaricom number. You only need to enter your M-Pesa PIN to complete payment.</div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Safaricom number</label>
-                    <div className="flex gap-2">
-                      <div className="flex items-center px-3 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-700 font-semibold text-sm flex-shrink-0">+254</div>
-                      <input value={mpesaPhone} onChange={e => setMpesaPhone(e.target.value.replace(/\D/g,'').slice(0,9))}
-                        placeholder="7XX XXX XXX" inputMode="numeric"
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:ring-0 outline-none font-mono text-gray-900 transition-colors" />
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1.5">e.g. 0712 345 678 → enter 712345678</p>
-                  </div>
-
-                  <button onClick={() => { if (mpesaPhone.length >= 9) setPayStep('mpesa-pin'); }}
-                    disabled={mpesaPhone.length < 9}
-                    className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
-                    Send STK Push
-                  </button>
-                </div>
-              )}
-
-              {/* ══ STEP: MPESA PIN ══ */}
-              {payStep === 'mpesa-pin' && (
-                <div className="space-y-6">
-                  <div className="text-center">
-                    <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
-                      <span className="text-green-700 font-black text-xl">M</span>
-                    </div>
-                    <p className="font-semibold text-gray-900">Prompt sent to</p>
-                    <p className="text-green-700 font-mono font-bold text-lg">+254 {mpesaPhone}</p>
-                    <p className="text-xs text-gray-500 mt-1">Check your phone and enter your M-Pesa PIN below</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide text-center">M-Pesa PIN</label>
-                    <div className="flex gap-3 justify-center">
-                      {mpesaPin.map((digit, i) => (
-                        <input key={i} ref={pinRefs[i]}
-                          type="password" inputMode="numeric" maxLength={1}
-                          value={digit}
-                          onChange={e => handlePinInput(i, e.target.value)}
-                          onKeyDown={e => handlePinKey(i, e)}
-                          className="w-14 h-14 text-center text-2xl font-bold border-2 rounded-2xl outline-none transition-all duration-200 focus:border-green-500 focus:bg-green-50"
-                          style={{ borderColor: digit ? '#16a34a' : undefined }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <button onClick={simulatePayment} disabled={mpesaPin.some(d => !d)}
-                    className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
-                    Confirm payment
-                  </button>
-
-                  <p className="text-center text-xs text-gray-400">
-                    Didn't get the prompt?{' '}
-                    <button onClick={() => setPayStep('mpesa')} className="text-green-700 font-semibold underline">Resend</button>
-                  </p>
-                </div>
-              )}
-
-              {/* ══ STEP: BANK ══ */}
-              {payStep === 'bank' && (
-                <div className="space-y-4">
-                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
-                    Transfer the exact amount below and use your booking reference. Allow <strong>1–2 business days</strong> for processing.
-                  </div>
-
-                  {[
-                    ['Bank name',        'Equity Bank Kenya'],
-                    ['Account name',     'Umrah Market Ltd'],
-                    ['Account number',   '0123456789'],
-                    ['Branch',           'Nairobi, Kenyatta Ave'],
-                    ['Swift / BIC',      'EQBLKENA'],
-                    ['Amount',           `KES ${formatPrice(Math.round(calculateTotal() * 130))}`],
-                    ['Reference',        `UMRAH-${id.slice(0,8).toUpperCase()}`],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
-                      <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{label}</span>
-                      <span className={`font-semibold text-gray-900 text-sm ${label === 'Reference' ? 'font-mono bg-gray-100 px-2 py-0.5 rounded' : ''}`}>{value}</span>
-                    </div>
-                  ))}
-
-                  <button onClick={simulatePayment}
-                    className="w-full py-4 rounded-2xl font-bold text-white text-base mt-2"
-                    style={{ background: 'linear-gradient(135deg,#d97706,#b45309)' }}>
-                    I've made the transfer
-                  </button>
-                </div>
-              )}
-
-              {/* ══ STEP: PROCESSING ══ */}
-              {payStep === 'processing' && (
-                <div className="py-12 flex flex-col items-center gap-4">
-                  <div className="relative w-20 h-20">
-                    <div className="absolute inset-0 rounded-full border-4 border-emerald-100" />
-                    <div className="absolute inset-0 rounded-full border-4 border-emerald-600 border-t-transparent animate-spin" />
-                    <div className="absolute inset-3 rounded-full bg-emerald-50 flex items-center justify-center">
-                      <Lock className="h-5 w-5 text-emerald-600" />
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="font-bold text-gray-900 text-lg">Processing payment…</p>
-                    <p className="text-sm text-gray-500 mt-1">Please don't close this window</p>
-                  </div>
-                  <div className="flex gap-1.5 mt-2">
-                    {[0,1,2].map(i => (
-                      <div key={i} className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce"
-                           style={{ animationDelay: `${i * 0.15}s` }} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ══ STEP: DONE ══ */}
-              {payStep === 'done' && (
-                <div className="py-8 flex flex-col items-center gap-4 text-center">
-                  <div className="relative">
-                    <div className="w-24 h-24 rounded-full bg-emerald-100 flex items-center justify-center">
-                      <CheckCircle className="h-12 w-12 text-emerald-600" />
-                    </div>
-                    <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white border-2 border-emerald-200 flex items-center justify-center">
-                      <span className="text-lg">✨</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-2xl font-bold text-gray-900">All done!</h3>
-                    <p className="text-gray-500 mt-1 text-sm">Your Umrah package is booked. A confirmation has been sent to your email.</p>
-                  </div>
-
-                  <div className="w-full bg-gray-50 rounded-2xl p-4 space-y-2 text-left">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Booking ref</span>
-                      <span className="font-mono font-bold text-gray-900">UMRAH-{id.slice(0,8).toUpperCase()}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Amount paid</span>
-                      <span className="font-bold text-emerald-700">${formatPrice(calculateTotal())}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Method</span>
-                      <span className="font-semibold text-gray-900 capitalize">{payMethod === 'mpesa' ? 'M-Pesa' : payMethod === 'card' ? 'Card' : 'Bank transfer'}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
-                    <button onClick={closeModal}
-                      className="flex-1 py-3 border-2 border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition">
-                      Close
-                    </button>
-                    <button onClick={handleBack}
-                      className="flex-1 py-3 font-bold text-white rounded-xl transition"
-                      style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
-                      Explore more
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Auth gate — shown when guest clicks "Book Now" ── */}
       {/* ── BookingModal — used when standalone (no onBook prop from parent) ── */}
       {bookingPkg && (
