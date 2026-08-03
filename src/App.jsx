@@ -21,6 +21,7 @@ import AgentsPage from './components/AgentsPage';
 import AgentDetailPage from './components/AgentDetailPage';
 import VerifyEmailPage from './components/VerifyEmailPage';
 import { isEmailVerified } from './utils/emailVerification';
+import Seo from './components/Seo';
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
@@ -245,6 +246,39 @@ function App() {
           <Route path="/" element={
             <HomeRoute authReady={authReady} currentUser={currentUser}>
               <>
+                <Seo
+                  title="UmrahMarket - Verified Umrah & Hajj Packages in Kenya"
+                  description="Browse verified Umrah and Hajj packages from trusted Kenyan travel agents. Compare prices, hotels, durations, and agent credentials in one place."
+                  canonical={`${window.location.origin}/`}
+                  jsonLd={{
+                    '@context': 'https://schema.org',
+                    '@graph': [
+                      {
+                        '@type': 'WebSite',
+                        name: 'UmrahMarket',
+                        url: window.location.origin,
+                      },
+                      {
+                        '@type': 'Organization',
+                        name: 'UmrahMarket',
+                        url: window.location.origin,
+                        logo: `${window.location.origin}/umramarket1.png`,
+                        image: `${window.location.origin}/umramarket1.png`,
+                        description: 'Verified marketplace connecting pilgrims with licensed Umrah and Hajj travel agents in Kenya, Somalia, Tanzania, and Uganda.',
+                        address: {
+                          '@type': 'PostalAddress',
+                          addressCountry: 'KE',
+                        },
+                        areaServed: ['Kenya', 'Somalia', 'Tanzania', 'Uganda'],
+                        contactPoint: {
+                          '@type': 'ContactPoint',
+                          email: 'support@umrahmarket.net',
+                          contactType: 'customer support',
+                        },
+                      },
+                    ],
+                  }}
+                />
                 <Header
                   currentUser={currentUser}
                   onLogout={handleLogout}
@@ -299,6 +333,8 @@ function App() {
 
           <Route path="/experiences" element={
             <>
+              {/* ExperiencesPage.jsx renders its own <Seo> — kept as the
+                  single source of truth for this route's meta tags. */}
               <Header
                 currentUser={currentUser}
                 onLogout={handleLogout}
@@ -335,6 +371,8 @@ function App() {
 
           <Route path="/guidance" element={
             <>
+              {/* GuidancePage.jsx renders its own <Seo> — kept as the
+                  single source of truth for this route's meta tags. */}
               <GuidancePage />
               <Footer />
             </>
@@ -342,6 +380,8 @@ function App() {
 
           <Route path="/agents" element={
             <>
+              {/* AgentsPage.jsx renders its own <Seo> — kept as the
+                  single source of truth for this route's meta tags. */}
               <Header
                 currentUser={currentUser}
                 onLogout={handleLogout}
@@ -377,6 +417,8 @@ function App() {
           <Route path="/auth/google/done" element={<GoogleDone />} />
           <Route path="/verified" element={
             <>
+              {/* VerifiedPage.jsx renders its own <Seo> — kept as the
+                  single source of truth for this route's meta tags. */}
               <VerifiedPage />
               <Footer />
             </>

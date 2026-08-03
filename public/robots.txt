@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /client/dashboard
+Disallow: /agent/dashboard
+Disallow: /superadmin/
+Disallow: /auth/
+Disallow: /payment/
+Disallow: /verify-email
+
+Sitemap: https://umrahmarket.net/sitemap.xml

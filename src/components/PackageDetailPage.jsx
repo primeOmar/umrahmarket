@@ -14,6 +14,7 @@ import AuthModal from './AuthModal';
 import BookingFlow from './BookingFlow';
 import PackageVisitTracker from '../visits/PackageVisitTracker';
 import { useFxRate } from '../hooks/useFxRate';
+import Seo from './Seo';
 // ─────────────────────────────────────────────────────────────────────────────
 // GalleryCarousel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -353,7 +354,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   }, [packageData]);
 
   // ── UI state ────────────────────────────────────────────────────────────────
-  const [showAllAmenities, setShowAllAmenities] = useState(false);
+  
   const [bookingPkg,      setBookingPkg]      = useState(null);
   const [showAuthModal,    setShowAuthModal]    = useState(false);
 
@@ -416,23 +417,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
     });
   }, [bookingContext]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-
-  // ── Static display data ──────────────────────────────────────────────────────
-  const amenities = [
-    { icon: <Wifi className="h-5 w-5" />,       label: 'Free High-Speed WiFi' },
-    { icon: <Coffee className="h-5 w-5" />,     label: 'Complimentary Breakfast' },
-    { icon: <Car className="h-5 w-5" />,        label: '24/7 Airport Transfer' },
-    { icon: <Dumbbell className="h-5 w-5" />,   label: 'Fitness Center' },
-    { icon: <Utensils className="h-5 w-5" />,   label: 'Halal Restaurant' },
-    { icon: <Tv className="h-5 w-5" />,         label: 'Smart TV with Quran Channels' },
-    { icon: <Wind className="h-5 w-5" />,       label: 'Air Conditioning' },
-    { icon: <Droplets className="h-5 w-5" />,   label: 'Prayer Mats & Quran' },
-    { icon: <Bed className="h-5 w-5" />,        label: 'Premium Bedding' },
-    { icon: <Bath className="h-5 w-5" />,       label: 'Luxury Bathroom Amenities' },
-    { icon: <Shield className="h-5 w-5" />,     label: '24/7 Security & CCTV' },
-    { icon: <UsersIcon className="h-5 w-5" />,  label: 'Family Rooms Available' },
-  ];
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   const itinerary = itineraryDays ?? [
     { day: 1, title: 'Arrival in Jeddah',    activities: ['Airport Pickup', 'Hotel Check-in', 'Welcome Dinner'] },
@@ -481,6 +466,28 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   // ── Main render ──────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-white">
+    <Seo
+      title={`${packageData.title || packageData.name || 'Umrah Package'} | UmrahMarket`}
+      description={packageData.description || 'Compare verified Umrah and Hajj packages from trusted travel agents.'}
+      canonical={`${window.location.origin}/package/${packageData.id}`}
+      image={safeImages[0]}
+      type="product"
+      jsonLd={{
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: packageData.title || packageData.name || 'Umrah Package',
+        description: packageData.description || 'Compare verified Umrah and Hajj packages from trusted travel agents.',
+        image: safeImages,
+        url: `${window.location.origin}/package/${packageData.id}`,
+        offers: packageData.price ? {
+          '@type': 'Offer',
+          priceCurrency: 'USD',
+          price: String(packageData.price),
+          availability: 'https://schema.org/InStock',
+          url: `${window.location.origin}/package/${packageData.id}`,
+        } : undefined,
+      }}
+    />
     <PackageVisitTracker packageData={packageData} />
 
       {/* Nav */}
@@ -717,23 +724,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
               </div>
             )}
 
-            {/* Amenities */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Amenities</h2>
-                <button onClick={() => setShowAllAmenities(!showAllAmenities)} className="text-emerald-600 text-sm font-medium">
-                  {showAllAmenities ? 'Show less' : 'Show all'}
-                </button>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {(showAllAmenities ? amenities : amenities.slice(0, 6)).map((a, i) => (
-                  <div key={i} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <div className="text-emerald-600">{a.icon}</div>
-                    <span className="text-sm font-medium text-gray-700">{a.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          
 
             {/* Itinerary */}
             <div className="mb-8">
@@ -755,45 +746,6 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
               </div>
             </div>
 
-            {/* Reviews */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Guest Reviews</h2>
-                  <div className="flex items-center mt-1">
-                    <Star className="h-5 w-5 text-amber-500 fill-current" />
-                    <span className="ml-1 text-lg font-bold">{packageData.rating > 0 ? `${packageData.rating}★` : 'New'}</span>
-                    <span className="mx-2">·</span>
-                    <span className="text-gray-600">{reviews.length} reviews</span>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-6">
-                {reviews.map((review) => (
-                  <div key={review.id} className="border-b border-gray-200 pb-6">
-                    <div className="flex items-center space-x-3 mb-3">
-                      <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                        <span className="font-semibold text-emerald-700">{review.avatar}</span>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1">
-                          <h4 className="font-semibold text-gray-900">{review.name}</h4>
-                          {review.verified && <CheckCircle className="h-4 w-4 text-emerald-600" />}
-                        </div>
-                        <div className="flex items-center text-sm text-gray-500">
-                          <Star className="h-3 w-3 text-amber-500 fill-current mr-1" />{review.rating} · {review.date}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-gray-700 mb-3">{review.comment}</p>
-                    <div className="flex justify-between text-sm text-gray-500">
-                      <span>Stayed {review.stay}</span>
-                      <button className="hover:text-gray-700">Helpful ({review.helpful})</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* Right column — booking card */}

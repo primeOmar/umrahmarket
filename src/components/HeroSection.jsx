@@ -454,6 +454,19 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   return (
     <div className="relative">
 
+      {/* SEO intro — the only H1 on the homepage. Keep this short, plain,
+          and out of the way of the filter bar; purely a text/markup
+          addition, no state or behavior here. */}
+      <div className="bg-gradient-to-br from-emerald-50 via-white to-teal-50 border-b border-gray-100">
+        <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8 text-center">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
+            Verified Umrah &amp; Hajj Packages in Kenya
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-gray-600 max-w-2xl mx-auto">
+            Compare Umrah and Hajj packages from licensed, IATA-accredited travel agents serving Kenya, Somalia, Tanzania, and Uganda — verified pricing, hotels, and inclusions in one place.
+          </p>
+        </div>
+      </div>
 
 
       {/* Sticky filter bar — compact single row, overlaps content via sticky+z-index */}

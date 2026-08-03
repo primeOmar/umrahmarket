@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Static sitemap for umrahmarket.net's fixed routes.
+
+  Package pages (/package/:id) and agent pages (/agents/:id) are dynamic
+  and change as agents add/update listings, so they aren't listed here.
+  When ready, generate those from Supabase as a small Vercel serverless
+  function (same pattern already used for the Open Graph meta tag
+  function) that queries active packages/verified agents and outputs
+  <url> entries with lastmod from updated_at. Until then, Google will
+  still discover those pages by crawling links from the homepage,
+  /packages listing, and /agents listing.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://umrahmarket.net/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://umrahmarket.net/agents</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://umrahmarket.net/guidance</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://umrahmarket.net/experiences</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://umrahmarket.net/verified</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+</urlset>

@@ -10,6 +10,7 @@ import {
   ChevronRight, Sparkles, Sun, Moon, Droplets, ScrollText,
 } from 'lucide-react';
 import Header from './Header';
+import Seo from './Seo';
 
 // ── Media: real photos of Makkah & Madinah ────────────────────────────────
 const PLACEHOLDER_PHOTOS = [
@@ -128,6 +129,11 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
 
   return (
     <div className="bg-white pb-20 lg:pb-0">
+      <Seo
+        title="Umrah & Hajj Guidance | UmrahMarket Kenya"
+        description="Step-by-step Umrah and Hajj guidance with practical tips for pilgrims in Kenya, including ritual order, preparation, and travel advice."
+        canonical={`${window.location.origin}/guidance`}
+      />
       <Header currentUser={currentUser} onLogout={onLogout} onAuthSuccess={onAuthSuccess} />
 
       {/* ── Hero ── */}
@@ -140,7 +146,7 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-emerald-100 text-xs font-semibold mb-5">
             <Sparkles className="h-3.5 w-3.5 text-amber-300" /> Step-by-step guidance
           </span>
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white tracking-tight mb-4" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white tracking-tight mb-4">
             How to perform Hajj &amp; Umrah
           </h1>
           <p className="text-emerald-100/90 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
@@ -182,7 +188,7 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
               {mode === 'umrah' ? 'Umrah — the rites in order' : 'Hajj — day by day'}
             </span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-8 sm:mb-10" style={{ fontFamily: 'Georgia, serif' }}>
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-8 sm:mb-10">
             {mode === 'umrah' ? 'Five steps to completing your Umrah' : 'Your Hajj journey, day by day'}
           </h2>
           <div>
@@ -202,7 +208,7 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
                 <PlayCircle className="h-4 w-4 text-emerald-600" />
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">Watch &amp; learn</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900" style={{ fontFamily: 'Georgia, serif' }}>Guided video walkthroughs</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Guided video walkthroughs</h2>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
@@ -220,7 +226,7 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
             <Compass className="h-4 w-4 text-emerald-600" />
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">Scenes from the journey</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8" style={{ fontFamily: 'Georgia, serif' }}>Photo gallery</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8">Photo gallery</h2>
 
           {/* Responsive mosaic: 2 cols mobile, 3 cols tablet+, with a tall hero tile */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 auto-rows-[140px] sm:auto-rows-[180px] lg:auto-rows-[200px]">
@@ -241,7 +247,7 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">Before you go</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8" style={{ fontFamily: 'Georgia, serif' }}>A few practical tips</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8">A few practical tips</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
             {TIPS.map(tip => (
               <div key={tip.title} className="bg-white rounded-2xl p-5 border border-emerald-100/70 shadow-sm hover:shadow-md transition-shadow duration-300">
@@ -262,7 +268,7 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-700 to-teal-700 px-6 sm:px-10 py-10 sm:py-12 text-center">
             <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-amber-300/10" />
             <div className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full bg-white/5" />
-            <h3 className="relative text-xl sm:text-2xl font-bold text-white mb-2" style={{ fontFamily: 'Georgia, serif' }}>Ready to plan your journey?</h3>
+            <h3 className="relative text-xl sm:text-2xl font-bold text-white mb-2">Ready to plan your journey?</h3>
             <p className="relative text-emerald-100/90 text-sm mb-6 max-w-xl mx-auto">
               Browse verified Hajj and Umrah packages from trusted agencies on UmraMarket.
             </p>

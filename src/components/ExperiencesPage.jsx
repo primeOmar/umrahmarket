@@ -5,11 +5,12 @@ import {
   FileCheck, Handshake, ChevronRight, Quote, Phone,
   Mail, ArrowRight, BadgeCheck, Landmark, ClipboardCheck
 } from 'lucide-react';
+import Seo from './Seo';
 
 // ─── Trust badge ────────────────────────────────────────────────────────────
 const TrustBadge = ({ title, body, icon: Icon }) => (
-  <div className="flex gap-4 p-5 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-300">
-    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+  <div className="flex flex-col items-center text-center gap-4 p-5 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-300">
+    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
       <Icon className="h-5 w-5 text-emerald-600" />
     </div>
     <div>
@@ -21,10 +22,10 @@ const TrustBadge = ({ title, body, icon: Icon }) => (
 
 // ─── Testimonial ────────────────────────────────────────────────────────────
 const Testimonial = ({ quote, name, origin, rating }) => (
-  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-4">
+  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col items-center text-center gap-4">
     <Quote className="h-6 w-6 text-emerald-200 flex-shrink-0" />
     <p className="text-sm text-gray-600 leading-relaxed italic">"{quote}"</p>
-    <div className="flex items-center gap-3 mt-auto">
+    <div className="flex flex-col items-center gap-3 mt-auto">
       <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold">
         {name.charAt(0)}
       </div>
@@ -32,7 +33,7 @@ const Testimonial = ({ quote, name, origin, rating }) => (
         <p className="text-sm font-semibold text-gray-900">{name}</p>
         <p className="text-xs text-gray-400">{origin}</p>
       </div>
-      <div className="ml-auto flex gap-0.5">
+      <div className="flex gap-0.5">
         {Array.from({ length: rating }).map((_, i) => (
           <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
         ))}
@@ -61,7 +62,7 @@ const Milestone = ({ year, title, desc, isLast }) => (
       </div>
       {!isLast && <div className="w-0.5 flex-1 bg-emerald-100 mt-1 mb-1" />}
     </div>
-    <div className="pb-8">
+    <div className="pb-8 text-left">
       <p className="text-xs text-emerald-600 font-semibold">{year}</p>
       <p className="font-semibold text-gray-900 text-sm mt-0.5">{title}</p>
       <p className="text-xs text-gray-500 mt-1 leading-relaxed">{desc}</p>
@@ -82,6 +83,11 @@ const ExperiencesPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <Seo
+        title="About UmrahMarket | Verified Pilgrimage Platform in Kenya"
+        description="Learn how UmrahMarket verifies travel agents, protects pilgrims, and connects users with trusted Umrah and Hajj packages in Kenya."
+        canonical={`${window.location.origin}/experiences`}
+      />
 
       {/* ── HERO BANNER ─────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-emerald-900 via-emerald-800 to-teal-800">
@@ -105,7 +111,7 @@ const ExperiencesPage = () => {
         </div>
 
         <div className="relative container mx-auto px-4 sm:px-6 py-16 sm:py-24">
-          <div className="max-w-2xl">
+          <div className="max-w-2xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-emerald-200 text-xs font-medium mb-6">
               <Shield className="h-3.5 w-3.5" />
               Verified & Trusted
@@ -114,7 +120,7 @@ const ExperiencesPage = () => {
               The marketplace built<br />
               <span className="text-emerald-300">for every pilgrim.</span>
             </h1>
-            <p className="mt-4 text-base sm:text-lg text-emerald-100/80 max-w-xl leading-relaxed">
+            <p className="mt-4 text-base sm:text-lg text-emerald-100/80 max-w-xl mx-auto leading-relaxed">
               Umrah Market was founded to solve a single problem: pilgrims paying for promises that were never kept. We built a transparent, agent-verified platform so the journey to the Haram begins with trust.
             </p>
           </div>
@@ -124,7 +130,7 @@ const ExperiencesPage = () => {
       {/* ── STICKY TAB NAV ──────────────────────────────────────────────────── */}
       <div className="sticky top-[64px] z-30 bg-white border-b border-gray-100 shadow-sm mt-8">
         <div className="container mx-auto px-4 sm:px-6">
-          <nav className="flex gap-1 overflow-x-auto no-scrollbar py-1">
+          <nav className="flex justify-center gap-1 overflow-x-auto no-scrollbar py-1">
             {tabs.map(tab => (
               <button
                 key={tab.id}
@@ -150,7 +156,7 @@ const ExperiencesPage = () => {
 
             {/* Origin story */}
             <div className="grid lg:grid-cols-2 gap-10 items-center">
-              <div>
+              <div className="text-center">
                 <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Why We Exist</p>
                 <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">
                   Born from a broken booking, built for every pilgrim
@@ -160,13 +166,13 @@ const ExperiencesPage = () => {
                     In 2019, our founders witnessed first-hand how pilgrims—some saving for decades—were misled by unregistered agencies: overcrowded hotels misrepresented as "3-star," visa delays with no refunds, and no recourse after payment.
                   </p>
                   <p>
-                    Umrah Market launched in 2020 with a clear mandate: <strong className="text-gray-900">every package listed must come from a verified, licensed agency</strong>. No exceptions. Before an agent lists a single package, we check their Ministry of Hajj licence, hotel contracts, and financial standing.
+                    Umrah Market launched in 2026 with a clear mandate: <strong className="text-gray-900">every package listed must come from a verified, licensed agency</strong>. No exceptions. Before an agent lists a single package, we check their Ministry of Hajj licence, hotel contracts, and financial standing.
                   </p>
                   <p>
-                    Today we serve pilgrims from East Africa, the UK, Southeast Asia, and beyond — connecting them with vetted agencies through a transparent marketplace where prices, inclusions, and agent reputations are all visible upfront.
+                    Today we serve pilgrims from East Africa  connecting them with vetted agencies through a transparent marketplace where prices, inclusions, and agent reputations are all visible upfront.
                   </p>
                 </div>
-                <div className="mt-6 flex gap-3">
+                <div className="mt-6 flex justify-center gap-3">
                   <a href="/packages" className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
                     Browse Packages <ArrowRight className="h-4 w-4" />
                   </a>
@@ -200,20 +206,16 @@ const ExperiencesPage = () => {
             </div>
 
             {/* Timeline */}
-            <div>
+            <div className="text-center">
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-6">Our Journey</p>
-              <div className="max-w-lg">
-                <Milestone year="2020" title="Platform launched"          desc="Beta launched in Kenya with 12 vetted agencies and our first 200 bookings processed." />
-                <Milestone year="2021" title="East Africa expansion"      desc="Onboarded agencies in Uganda, Tanzania, and Ethiopia. Integrated M-Pesa and Pesapal payments." />
-                <Milestone year="2022" title="Pilgrim protection fund"    desc="Introduced the 100% refund guarantee for Ministry-suspended agencies. 0 pilgrims stranded." />
-                <Milestone year="2023" title="Multi-currency pricing"     desc="USD canonical pricing with live KES/GBP/MYR conversion so pilgrims always know true cost." />
-                <Milestone year="2024" title="Passport verification"      desc="Added in-browser MRZ verification to catch invalid travel documents before visa submission." />
-                <Milestone year="2025" title="200 agents milestone"       desc="200th verified agent onboarded. Operating across 12 countries with 15,000+ pilgrims served." isLast />
+              <div className="max-w-lg mx-auto text-left">
+                <Milestone year="2026" title="Platform launched"          desc="Beta launched in Kenya  vetted agencies " />
+                <Milestone year="2026" title="Pilgrim protection escrow" desc="We implemented a secure escrow system so pilgrim payments are only released to agents after check-in." />
               </div>
             </div>
 
             {/* Testimonials */}
-            <div>
+            {/* <div className="text-center">
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Pilgrim Stories</p>
               <h2 className="text-xl font-bold text-gray-900 mb-6">What pilgrims say</h2>
               <div className="grid sm:grid-cols-3 gap-4">
@@ -230,7 +232,7 @@ const ExperiencesPage = () => {
                   name="Amina Yusuf" origin="Dar es Salaam, Tanzania" rating={4}
                 />
               </div>
-            </div>
+            </div> */}
           </div>
         )}
 
@@ -239,10 +241,10 @@ const ExperiencesPage = () => {
           <div className="space-y-14">
 
             {/* Verification process */}
-            <div>
+            <div className="text-center">
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Our Standard</p>
               <h2 className="text-2xl font-bold text-gray-900 mb-3">How we verify every agent</h2>
-              <p className="text-sm text-gray-500 mb-8 max-w-xl">
+              <p className="text-sm text-gray-500 mb-8 max-w-xl mx-auto">
                 Every agency on Umrah Market passes a 5-point verification before their first package goes live. We repeat this annually.
               </p>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -279,10 +281,10 @@ const ExperiencesPage = () => {
             </div>
 
             {/* Pilgrim protection commitments */}
-            <div>
+            <div className="text-center">
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Our Commitments</p>
               <h2 className="text-xl font-bold text-gray-900 mb-6">Your protection, in writing</h2>
-              <div className="space-y-3">
+              <div className="space-y-3 max-w-xl mx-auto">
                 {[
                   'Full refund if your agency\'s licence is suspended after booking',
                   'Hotel star rating guaranteed — downgrade triggers automatic partial refund',
@@ -291,8 +293,8 @@ const ExperiencesPage = () => {
                   'Passport validity checked before payment — no last-minute rejections',
                   'Transparent pricing: no hidden charges after booking confirmation',
                 ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-3 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                    <CheckCircle className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <div key={i} className="flex items-center justify-center text-center gap-3 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+                    <CheckCircle className="h-5 w-5 text-emerald-500 flex-shrink-0" />
                     <p className="text-sm text-gray-700">{item}</p>
                   </div>
                 ))}
@@ -306,10 +308,10 @@ const ExperiencesPage = () => {
           <div className="space-y-14">
 
             {/* Official registrations */}
-            <div>
+            <div className="text-center">
               <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Regulatory</p>
               <h2 className="text-2xl font-bold text-gray-900 mb-3">Official registrations</h2>
-              <p className="text-sm text-gray-500 mb-8 max-w-xl">
+              <p className="text-sm text-gray-500 mb-8 max-w-xl mx-auto">
                 Umrah Market operates as a registered marketplace under Kenyan company law and is recognised by the following authorities.
               </p>
 
@@ -351,12 +353,12 @@ const ExperiencesPage = () => {
                   { name: 'Saudi Ministry of Hajj Recognition',     num: 'MH/KE/2021/0034',    status: 'Active' },
                   { name: 'Communications Authority of Kenya',      num: 'CA/DD/ICT/0298/2022', status: 'Active' },
                 ].map((lic, i) => (
-                  <div key={i} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+                  <div key={i} className="flex flex-col items-center text-center gap-3 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
                     <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
                       <Award className="h-5 w-5 text-emerald-600" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-gray-900 truncate">{lic.name}</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-gray-900">{lic.name}</p>
                       <p className="text-[11px] text-gray-400 font-mono mt-0.5">{lic.num}</p>
                     </div>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium flex-shrink-0">
@@ -390,10 +392,10 @@ const ExperiencesPage = () => {
                 alt="Masjid al-Haram and the Zamzam Tower, Makkah"
                 className="w-full h-48 object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-gray-900/80 to-transparent flex items-center">
-                <div className="p-8">
+              <div className="absolute inset-0 bg-gradient-to-r from-gray-900/80 to-transparent flex items-center justify-center">
+                <div className="p-8 text-center">
                   <p className="text-white font-bold text-lg">Featured in</p>
-                  <p className="text-gray-300 text-sm mt-1">Business Daily · The Standard · Daily Nation · Tuko.co.ke</p>
+                  <p className="text-gray-300 text-sm mt-1">The Muslim · </p>
                 </div>
               </div>
             </div>
@@ -406,7 +408,7 @@ const ExperiencesPage = () => {
 
             {/* Overview */}
             <div className="grid lg:grid-cols-2 gap-10 items-center">
-              <div>
+              <div className="text-center">
                 <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Agent Network</p>
                 <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">
                   200+ agencies. One standard.
@@ -421,7 +423,7 @@ const ExperiencesPage = () => {
                     { label: 'Package fulfilment rate',          value: '99.2%' },
                     { label: 'Refunds issued (on-time)',         value: '100%' },
                   ].map((stat, i) => (
-                    <div key={i} className="flex justify-between items-center p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+                    <div key={i} className="flex justify-center items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
                       <span className="text-sm text-gray-600">{stat.label}</span>
                       <span className="text-sm font-bold text-emerald-700">{stat.value}</span>
                     </div>
@@ -438,36 +440,12 @@ const ExperiencesPage = () => {
               </div>
             </div>
 
-            {/* Countries */}
-            <div>
-              <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Coverage</p>
-              <h2 className="text-xl font-bold text-gray-900 mb-6">Where our agents operate</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {[
-                  { country: 'Kenya',        agents: 87,  flag: '🇰🇪' },
-                  { country: 'Tanzania',     agents: 24,  flag: '🇹🇿' },
-                  { country: 'Uganda',       agents: 18,  flag: '🇺🇬' },
-                  { country: 'Ethiopia',     agents: 14,  flag: '🇪🇹' },
-                  { country: 'United Kingdom', agents: 19, flag: '🇬🇧' },
-                  { country: 'Malaysia',     agents: 12,  flag: '🇲🇾' },
-                  { country: 'South Africa', agents: 9,   flag: '🇿🇦' },
-                  { country: 'Pakistan',     agents: 17,  flag: '🇵🇰' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:border-emerald-200 hover:shadow-md transition-all duration-300">
-                    <span className="text-2xl">{item.flag}</span>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{item.country}</p>
-                      <p className="text-xs text-gray-400">{item.agents} agents</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+           
 
             {/* Join CTA */}
             <div className="rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-600 p-8 sm:p-10">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-6">
-                <div className="flex-1">
+              <div className="flex flex-col items-center text-center gap-6">
+                <div className="flex-1 flex flex-col items-center">
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 text-emerald-100 text-xs font-medium mb-3">
                     <Handshake className="h-3.5 w-3.5" />
                     Open to new agents
@@ -476,7 +454,7 @@ const ExperiencesPage = () => {
                   <p className="text-emerald-100 text-sm mt-2 max-w-md">
                     Join 200+ verified agencies reaching pilgrims across 12 countries. Listing is free — you only pay a small platform fee on successful bookings.
                   </p>
-                  <div className="flex flex-wrap gap-3 mt-4 text-sm text-emerald-100">
+                  <div className="flex flex-wrap justify-center gap-3 mt-4 text-sm text-emerald-100">
                     <span className="flex items-center gap-1.5"><CheckCircle className="h-3.5 w-3.5" /> Free to list</span>
                     <span className="flex items-center gap-1.5"><CheckCircle className="h-3.5 w-3.5" /> Get paid in KES, USD, GBP</span>
                     <span className="flex items-center gap-1.5"><CheckCircle className="h-3.5 w-3.5" /> Dedicated agent dashboard</span>

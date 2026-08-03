@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { request } from '../api';
 import AgentVisitTracker from '../visits/AgentVisitTracker'
+import Seo from './Seo';
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/agents/:id  →  full public agent profile (see agents.routes.js):
 // businessName, firstName, lastName, verificationStatus, agentNumber,
@@ -91,6 +92,21 @@ const AgentDetailPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
+      <Seo
+        title={`${name} | Verified Umrah Agent in Kenya | UmrahMarket`}
+        description={`${name}${agent.officeMapsUrl ? ' with office location in Kenya' : ''}${agent.yearsExperience ? ` and ${agent.yearsExperience} years of experience` : ''}. View verified travel agent details on UmrahMarket.`}
+        canonical={`${window.location.origin}/agents/${id}`}
+        image={agent.logoUrl}
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'TravelAgency',
+          name,
+          url: `${window.location.origin}/agents/${id}`,
+          image: agent.logoUrl || undefined,
+          telephone: agent.phone || undefined,
+          sameAs: agent.websiteUrl ? [agent.websiteUrl] : undefined,
+        }}
+      />
           <AgentVisitTracker agent={agent} />
       {/* Back */}
       <div className=" container mx-auto px-4 sm:px-6 pt-6">
