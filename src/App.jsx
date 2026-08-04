@@ -26,7 +26,27 @@ import Seo from './components/Seo';
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
 const initAuth = async () => {
-  const storedToken = localStorage.getItem('refresh_token') || localStorage.getItem('superadmin_refresh_token');
+  const userRefreshToken = localStorage.getItem('refresh_token');
+  const superadminToken = localStorage.getItem('superadmin_token');
+  const superadminRefreshToken = localStorage.getItem('superadmin_refresh_token');
+  const mirroredAccessToken = localStorage.getItem('access_token');
+  const mirroredRefreshToken = localStorage.getItem('refresh_token');
+
+  // One-time cleanup for older builds that mirrored superadmin tokens into
+  // standard user keys. That causes /auth/refresh (user endpoint) to receive
+  // superadmin refresh tokens and return 401 on app boot.
+  const hasLegacySuperadminMirror =
+    Boolean(superadminToken && superadminRefreshToken) &&
+    mirroredAccessToken === superadminToken &&
+    mirroredRefreshToken === superadminRefreshToken;
+
+  if (hasLegacySuperadminMirror) {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    return null;
+  }
+
+  const storedToken = userRefreshToken;
   if (!storedToken) return userStore.get();
   try {
     const res = await refreshToken();

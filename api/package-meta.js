@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const API_BASE  = (process.env.API_BASE || 'https://your-backend.onrender.com').replace(/\/$/, '');
+const API_BASE  = (process.env.API_BASE || 'https://api.umrahmarket.net').replace(/\/$/, '');
 const SITE_URL  = 'https://www.umrahmarket.net';
 const FALLBACK_IMAGE = `${SITE_URL}/og-default.jpg`;
 

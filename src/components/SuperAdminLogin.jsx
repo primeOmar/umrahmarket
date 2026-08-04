@@ -68,9 +68,6 @@ export const SuperAdminLogin = ({ onLoginSuccess }) => {
           localStorage.setItem('superadmin_token',         data.token);
           localStorage.setItem('superadmin_refresh_token', data.refreshToken);
           localStorage.setItem('superadmin_user',          JSON.stringify(data.user));
-          // Mirror tokens to the global keys so shared API client can refresh
-          if (data.token)        localStorage.setItem('access_token', data.token);
-          if (data.refreshToken) localStorage.setItem('refresh_token', data.refreshToken);
           toast.success('Welcome, Superadmin!');
           if (onLoginSuccess) onLoginSuccess(data.user);
           else navigate('/superadmin/dashboard');
@@ -112,9 +109,6 @@ export const SuperAdminLogin = ({ onLoginSuccess }) => {
         localStorage.setItem('superadmin_token',         data.token);
         localStorage.setItem('superadmin_refresh_token', data.refreshToken);
         localStorage.setItem('superadmin_user',          JSON.stringify(data.user));
-        // Mirror tokens to global keys for unified client
-        if (data.token)        localStorage.setItem('access_token', data.token);
-        if (data.refreshToken) localStorage.setItem('refresh_token', data.refreshToken);
         toast.success('Authentication successful!');
         if (onLoginSuccess) onLoginSuccess(data.user);
         else navigate('/superadmin/dashboard');

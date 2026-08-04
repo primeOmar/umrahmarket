@@ -180,8 +180,8 @@ api.interceptors.response.use(
     _isRefreshing      = true;
 
     try {
-      // Support both standard and superadmin refresh token keys
-      const storedRefreshToken = localStorage.getItem('refresh_token') || localStorage.getItem('superadmin_refresh_token');
+      // Standard user refresh endpoint only accepts the normal refresh token.
+      const storedRefreshToken = localStorage.getItem('refresh_token');
       if (!storedRefreshToken) throw new Error('No refresh token available');
 
       const res = await axios.post(
@@ -313,7 +313,7 @@ export const logout = async () => {
 };
 
 export const refreshToken = async () => {
-  const storedRefreshToken = localStorage.getItem('refresh_token') || localStorage.getItem('superadmin_refresh_token');
+  const storedRefreshToken = localStorage.getItem('refresh_token');
   const res = await request({
     method: 'post',
     url: '/auth/refresh',
