@@ -650,7 +650,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                         src={pkg.image} alt={pkg.title}
                         className="relative w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
-                        onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80'; }}
+                        onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1523151164408-6540213bd2c8?auto=format&fit=crop&w=800&q=80'; }}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
 
