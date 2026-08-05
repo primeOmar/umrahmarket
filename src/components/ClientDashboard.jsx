@@ -331,7 +331,7 @@ const normalise = (pkg) => {
     imageUrls[0] ||
     pkg.image ||
     pkg.thumbnail ||
-    'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80';
+     'https://images.unsplash.com/photo-1523151164408-6540213bd2c8?auto=format&fit=crop&w=800&q=80';
 
   const rawPrice = pkg.price_per_person ?? pkg.pricePerPerson ?? pkg.price ?? 0;
   const rawOriginal = pkg.original_price ?? pkg.originalPrice ?? rawPrice;
@@ -509,7 +509,7 @@ const BookingCard = ({ booking, darkMode, onView, onCompleteDetails, onAddTravel
 
   const rawImgs = pkg.image_urls ?? pkg.imageUrls ?? pkg.images ?? [];
   const firstImg = (typeof rawImgs[0] === 'string' ? rawImgs[0] : rawImgs[0]?.url ?? rawImgs[0]?.secure_url ?? null)
-    || 'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
+    || 'https://images.unsplash.com/photo-1523151164408-6540213bd2c8?auto=format&fit=crop&w=800&q=80';
 
   // agent_name lives directly on the package row (no agencies join table)
   const agencyName = pkg.agent_name ?? booking.agency_name ?? 'Travel Agency';
@@ -765,7 +765,7 @@ const MessageCard = ({ message, darkMode }) => (
 // ==================== PACKAGE CARD COMPONENT (HeroSection-style) ====================
 const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav, isBooked = false }) => {
   const imageUrl = pkg.image || (pkg.image_urls?.[0]) ||
-    'https://images.unsplash.com/photo-1542810634-71277ad95d9d?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80';
+    'https://images.unsplash.com/photo-1523151164408-6540213bd2c8?auto=format&fit=crop&w=800&q=80';
 
   // Package prices are stored in USD; show live KES conversion as the
   // headline figure since that's what clients in Kenya actually pay. The
@@ -793,7 +793,7 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
           alt={pkg.name || pkg.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           loading="lazy"
-          onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80'; }}
+         onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1523151164408-6540213bd2c8?auto=format&fit=crop&w=800&q=80'; }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
 
