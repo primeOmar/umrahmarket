@@ -2,7 +2,8 @@
 // import anything from api.js / packagesApi.js — api.js reads
 // localStorage.getItem('access_token') at module top-level, which throws
 // immediately in Node (no localStorage there). Kept as a plain, dependency-free
-// fetch() instead, hitting the same public endpoint packagesApi.js uses.
+// fetch() instead, hitting the same public endpoints packagesApi.js / AgentsPage
+// / AgentDetailPage already use client-side.
 
 const formatDistanceMeters = (value, label = 'Haram') => {
   const meters = Number(value);
@@ -18,6 +19,18 @@ const getPathPackageId = (pathname = '') => {
   if (parts[0] === 'umra-package' && parts[2]) return parts[2];
   if (parts[0] === 'package' && parts[1]) return parts[1];
   return null;
+};
+
+// '/agents/:id' — but NOT '/agents' itself (list route, no id segment).
+const getPathAgentId = (pathname = '') => {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts[0] === 'agents' && parts[1]) return parts[1];
+  return null;
+};
+
+const isAgentsListPath = (pathname = '') => {
+  const parts = pathname.split('/').filter(Boolean);
+  return parts.length === 1 && parts[0] === 'agents';
 };
 
 // Verbatim copy of packagesApi.js's normalise() — duplicated on purpose so
@@ -62,12 +75,20 @@ const normalise = (pkg) => {
   };
 };
 
+// Every return path always includes all four keys (packages, package, agents,
+// agent) — even when a branch only cares about one of them — so consumers
+// (+Page.jsx → App.jsx) never have to guess which keys exist on a given page.
+const EMPTY = { packages: null, package: null, agents: null, agent: null };
+
 export default async function data(pageContext) {
   const pathname = pageContext.urlPathname || '/';
   const packageId = getPathPackageId(pathname);
+  const agentId = getPathAgentId(pathname);
 
-  // Detail pages get a single package SSR payload so the head tags and first
-  // paint can reflect the exact package the user requested.
+  // ── Package detail pages ──────────────────────────────────────────────
+  // (unchanged from before — still the only branch that also seeds
+  // `packages` as a single-item array, since PackageDetailPage.jsx reads
+  // from the shared `packages` list rather than a dedicated prop.)
   if (packageId) {
     try {
       const res = await fetch(`${BASE_API}/packages/${packageId}`, {
@@ -76,15 +97,51 @@ export default async function data(pageContext) {
       if (!res.ok) throw new Error(`Package fetch failed: ${res.status}`);
       const json = await res.json();
       const raw = json?.package || json?.data?.package || json?.data || json;
-      return { packages: [normalise(raw)], package: normalise(raw) };
+      const pkg = normalise(raw);
+      return { ...EMPTY, packages: [pkg], package: pkg };
     } catch (err) {
       console.error('[+data.js] SSR package fetch failed:', err.message);
-      return { packages: null, package: null };
+      return EMPTY;
     }
   }
 
+  // ── Agent detail page ─────────────────────────────────────────────────
+  if (agentId) {
+    try {
+      const res = await fetch(`${BASE_API}/agents/${agentId}`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Agent fetch failed: ${res.status}`);
+      const json = await res.json();
+      const agent = json?.agent || json?.data?.agent || json?.data || json;
+      return { ...EMPTY, agent };
+    } catch (err) {
+      // Fail soft — AgentDetailPage.jsx's own useEffect fetch takes over
+      // exactly as it does today when no SSR data is present.
+      console.error('[+data.js] SSR agent fetch failed, falling back to client fetch:', err.message);
+      return EMPTY;
+    }
+  }
+
+  // ── Agents list page ──────────────────────────────────────────────────
+  if (isAgentsListPath(pathname)) {
+    try {
+      const res = await fetch(`${BASE_API}/agents`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Agents fetch failed: ${res.status}`);
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (json.agents ?? json.data ?? []);
+      return { ...EMPTY, agents: list };
+    } catch (err) {
+      console.error('[+data.js] SSR agents fetch failed, falling back to client fetch:', err.message);
+      return EMPTY;
+    }
+  }
+
+  // ── Homepage ───────────────────────────────────────────────────────────
   if (pathname !== '/') {
-    return { packages: null, package: null };
+    return EMPTY;
   }
 
   try {
@@ -94,12 +151,12 @@ export default async function data(pageContext) {
     if (!res.ok) throw new Error(`Packages fetch failed: ${res.status}`);
     const json = await res.json();
     const list = Array.isArray(json) ? json : (json.packages ?? json.data ?? []);
-    return { packages: list.map(normalise), package: null };
+    return { ...EMPTY, packages: list.map(normalise) };
   } catch (err) {
     // Fail soft: if the Render backend is slow/down during a crawler's
     // request, fall back to null so App.jsx just does its normal
     // client-side fetch instead of failing the whole page render.
     console.error('[+data.js] SSR package fetch failed, falling back to client fetch:', err.message);
-    return { packages: null, package: null };
+    return EMPTY;
   }
 }

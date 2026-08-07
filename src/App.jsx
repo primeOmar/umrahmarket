@@ -151,7 +151,13 @@ function NavigationBridge() {
   return null;
 }
 
-function App({ initialPackages = null, initialPathname = '/', initialAuthReady = false }) {
+function App({
+  initialPackages = null,
+  initialAgents = null,
+  initialAgent = null,
+  initialPathname = '/',
+  initialAuthReady = false,
+}) {
   const [favorites,   setFavorites]   = useState([]); // array of package IDs
   const [currentUser, setCurrentUser] = useState(null);
   const [authReady,   setAuthReady]   = useState(initialAuthReady); // true once initAuth completes
@@ -325,6 +331,12 @@ function App({ initialPackages = null, initialPathname = '/', initialAuthReady =
                           email: 'support@umrahmarket.net',
                           contactType: 'customer support',
                         },
+                        sameAs: [
+                          'https://www.instagram.com/umrahmarket360',
+                          'https://www.tiktok.com/@umrahmarket360',
+                          'https://x.com/umrahmarket360',
+                          'https://www.youtube.com/@umrahmarket360',
+                        ],
                       },
                     ],
                   }}
@@ -518,7 +530,7 @@ function App({ initialPackages = null, initialPathname = '/', initialAuthReady =
                   userStore.set(user);
                 }}
               />
-              <AgentsPage />
+              <AgentsPage initialAgents={initialAgents} />
               <Footer />
             </>
           } />
@@ -532,7 +544,7 @@ function App({ initialPackages = null, initialPathname = '/', initialAuthReady =
                   userStore.set(user);
                 }}
               />
-              <AgentDetailPage />
+              <AgentDetailPage initialAgent={initialAgent} />
               <Footer />
             </>
           } />

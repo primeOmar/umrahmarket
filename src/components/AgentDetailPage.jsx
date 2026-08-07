@@ -31,12 +31,17 @@ const getStartYear = (yearsExperience) => {
   return new Date().getFullYear() - Math.floor(yearsExperience);
 };
 
-const AgentDetailPage = () => {
+// initialAgent comes from Vike's pages/+data.js server-side loader — only
+// populated when this is the very first render of '/agents/:id' coming
+// straight from the server (same convention App.jsx's initialPackages
+// already uses). Client-side navigation between agent profiles leaves it
+// null, so that behavior is 100% unchanged from before.
+const AgentDetailPage = ({ initialAgent = null }) => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [agent, setAgent] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [agent, setAgent] = useState(initialAgent);
+  const [loading, setLoading] = useState(!initialAgent);
   const [error, setError] = useState(null);
 
   const fetchAgent = async () => {
@@ -53,7 +58,14 @@ const AgentDetailPage = () => {
     }
   };
 
-  useEffect(() => { fetchAgent(); }, [id]);
+  useEffect(() => {
+    // Skip the initial fetch when SSR already seeded this exact agent —
+    // but if the id in the URL doesn't match the seeded agent (e.g. the
+    // user clicked from one agent profile to another via client-side
+    // navigation, reusing this same mounted route), fetch as normal.
+    if (initialAgent && initialAgent.id === id) return;
+    fetchAgent();
+  }, [id]);
 
   if (loading) {
     return (

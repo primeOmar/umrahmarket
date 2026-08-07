@@ -78,10 +78,21 @@ const ReviewCard = ({ review }) => {
   );
 };
 
-const AgentsPage = () => {
+// Same verified-only filter the client fetch already applies — pulled out
+// so the SSR-seeded branch below can reuse it without duplicating logic.
+const filterVerified = (list) => list.filter(
+  (a) => a.verificationStatus === 'verified' || a.verificationStatus === 'approved'
+);
+
+// initialAgents comes from Vike's pages/+data.js server-side loader — only
+// populated when this is the very first render of '/agents' coming straight
+// from the server (same convention App.jsx's initialPackages already uses).
+// Every client-side navigation into this page leaves it null, so behavior
+// there is 100% unchanged from before.
+const AgentsPage = ({ initialAgents = null }) => {
   const navigate = useNavigate();
-  const [agents, setAgents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [agents, setAgents] = useState(() => (initialAgents ? filterVerified(initialAgents) : []));
+  const [loading, setLoading] = useState(!initialAgents);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
 
@@ -95,10 +106,7 @@ const AgentsPage = () => {
     try {
       const res = await request({ method: 'get', url: '/agents' });
       const list = Array.isArray(res.data) ? res.data : (res.data?.agents || []);
-      const verifiedOnly = list.filter(
-        (a) => a.verificationStatus === 'verified' || a.verificationStatus === 'approved'
-      );
-      setAgents(verifiedOnly);
+      setAgents(filterVerified(list));
     } catch (err) {
       setError(err.message || 'Failed to load agents');
     } finally {
@@ -120,7 +128,13 @@ const AgentsPage = () => {
     }
   };
 
-  useEffect(() => { fetchAgents(); fetchReviews(); }, []);
+  useEffect(() => {
+    // Skip the initial agents fetch when Vike's SSR loader already seeded
+    // them — avoids a flash of real content -> skeleton -> content right
+    // after hydration, same reasoning App.jsx uses for initialPackages.
+    if (!initialAgents) fetchAgents();
+    fetchReviews();
+  }, []);
 
   const filtered = agents.filter((a) => {
     if (!search.trim()) return true;

@@ -7,4 +7,40 @@ Disallow: /auth/
 Disallow: /payment/
 Disallow: /verify-email
 
-Sitemap: https://umrahmarket.net/sitemap.xml
+# Explicitly allowed AI crawlers/agents (covered by the wildcard rule above
+# too, but listed by name on purpose: some CDN/WAF "block AI bots" toggles
+# — e.g. Cloudflare's "Block AI Scrapers and Crawlers" — act independently
+# of robots.txt and silently override it. If umrahmarket.net is proxied
+# through Cloudflare, check Security > Bots for that setting too; this
+# file alone can't undo a block happening at that layer.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+Sitemap: https://www.umrahmarket.net/sitemap.xml

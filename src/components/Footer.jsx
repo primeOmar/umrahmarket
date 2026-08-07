@@ -1,7 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Mail, Phone, MapPin, Instagram, Youtube } from 'lucide-react';
 import logoImage from '../assets/umramarket1.png';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import AuthModal from './AuthModal';
 // Lazy + mount-gated on purpose: ChatWidget.jsx constructs a Supabase
 // realtime client at module top level, which touches WebSocket — that
@@ -105,10 +105,18 @@ const Footer = () => {
           <div>
             <h4 className="text-lg font-bold mb-4">Quick Links</h4>
             <ul className="space-y-2">
-              <li><a href="#" className="text-gray-400 hover:text-white">Browse Packages</a></li>
-              <li><a href="#" className="text-gray-400 hover:text-white">Register Agency</a></li>
-              <li><a href="#" className="text-gray-400 hover:text-white">Umrah Guide</a></li>
-              <li><a href="#" className="text-gray-400 hover:text-white">FAQ</a></li>
+              <li><Link to="/" className="text-gray-400 hover:text-white">Browse Packages</Link></li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setShowAgentModal(true)}
+                  className="text-gray-400 hover:text-white text-left"
+                >
+                  Register Agency
+                </button>
+              </li>
+              <li><Link to="/guidance" className="text-gray-400 hover:text-white">Umrah Guide</Link></li>
+              <li><Link to="/guidance" className="text-gray-400 hover:text-white">FAQ</Link></li>
             </ul>
           </div>
 
@@ -148,7 +156,7 @@ const Footer = () => {
               <a href="#" className="hover:text-white">Privacy Policy</a>
               <a href="#" className="hover:text-white">Terms of Service</a>
               <a href="#" className="hover:text-white">Cookie Policy</a>
-              <a href="#" className="hover:text-white">Sitemap</a>
+              <a href="/sitemap.xml" className="hover:text-white">Sitemap</a>
             </div>
           </div>
         </div>
