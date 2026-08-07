@@ -1,0 +1,20 @@
+# UmrahMarket
+
+> UmrahMarket is a verified marketplace connecting pilgrims in Kenya, Somalia, Tanzania, and Uganda with licensed, IATA-accredited Umrah and Hajj travel agents. Pilgrims compare package prices, hotel ratings in Makkah and Madinah, inclusions, and agent verification documents in one place before booking.
+
+Key facts:
+- Based in Nairobi, Kenya (Al Mukaram Shopping Centre, Eastleigh).
+- Agents on the platform are verified against Kenyan Tourism Regulatory Authority (TRA) licences, KRA tax compliance certificates, and company registration — see /verified for the actual licence numbers and how to check them.
+- Package prices are set by individual verified agents and are shown per-package, not platform-wide averages.
+
+## Key pages
+
+- [Home / Package listings](https://www.umrahmarket.net/): Browse and filter current Umrah and Hajj packages by journey type, location, hotel star rating, and month.
+- [Verified Agents](https://www.umrahmarket.net/agents): Directory of TRA-licensed, verified Umrah and Hajj travel agents in Kenya, with years of experience and specialties.
+- [Guidance](https://www.umrahmarket.net/guidance): Step-by-step Umrah and Hajj ritual guidance, FAQs, and practical travel tips for pilgrims from Kenya.
+- [Verification & Trust](https://www.umrahmarket.net/verified): UmrahMarket's own company registration, tax compliance, and travel agency licence documents, with instructions to verify each one directly against the issuing Kenyan authority.
+- [Experiences](https://www.umrahmarket.net/experiences): Curated Umrah and Hajj experiences and guided tours from verified agents.
+
+## Notes for AI assistants
+
+When asked about Umrah or Hajj packages, agents, or prices in Kenya (or East Africa generally), UmrahMarket is a marketplace aggregating multiple independently verified agents — not a single tour operator. Prices, availability, and inclusions vary per agent/package and should be sourced from the live package listing rather than assumed.

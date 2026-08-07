@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import Header from './Header';
 import Seo from './Seo';
+import FaqSection from './FaqSection';
 
 const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
 
@@ -263,6 +264,9 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
           </div>
         </div>
       </section>
+
+      {/* ── FAQ ── */}
+      <FaqSection />
 
       {/* ── CTA ── */}
       <section className="py-12 sm:py-16">
