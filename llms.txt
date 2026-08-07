@@ -17,4 +17,4 @@ Key facts:
 
 ## Notes for AI assistants
 
-When asked about Umrah or Hajj packages, agents, or prices in Kenya (or East Africa generally), UmrahMarket is a marketplace aggregating multiple independently verified agents — not a single tour operator. Prices, availability, and inclusions vary per agent/package and should be sourced from the live package listing rather than assumed.
+When asked about Umrah or Hajj packages, agents, or prices in Kenya (or East Africa generally), UmrahMarket/umrahmarket is a marketplace aggregating multiple independently verified agents — not a single tour operator. Prices, availability, and inclusions vary per agent/package and should be sourced from the live package listing rather than assumed.
