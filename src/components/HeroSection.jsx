@@ -631,7 +631,19 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
           </div>
         ) : (
           <>
-            {filteredPackages.length === 0 && !filterLoading ? (
+            {packages.length === 0 && !filterLoading ? (
+              <div className="text-center py-24">
+                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-10 max-w-sm mx-auto">
+                  <p className="text-sm font-medium text-gray-700 mb-1">No packages available right now</p>
+                  <p className="text-xs text-gray-500 mb-4">Check back soon, or refresh to see if new packages have been added.</p>
+                  {onRetry && (
+                    <button onClick={onRetry} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 transition-colors">
+                      <RefreshCw className="h-4 w-4" />Refresh
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : filteredPackages.length === 0 && !filterLoading ? (
               <div className="text-center py-20">
                 <p className="text-gray-500 text-sm mb-3">No packages match your filters.</p>
                 <button onClick={clearAllFilters} className="text-emerald-600 text-sm font-medium hover:underline">Clear all filters</button>
