@@ -1,4 +1,20 @@
-
+// FaqSection.jsx
+// Drop-in, self-contained FAQ block for GuidancePage.jsx (or anywhere else).
+// Two things happen here on purpose:
+//   1. Visible <details>/<summary> Q&A — real content, real HTML, no JS
+//      required to read it (matters for SSR + any crawler that doesn't
+//      execute JS).
+//   2. FAQPage JSON-LD mirroring the same questions — this is the format
+//      AI answer engines (ChatGPT, Perplexity, Google AI Overviews) and
+//      Google's classic FAQ rich results both parse most reliably. Keep
+//      the two in sync: the JSON-LD should never say something the visible
+//      page doesn't also say.
+//
+// Questions below are written the way people actually type them into an
+// AI assistant ("how much does umrah cost from kenya"), not as keyword
+// phrases — that phrasing match is what gets a passage selected/quoted.
+// Swap in your own real, current figures before shipping; placeholder
+// ranges are marked.
 import React from 'react';
 import { ChevronDown } from 'lucide-react';
 
@@ -21,7 +37,11 @@ const FAQS = [
   },
   {
     q: 'Can I pay for Umrah or Hajj in installments in Kenya?',
-    a: 'Some Kenyan travel agencies offer installment or "Lipa Mdogo Mdogo" style payment plans for Hajj and Umrah packages, letting pilgrims pay in stages ahead of travel. Availability depends on the individual agency — check the specific package or contact the agent directly to confirm payment plan options.',
+    a: "Yes. UmrahMarket has its own Lipa Mdogo Mdogo savings plan — you save gradually on the platform until your balance covers a package, then book directly with a verified agent; any extra amount saved beyond the package price is refunded to you. It's a low-pressure way to plan for Umrah or Hajj without needing the full cost upfront.",
+  },
+  {
+    q: 'Is UmrahMarket safe to book Umrah or Hajj packages with?',
+    a: "UmrahMarket only lists agencies that have passed its verification process — checking licensing, tax compliance, and accreditation before an agent is marked 'Verified'. Payments are also followed up and confirmed against agency service delivery before the full amount is released to the agent, adding a layer of protection so your trip is carried out as booked.",
   },
   {
     q: 'What is the difference between Hajj and Umrah?',
