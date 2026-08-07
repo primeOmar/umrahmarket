@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Mail, Phone, MapPin, Instagram, Youtube } from 'lucide-react';
 import logoImage from '../assets/umramarket1.png';
 import { useNavigate } from 'react-router-dom';
 import AuthModal from './AuthModal';
-import ChatWidget from '../publicchat/ChatWidget';
+// Lazy + mount-gated on purpose: ChatWidget.jsx constructs a Supabase
+// realtime client at module top level, which touches WebSocket — that
+// doesn't exist in Node/SSR. A regular static import gets evaluated during
+// SSR the moment Footer.jsx loads, regardless of whether <ChatWidget/> is
+// actually rendered in JSX. Lazy-loading means the module is never fetched
+// until this component actually calls for it client-side.
+const ChatWidget = lazy(() => import('../publicchat/ChatWidget'));
 
 // TikTok and X (formerly Twitter) aren't in lucide-react — using their
 // official mark as inline SVGs, sized/styled to match the lucide icons.
@@ -22,11 +28,13 @@ const XIcon = ({ className }) => (
 const Footer = () => {
   const navigate = useNavigate();
   const [showAgentModal, setShowAgentModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   return (
     <footer className="bg-gray-900 text-white">
       <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {/* Company Info */}
           <div>
             <div className="flex items-center space-x-3 mb-6">
@@ -129,53 +137,6 @@ const Footer = () => {
               </li>
             </ul>
           </div>
-
-          {/* Social Media */}
-          <div>
-            <h4 className="text-lg font-bold mb-4">Social Media</h4>
-            <ul className="space-y-2">
-              <li>
-                <a
-                  href="https://www.instagram.com/umrahmarket360"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-white"
-                >
-                  Instagram
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://www.youtube.com/@umrahmarket360"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-white"
-                >
-                  Youtube
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://www.tiktok.com/@umrahmarket360"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-white"
-                >
-                  TikTok
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://x.com/umrahmarket360"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-white"
-                >
-                  X
-                </a>
-              </li>
-            </ul>
-          </div>
         </div>
 
         <div className="border-t border-gray-800 mt-12 pt-8">
@@ -193,8 +154,12 @@ const Footer = () => {
         </div>
       </div>
 
-      {/* Visitor ↔ Agent live chat */}
-      <ChatWidget />
+      {/* Visitor ↔ Agent live chat — client-only, see the lazy import above */}
+      {mounted && (
+        <Suspense fallback={null}>
+          <ChatWidget />
+        </Suspense>
+      )}
 
       {showAgentModal && (
         <div className="fixed inset-0 z-[100]">

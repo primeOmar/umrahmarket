@@ -8,6 +8,8 @@ import {
 import Header from './Header';
 import Seo from './Seo';
 
+const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
+
 
 const DOCUMENTS = [
   {
@@ -251,7 +253,7 @@ const VerifiedPage = ({ currentUser, onLogout, onAuthSuccess }) => {
       <Seo
         title="Verification & Trust Documents | UmrahMarket Kenya"
         description="Review UmrahMarket's company, tax, and travel verification documents before booking with confidence."
-        canonical={`${window.location.origin}/verified`}
+        canonical={`${SITE_ORIGIN}/verified`}
       />
 
       <Header currentUser={currentUser} onLogout={onLogout} onAuthSuccess={onAuthSuccess} />

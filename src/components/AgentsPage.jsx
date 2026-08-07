@@ -7,6 +7,8 @@ import {
 import { request } from '../api';
 import Seo from './Seo';
 
+const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/agents  →  [{ id, businessName, firstName, lastName, avatar,
 //                        location, city, country, verificationStatus,
@@ -132,13 +134,13 @@ const AgentsPage = () => {
       <Seo
         title="Verified Travel Agents for Umrah Packages in Kenya | UmrahMarket"
         description="Browse verified travel agents listing Umrah and Hajj packages in Kenya. Compare packages, ratings, and office locations before you book."
-        canonical={`${window.location.origin}/agents`}
+        canonical={`${SITE_ORIGIN}/agents`}
         jsonLd={{
           '@context': 'https://schema.org',
           '@type': 'CollectionPage',
           name: 'Verified Travel Agents for Umrah Packages in Kenya',
           description: 'Browse verified travel agents listing Umrah and Hajj packages in Kenya.',
-          url: `${window.location.origin}/agents`,
+          url: `${SITE_ORIGIN}/agents`,
         }}
       />
       {/* Page header */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import Header from './components/Header';
 import HeroSection from './components/HeroSection';
 import PackageDetailPage from './components/PackageDetailPage';
@@ -22,32 +22,51 @@ import AgentDetailPage from './components/AgentDetailPage';
 import VerifyEmailPage from './components/VerifyEmailPage';
 import { isEmailVerified } from './utils/emailVerification';
 import Seo from './components/Seo';
+
+// window.location.origin doesn't exist during SSR — guarded fallback to the
+// real production origin so the Home route's Seo/jsonLd props (evaluated
+// during render, not inside an effect) don't crash the server render.
+const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
+const getLocalStorageItem = (key) => {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  return window.localStorage.getItem(key);
+};
+
+const isTokenExpired = (token) => {
+  try {
+    const payload = token?.split('.')?.[1];
+    if (!payload) return false;
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    const exp = Number(json?.exp || 0);
+    if (!exp) return false;
+    return Date.now() >= exp * 1000;
+  } catch {
+    return false;
+  }
+};
+
 // ── Silent token refresh ──────────────────────────────────────────────────────
 // Called once on app load. Uses the refreshToken function from api.js
 // so the URL is always kept in sync with the rest of the API layer.
 const initAuth = async () => {
-  const userRefreshToken = localStorage.getItem('refresh_token');
-  const superadminToken = localStorage.getItem('superadmin_token');
-  const superadminRefreshToken = localStorage.getItem('superadmin_refresh_token');
-  const mirroredAccessToken = localStorage.getItem('access_token');
-  const mirroredRefreshToken = localStorage.getItem('refresh_token');
+  const storedToken = getLocalStorageItem('refresh_token');
+  const storedUser = userStore.get();
 
-  // One-time cleanup for older builds that mirrored superadmin tokens into
-  // standard user keys. That causes /auth/refresh (user endpoint) to receive
-  // superadmin refresh tokens and return 401 on app boot.
-  const hasLegacySuperadminMirror =
-    Boolean(superadminToken && superadminRefreshToken) &&
-    mirroredAccessToken === superadminToken &&
-    mirroredRefreshToken === superadminRefreshToken;
+  // Public pages don't need to probe auth when no user session exists.
+  // This avoids noisy refresh calls from stale leftover tokens.
+  if (!storedToken || !storedUser) {
+    if (!storedUser) {
+      tokenStore.clear();
+    }
+    return storedUser;
+  }
 
-  if (hasLegacySuperadminMirror) {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+  if (isTokenExpired(storedToken)) {
+    tokenStore.clear();
+    userStore.clear();
     return null;
   }
 
-  const storedToken = userRefreshToken;
-  if (!storedToken) return userStore.get();
   try {
     const res = await refreshToken();
     const user = res?.data?.data?.user;
@@ -95,8 +114,8 @@ const ProtectedSuperAdminRoute = ({ children, authReady }) => {
       <div className="h-8 w-8 border-4 border-red-200 border-t-red-600 rounded-full animate-spin" />
     </div>
   );
-  const token = localStorage.getItem('superadmin_token');
-  const user = localStorage.getItem('superadmin_user');
+  const token = getLocalStorageItem('superadmin_token');
+  const user = getLocalStorageItem('superadmin_user');
   if (!token || !user) return <Navigate to="/superadmin/login" state={{ from: location.pathname }} replace />;
   return children;
 };
@@ -132,13 +151,17 @@ function NavigationBridge() {
   return null;
 }
 
-function App() {
+function App({ initialPackages = null, initialPathname = '/', initialAuthReady = false }) {
   const [favorites,   setFavorites]   = useState([]); // array of package IDs
   const [currentUser, setCurrentUser] = useState(null);
-  const [authReady,   setAuthReady]   = useState(false); // true once initAuth completes
+  const [authReady,   setAuthReady]   = useState(initialAuthReady); // true once initAuth completes
 
-  const [packages,   setPackages]   = useState([]);
-  const [pkgLoading, setPkgLoading] = useState(true);
+  // initialPackages comes from Vike's pages/+data.js server-side loader — only
+  // populated when this is the very first render of '/' coming straight from
+  // the server. Every other route (and every client-side navigation) leaves
+  // this null, so behavior there is 100% unchanged from before.
+  const [packages,   setPackages]   = useState(initialPackages ?? []);
+  const [pkgLoading, setPkgLoading] = useState(!initialPackages);
   const [pkgError,   setPkgError]   = useState(null);
 
   const fetchPackages = useCallback(async () => {
@@ -167,12 +190,16 @@ function App() {
       // 3. Mark auth as ready — protected routes can now evaluate
       setAuthReady(true);
 
-      // 4. Fetch public packages
-      fetchPackages();
+      // 4. Fetch public packages — skipped when Vike's SSR loader already
+      // seeded them (avoids a flash of real content -> skeleton -> content
+      // right after hydration on '/').
+      if (!initialPackages) {
+        fetchPackages();
+      }
     };
 
     bootstrap();
-  }, [fetchPackages]);
+  }, [fetchPackages, initialPackages]);
 
   const toggleFavorite = async (id) => {
     const user = currentUser || userStore.get();
@@ -257,8 +284,11 @@ function App() {
     };
   }, [currentUser]); // restart timer when user changes
 
+  const RouterComponent = typeof window === 'undefined' ? MemoryRouter : BrowserRouter;
+  const routerProps = typeof window === 'undefined' ? { initialEntries: [initialPathname || '/'] } : {};
+
   return (
-    <Router>
+    <RouterComponent {...routerProps}>
       <NavigationBridge />
       <div className="min-h-screen bg-gray-50">
         <Routes>
@@ -269,21 +299,21 @@ function App() {
                 <Seo
                   title="UmrahMarket - Verified Umrah & Hajj Packages in Kenya"
                   description="Browse verified Umrah and Hajj packages from trusted Kenyan travel agents. Compare prices, hotels, durations, and agent credentials in one place."
-                  canonical={`${window.location.origin}/`}
+                  canonical={`${SITE_ORIGIN}/`}
                   jsonLd={{
                     '@context': 'https://schema.org',
                     '@graph': [
                       {
                         '@type': 'WebSite',
                         name: 'UmrahMarket',
-                        url: window.location.origin,
+                        url: SITE_ORIGIN,
                       },
                       {
                         '@type': 'Organization',
                         name: 'UmrahMarket',
-                        url: window.location.origin,
-                        logo: `${window.location.origin}/umramarket1.png`,
-                        image: `${window.location.origin}/umramarket1.png`,
+                        url: SITE_ORIGIN,
+                        logo: `${SITE_ORIGIN}/umramarket1.png`,
+                        image: `${SITE_ORIGIN}/umramarket1.png`,
                         description: 'Verified marketplace connecting pilgrims with licensed Umrah and Hajj travel agents in Kenya, Somalia, Tanzania, and Uganda.',
                         address: {
                           '@type': 'PostalAddress',
@@ -320,6 +350,34 @@ function App() {
                     userStore.set(user);
                   }}
                 />
+                {initialPathname === '/' && (
+                  <section className="border-t border-emerald-100/70 bg-white">
+                    <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-7">
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-4 sm:px-5 py-4 sm:py-5">
+                        <h2 className="text-sm sm:text-base font-semibold text-gray-900">
+                          Find verified Umrah packages in Kenya and Hajj packages in Kenya
+                        </h2>
+                        <p className="mt-1.5 text-sm text-gray-600 leading-relaxed max-w-4xl">
+                          Compare package prices, hotel details in Makkah and Madinah, inclusions, and verified agent credentials in one place. Popular searches include umrah packages kenya and hajj package kenya.
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                          <Link
+                            to="/guidance"
+                            className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
+                          >
+                            Umrah and Hajj guidance
+                          </Link>
+                          <Link
+                            to="/agents"
+                            className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
+                          >
+                            Browse verified agents
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                )}
                 <Footer />
               </>
             </HomeRoute>
@@ -351,7 +409,6 @@ function App() {
             </>
           } />
 
-          {/* Legacy package routes kept for compatibility */}
           <Route path="/package/:id" element={
             <>
               <Header
@@ -532,7 +589,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
-    </Router>
+    </RouterComponent>
   );
 }
 

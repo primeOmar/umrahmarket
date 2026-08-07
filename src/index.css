@@ -1,158 +1,139 @@
-@import "tailwindcss";
+@import "tailwindcss/index.css";
+
 @layer base {
   html {
     scroll-behavior: smooth;
   }
-  
+
   body {
-    @apply antialiased text-gray-900;
+    margin: 0;
+    min-width: 320px;
+    background: #f8fafc;
+    color: #111827;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  img {
+    display: block;
+    max-width: 100%;
   }
 }
 
 @layer components {
   .container {
-    @apply max-w-7xl;
+    max-width: 80rem;
   }
-  
-  /* Custom scrollbar */
+
   ::-webkit-scrollbar {
     width: 10px;
+    height: 10px;
   }
-  
+
   ::-webkit-scrollbar-track {
-    @apply bg-gray-100;
+    background: #f1f5f9;
   }
-  
+
   ::-webkit-scrollbar-thumb {
-    @apply bg-gradient-to-b from-green-500 to-emerald-600 rounded-full;
+    background: linear-gradient(to bottom, #10b981, #0d9488);
+    border-radius: 9999px;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gradient-to-b from-green-600 to-emerald-700;
+    background: linear-gradient(to bottom, #059669, #0f766e);
   }
 }
 
-/* Range slider styles */
 input[type="range"] {
-  @apply appearance-none bg-transparent;
+  appearance: none;
+  background: transparent;
 }
 
 input[type="range"]::-webkit-slider-thumb {
-  @apply appearance-none h-5 w-5 bg-green-600 rounded-full cursor-pointer border-0;
+  appearance: none;
+  height: 1.25rem;
+  width: 1.25rem;
+  background: #059669;
+  border-radius: 9999px;
+  cursor: pointer;
+  border: 0;
 }
 
 input[type="range"]::-moz-range-thumb {
-  @apply h-5 w-5 bg-green-600 rounded-full cursor-pointer border-0;
+  height: 1.25rem;
+  width: 1.25rem;
+  background: #059669;
+  border-radius: 9999px;
+  cursor: pointer;
+  border: 0;
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
-  @apply h-2 bg-gray-200 rounded-full;
+  height: 0.5rem;
+  background: #e5e7eb;
+  border-radius: 9999px;
 }
 
 input[type="range"]::-moz-range-track {
-  @apply h-2 bg-gray-200 rounded-full;
+  height: 0.5rem;
+  background: #e5e7eb;
+  border-radius: 9999px;
 }
+
+@keyframes gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  25% { transform: translateY(-10px) translateX(10px); }
+  50% { transform: translateY(-5px) translateX(-5px); }
+  75% { transform: translateY(5px) translateX(-10px); }
+}
+
+@keyframes progress {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 100%; }
+}
+
+@keyframes confetti {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+@keyframes check {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
 .animate-gradient {
   background-size: 200% 200%;
   animation: gradient 3s ease infinite;
 }
 
-@keyframes gradient {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
-}
-
-.animate-slideUp {
-  animation: slideUp 0.4s ease-out;
-}
-
-/* Ensure modal is responsive */
-@media (max-width: 640px) {
-  .max-h-\[90vh\] {
-    max-height: 95vh;
-  }
-}
-
-/* Animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    backdrop-filter: blur(0px);
-  }
-  to {
-    opacity: 1;
-    backdrop-filter: blur(8px);
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0) translateX(0);
-  }
-  25% {
-    transform: translateY(-10px) translateX(10px);
-  }
-  50% {
-    transform: translateY(-5px) translateX(-5px);
-  }
-  75% {
-    transform: translateY(5px) translateX(-10px);
-  }
-}
-
-/* Animation Classes */
 .animate-fadeIn {
   animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
@@ -169,72 +150,20 @@ input[type="range"]::-moz-range-track {
   animation: float 20s ease-in-out infinite;
 }
 
-/* Custom Scrollbar */
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #d1fae5 transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #10b981, #0d9488);
-  border-radius: 3px;
-}
-
-/* Background Patterns */
-.bg-emerald-pattern {
-  background-image: 
-    radial-gradient(circle at 25% 25%, #10b981 1px, transparent 1px),
-    radial-gradient(circle at 75% 75%, #0d9488 1px, transparent 1px);
-  background-size: 40px 40px;
-}
-
-.bg-blue-pattern {
-  background-image: 
-    radial-gradient(circle at 25% 25%, #3b82f6 1px, transparent 1px),
-    radial-gradient(circle at 75% 75%, #6366f1 1px, transparent 1px);
-  background-size: 40px 40px;
-}
-
-.backdrop-blur-lg {
-  backdrop-filter: blur(16px);
-}
-
-.backdrop-blur-xl {
-  backdrop-filter: blur(24px);
-}
-@keyframes progress {
-  0% { width: 0%; }
-  50% { width: 70%; }
-  100% { width: 100%; }
-}
-
 .animate-progress {
   animation: progress 1.5s ease-in-out infinite;
-}
-
-@keyframes confetti {
-  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
 }
 
 .animate-confetti {
   animation: confetti 3s ease-out forwards;
 }
 
-@keyframes check {
-  0% { transform: scale(0); }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); }
-}
-
 .animate-check {
   animation: check 0.5s ease-out forwards;
+}
+
+@media (max-width: 640px) {
+  .max-h-\[90vh\] {
+    max-height: 95vh;
+  }
 }

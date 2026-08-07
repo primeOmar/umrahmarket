@@ -1,4 +1,5 @@
 import { request, tokenStore } from '../../../../api';
+import { formatDistanceMeters } from '../../../../utils/packageUtils';
 
 // ─────────────────────────────────────────────
 // FORM DATA BUILDER
@@ -124,9 +125,7 @@ export const normalise = (pkg) => {
     title: pkg.name || pkg.title || 'Umrah Package',
     originalPrice: Number(pkg.original_price ?? pkg.price ?? 0),
     hotelRating: pkg.makkah_hotel_rating ? `${pkg.makkah_hotel_rating}★` : '',
-    distance: pkg.makkah_hotel_distance
-      ? `${Number(pkg.makkah_hotel_distance).toLocaleString()}m from Haram`
-      : pkg.distance || '',
+    distance: formatDistanceMeters(pkg.makkah_hotel_distance, 'Haram') || pkg.distance || '',
     image:  coverImage,
     images: imageUrls ?? [coverImage],   // ← always an array for the gallery
     price: Number(pkg.price ?? 0),

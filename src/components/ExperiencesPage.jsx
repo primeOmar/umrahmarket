@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import Seo from './Seo';
 
+const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
+
 // ─── Trust badge ────────────────────────────────────────────────────────────
 const TrustBadge = ({ title, body, icon: Icon }) => (
   <div className="flex flex-col items-center text-center gap-4 p-5 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-300">
@@ -86,7 +88,7 @@ const ExperiencesPage = () => {
       <Seo
         title="About UmrahMarket | Verified Pilgrimage Platform in Kenya"
         description="Learn how UmrahMarket verifies travel agents, protects pilgrims, and connects users with trusted Umrah and Hajj packages in Kenya."
-        canonical={`${window.location.origin}/experiences`}
+        canonical={`${SITE_ORIGIN}/experiences`}
       />
 
       {/* ── HERO BANNER ─────────────────────────────────────────────────────── */}

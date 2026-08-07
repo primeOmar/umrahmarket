@@ -1,7 +1,8 @@
 // src/hooks/useFxRate.js
 import { useState, useEffect } from 'react';
+import { isLocalBrowser, resolveApiOrigin } from '../utils/apiBase';
 
-const API = import.meta.env.VITE_API_URL || '';
+const API = resolveApiOrigin();
 
 let _cache = null; // module-level cache so multiple components share one fetch
 
@@ -12,6 +13,15 @@ export function useFxRate() {
   const [fxError,   setFxError]   = useState(null);
 
   useEffect(() => {
+    if (isLocalBrowser()) {
+      const fallback = 130;
+      _cache = { rate: fallback, source: 'fallback-local' };
+      setFxRate(fallback);
+      setFxSource('fallback-local');
+      setFxLoading(false);
+      return;
+    }
+
     if (_cache) return; // already fetched this session
     let alive = true;
     fetch(`${API}/api/fx/rate`, { credentials: 'include' })

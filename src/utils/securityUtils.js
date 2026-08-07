@@ -29,7 +29,7 @@ export const verifyPassword = (password, hash) => {
     const [salt, storedHash] = hash.split(':');
     const newHash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
     return newHash === storedHash;
-  } catch (e) {
+  } catch {
     return false;
   }
 };
@@ -173,7 +173,7 @@ export const decrypt = (encryptedText) => {
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
-  } catch (e) {
+  } catch {
     throw new Error('Decryption failed');
   }
 };

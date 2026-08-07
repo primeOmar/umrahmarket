@@ -6,22 +6,32 @@
  */
 import axios from 'axios';
 import { supabase } from './config/supabaseClient';
+import { resolveApiOrigin } from './utils/apiBase';
 
-const _apiBase = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
+const BASE_API = `${resolveApiOrigin('http://localhost:5000')}/api`;
+
+const hasBrowserStorage = () => typeof window !== 'undefined' && !!window.localStorage;
 
 
 // ─── Token & user stores ───────────────────────────────────────────────────────
-let _accessToken = localStorage.getItem('access_token') || null;
+// Guarded: this runs at module import time. In the browser, localStorage
+// exists and this reads any existing token as before. During SSR (Node),
+// localStorage doesn't exist — there's never a logged-in user server-side
+// anyway, so null is the correct, safe fallback rather than a crash.
+let _accessToken = (typeof window !== 'undefined' && window.localStorage)
+  ? localStorage.getItem('access_token')
+  : null;
 
 // ─── Token & user stores ───────────────────────────────────────────────────────
 export const tokenStore = {
-  get: () => localStorage.getItem('access_token'),
+  get: () => (hasBrowserStorage() ? localStorage.getItem('access_token') : null),
   set: (token) => {
+    if (!hasBrowserStorage()) return;
     if (token) localStorage.setItem('access_token', token);
     else localStorage.removeItem('access_token');
   },
   clear: () => {
+    if (!hasBrowserStorage()) return;
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
@@ -30,10 +40,17 @@ export const tokenStore = {
 
 export const userStore = {
   get: () => {
+    if (!hasBrowserStorage()) return null;
     try { return JSON.parse(localStorage.getItem('user')); } catch { return null; }
   },
-  set: (user) => localStorage.setItem('user', JSON.stringify(user)),
-  clear: () => localStorage.removeItem('user'),
+  set: (user) => {
+    if (!hasBrowserStorage()) return;
+    localStorage.setItem('user', JSON.stringify(user));
+  },
+  clear: () => {
+    if (!hasBrowserStorage()) return;
+    localStorage.removeItem('user');
+  },
 };
 
 // ─── Session expiry handler ────────────────────────────────────────────────────
@@ -66,7 +83,7 @@ let _navigate = null;
 export const setNavigator = (fn) => { _navigate = fn; };
 export const goTo = (path, opts, reason) => {
   if (_navigate) _navigate(path, opts);
-  else window.location.href = path; // fallback: bridge not mounted yet (should not happen in practice)
+  else if (typeof window !== 'undefined') window.location.href = path; // fallback: bridge not mounted yet (should not happen in practice)
 };
 
 const handleSessionExpired = () => {

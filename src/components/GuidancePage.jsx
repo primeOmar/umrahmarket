@@ -12,6 +12,8 @@ import {
 import Header from './Header';
 import Seo from './Seo';
 
+const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
+
 // ── Media: real photos of Makkah & Madinah ────────────────────────────────
 const PLACEHOLDER_PHOTOS = [
   { id: 1, url: 'https://images.unsplash.com/photo-1513072064285-240f87fa81e8?auto=format&fit=crop&w=900&q=80', caption: 'The Kaaba, Masjid al-Haram, Makkah' },
@@ -132,7 +134,7 @@ const GuidancePage = ({ currentUser, onLogout, onAuthSuccess }) => {
       <Seo
         title="Umrah & Hajj Guidance | UmrahMarket Kenya"
         description="Step-by-step Umrah and Hajj guidance with practical tips for pilgrims in Kenya, including ritual order, preparation, and travel advice."
-        canonical={`${window.location.origin}/guidance`}
+        canonical={`${SITE_ORIGIN}/guidance`}
       />
       <Header currentUser={currentUser} onLogout={onLogout} onAuthSuccess={onAuthSuccess} />
 

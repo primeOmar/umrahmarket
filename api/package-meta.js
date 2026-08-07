@@ -1,10 +1,15 @@
 
-import fs from 'fs';
-import path from 'path';
 
 const API_BASE  = (process.env.API_BASE || 'https://api.umrahmarket.net').replace(/\/$/, '');
 const SITE_URL  = 'https://www.umrahmarket.net';
 const FALLBACK_IMAGE = `${SITE_URL}/og-default.jpg`;
+
+// Minimal last-resort shell — only used if even the live-homepage fetch below
+// fails (e.g. transient network blip). Real visitors following this link
+// still land on a working page: the root div + real bundle script tags from
+// the homepage fetch are what normally provide that, this is just a safety
+// net so the function never hard-500s.
+const EMERGENCY_SHELL = '<!doctype html><html><head></head><body><div id="root"></div></body></html>';
 
 function toSlug(value = '') {
   const text = String(value)
@@ -72,14 +77,18 @@ export default async function handler(req, res) {
     || req.url.split('/package/')[1]?.split(/[?#]/)[0]
     || req.url.split('/umra-package/')[1]?.split('/')[1]?.split(/[?#]/)[0];
 
-  const indexPath = path.join(process.cwd(), 'dist', 'index.html');
   let html;
   try {
-    html = fs.readFileSync(indexPath, 'utf-8');
+    // Fetch '/' itself rather than any path under /package or /umra-package —
+    // those are the ones vercel.json rewrites to THIS function, so fetching
+    // them here would just call this same function again (infinite loop).
+    // '/' is never rewritten, so it always reaches the real Vike-rendered
+    // shell — correct script/asset tags, whatever the current build produced.
+    const shellRes = await fetch(`${SITE_URL}/`, { headers: { Accept: 'text/html' } });
+    if (!shellRes.ok) throw new Error(`Shell fetch failed: ${shellRes.status}`);
+    html = await shellRes.text();
   } catch (err) {
-    
-    res.status(500).send('Build output not found');
-    return;
+    html = EMERGENCY_SHELL;
   }
 
   let meta = {

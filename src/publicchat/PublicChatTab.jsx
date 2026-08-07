@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import {
   MessagesSquare, Search, RefreshCw, Loader, X, AlertTriangle, Send,
   Headset, User, Mail, Phone, Clock, Globe, XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
+import { supabase } from '../config/supabaseClient';
+import { resolveApiOrigin } from '../utils/apiBase';
 
 /**
  * PublicChatTab — superadmin view for conversations started from the public
@@ -47,8 +48,7 @@ import { format, formatDistanceToNow } from 'date-fns';
  */
 
 // ─── API base + superadmin-scoped fetch (self-contained) ─────────────────────
-const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-const BASE_API = _base.endsWith('/api/publicchat') ? _base : `${_base}/api/publicchat`;
+const BASE_API = `${resolveApiOrigin('http://localhost:5000')}/api/publicchat`;
 
 const pcFetch = async (url, options = {}) => {
   const res = await fetch(`${BASE_API}${url}`, {
@@ -70,12 +70,6 @@ const pcFetch = async (url, options = {}) => {
   }
   return res.json();
 };
-
-// ─── Supabase Realtime client ─────────────────────────────────────────────
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
 
 const ADMIN_LIST_CHANNEL = 'chat:admin:list';
 const LIST_SAFETY_NET_MS = 120000; // background refresh, not the primary path

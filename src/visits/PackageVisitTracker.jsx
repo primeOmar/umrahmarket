@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { userStore } from '../api'; // adjust path — same import PackageDetailPage.jsx already uses
+import { isLocalBrowser, resolveApiOrigin } from '../utils/apiBase';
 
 // Same device/browser/timezone capture as your existing Visits.jsx
 const getBrowserInfo = () => {
@@ -70,6 +71,8 @@ const PackageVisitTracker = ({ packageData }) => {
     if (loggedIdRef.current === packageData.id) return;
     loggedIdRef.current = packageData.id;
 
+    if (isLocalBrowser()) return;
+
     const logVisit = async () => {
       try {
         const currentUser = userStore.get();
@@ -92,7 +95,7 @@ const PackageVisitTracker = ({ packageData }) => {
           availableTo: packageData.available_to ?? null,
         };
 
-        await fetch(`${import.meta.env.VITE_API_BASE}/api/visits/packagevisits`, {
+        await fetch(`${resolveApiOrigin()}/api/visits/packagevisits`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ visitorInfo, packageInfo }),

@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import {
   MessageCircle,
   X,
@@ -13,6 +12,8 @@ import {
   Check,
   AlertCircle,
 } from 'lucide-react';
+import { supabase } from '../config/supabaseClient';
+import { resolveApiOrigin } from '../utils/apiBase';
 
 /**
  * ChatWidget — visitor ↔ agent live chat for Umrah Market.
@@ -69,9 +70,7 @@ import {
  */
 
 // ─── API base (writes) ────────────────────────────────────────────────────
-const _base =
-  import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-const BASE_API = _base.endsWith('/api/publicchat') ? _base : `${_base}/api/publicchat`;
+const BASE_API = `${resolveApiOrigin('http://localhost:5000')}/api/publicchat`;
 
 const apiFetch = async (url, options = {}) => {
   const res = await fetch(`${BASE_API}${url}`, {
@@ -83,12 +82,6 @@ const apiFetch = async (url, options = {}) => {
   if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
   return data;
 };
-
-// ─── Supabase Realtime client (reads/subscriptions + direct broadcasts) ────
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
 
 const ADMIN_LIST_CHANNEL = 'chat:admin:list';
 

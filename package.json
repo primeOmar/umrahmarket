@@ -23,7 +23,10 @@
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.13.0",
     "recharts": "^3.10.1",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "vike": "^0.4.260",
+    "vike-react": "^0.6.25",
+    "vike-vercel": "^0.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

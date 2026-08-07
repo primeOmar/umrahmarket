@@ -11,10 +11,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Restore session on page load so Realtime auth.uid() works after refresh
-const existingToken = localStorage.getItem('access_token');
-if (existingToken) {
-  supabase.auth.setSession({
-    access_token: existingToken,
-    refresh_token: '',
-  }).catch(() => {});
+if (typeof window !== 'undefined' && window.localStorage) {
+  const existingToken = localStorage.getItem('access_token');
+  if (existingToken) {
+    supabase.auth.setSession({
+      access_token: existingToken,
+      refresh_token: '',
+    }).catch(() => {});
+  }
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { userStore } from '../api'; // adjust path to match this file's actual location
+import { isLocalBrowser, resolveApiOrigin } from '../utils/apiBase';
 
 // Same device/browser/timezone capture as Visits.jsx / PackageVisitTracker.jsx
 const getBrowserInfo = () => {
@@ -69,6 +70,8 @@ const AgentVisitTracker = ({ agent }) => {
     if (loggedIdRef.current === agent.id) return;
     loggedIdRef.current = agent.id;
 
+    if (isLocalBrowser()) return;
+
     const agentName = agent.businessName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || 'Unnamed Agent';
 
     const logVisit = async () => {
@@ -89,7 +92,7 @@ const AgentVisitTracker = ({ agent }) => {
           yearsExperience: typeof agent.yearsExperience === 'number' ? agent.yearsExperience : null,
         };
 
-        await fetch(`${import.meta.env.VITE_API_BASE}/api/visits/agentvisits`, {
+        await fetch(`${resolveApiOrigin()}/api/visits/agentvisits`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ visitorInfo, agentInfo }),

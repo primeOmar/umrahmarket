@@ -16,6 +16,8 @@ import PackageVisitTracker from '../visits/PackageVisitTracker';
 import { useFxRate } from '../hooks/useFxRate';
 import Seo from './Seo';
 import { createPackagePath } from '../utils/packageSeo';
+import { formatDistanceMeters } from '../utils/packageUtils';
+const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
 // ─────────────────────────────────────────────────────────────────────────────
 // GalleryCarousel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -483,7 +485,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
     <Seo
       title={`${packageData.title || packageData.name || 'Umrah Package'} | UmrahMarket`}
       description={packageData.description || 'Compare verified Umrah and Hajj packages from trusted travel agents.'}
-      canonical={`${window.location.origin}${packagePath}`}
+      canonical={`${SITE_ORIGIN}${packagePath}`}
       image={safeImages[0]}
       type="product"
       jsonLd={{
@@ -492,13 +494,13 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
         name: packageData.title || packageData.name || 'Umrah Package',
         description: packageData.description || 'Compare verified Umrah and Hajj packages from trusted travel agents.',
         image: safeImages,
-        url: `${window.location.origin}${packagePath}`,
+        url: `${SITE_ORIGIN}${packagePath}`,
         offers: packageData.price ? {
           '@type': 'Offer',
           priceCurrency: 'USD',
           price: String(packageData.price),
           availability: 'https://schema.org/InStock',
-          url: `${window.location.origin}${packagePath}`,
+          url: `${SITE_ORIGIN}${packagePath}`,
         } : undefined,
       }}
     />
@@ -573,8 +575,8 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
             {packageData.rating > 0 && (
               <div className="flex items-center"><Star className="h-4 w-4 text-amber-500 fill-current mr-1" /><span className="font-medium">{packageData.rating}★</span></div>
             )}
-            {packageData.distance && (
-              <div className="flex items-center"><MapPin className="h-4 w-4 mr-1" />{packageData.distance}</div>
+            {(formatDistanceMeters(packageData.makkah_hotel_distance, 'Haram') || packageData.distance) && (
+              <div className="flex items-center"><MapPin className="h-4 w-4 mr-1" />{formatDistanceMeters(packageData.makkah_hotel_distance, 'Haram') || packageData.distance}</div>
             )}
             {packageData.hotelRating && (
               <div className="flex items-center"><Hotel className="h-4 w-4 mr-1" />{packageData.hotelRating} Hotel</div>
@@ -719,7 +721,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                       <div className="flex items-center gap-2 mb-2"><Hotel className="h-4 w-4 text-emerald-600" /><span className="font-semibold">Makkah Hotel</span></div>
                       <p className="font-medium text-gray-700">{packageData.makkah_hotel_name}</p>
                       {packageData.makkah_hotel_rating && <p className="text-sm text-amber-600">{'★'.repeat(Number(packageData.makkah_hotel_rating))} ({packageData.makkah_hotel_rating} stars)</p>}
-                      {packageData.makkah_hotel_distance && <p className="text-sm text-gray-500 mt-1"><MapPin className="h-3 w-3 inline mr-1" />{Number(packageData.makkah_hotel_distance).toLocaleString()}m from Haram</p>}
+                      {formatDistanceMeters(packageData.makkah_hotel_distance, 'Haram') && <p className="text-sm text-gray-500 mt-1"><MapPin className="h-3 w-3 inline mr-1" />{formatDistanceMeters(packageData.makkah_hotel_distance, 'Haram')}</p>}
                       {packageData.makkah_check_in_date  && <p className="text-xs text-gray-400 mt-2">Check-in: {new Date(packageData.makkah_check_in_date).toLocaleDateString('en-US',{day:'numeric',month:'short'})}</p>}
                       {packageData.makkah_check_out_date && <p className="text-xs text-gray-400">Check-out: {new Date(packageData.makkah_check_out_date).toLocaleDateString('en-US',{day:'numeric',month:'short'})}</p>}
                     </div>
@@ -729,7 +731,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                       <div className="flex items-center gap-2 mb-2"><Hotel className="h-4 w-4 text-emerald-600" /><span className="font-semibold">Madinah Hotel</span></div>
                       <p className="font-medium text-gray-700">{packageData.madinah_hotel_name}</p>
                       {packageData.madinah_hotel_rating && <p className="text-sm text-amber-600">{'★'.repeat(Number(packageData.madinah_hotel_rating))} ({packageData.madinah_hotel_rating} stars)</p>}
-                      {packageData.madinah_hotel_distance && <p className="text-sm text-gray-500 mt-1"><MapPin className="h-3 w-3 inline mr-1" />{Number(packageData.madinah_hotel_distance).toLocaleString()}m from Masjid Nabawi</p>}
+                      {formatDistanceMeters(packageData.madinah_hotel_distance, 'Masjid Nabawi') && <p className="text-sm text-gray-500 mt-1"><MapPin className="h-3 w-3 inline mr-1" />{formatDistanceMeters(packageData.madinah_hotel_distance, 'Masjid Nabawi')}</p>}
                       {packageData.madinah_check_in_date  && <p className="text-xs text-gray-400 mt-2">Check-in: {new Date(packageData.madinah_check_in_date).toLocaleDateString('en-US',{day:'numeric',month:'short'})}</p>}
                       {packageData.madinah_check_out_date && <p className="text-xs text-gray-400">Check-out: {new Date(packageData.madinah_check_out_date).toLocaleDateString('en-US',{day:'numeric',month:'short'})}</p>}
                     </div>

@@ -1,13 +1,16 @@
 {
   "rewrites": [
-    { "source": "/umra-package/:slug/:id", "destination": "/api/package-meta?id=:id" },
-    { "source": "/package/:id/:slug", "destination": "/api/package-meta?id=:id" },
-    { "source": "/package/:id", "destination": "/api/package-meta?id=:id" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
-  "functions": {
-    "api/package-meta.js": {
-      "includeFiles": "dist/index.html"
-    }
-  }
+    { "source": "/backend-proxy/:path*", "destination": "https://api.umrahmarket.net/:path*" },
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/assets/:path*", "destination": "/client/assets/:path*" },
+    { "source": "/robots.txt", "destination": "/client/robots.txt" },
+    { "source": "/sitemap.xml", "destination": "/client/sitemap.xml" },
+    { "source": "/umrahmarket.jpg", "destination": "/client/umrahmarket.jpg" },
+    { "source": "/umrahmarket.png", "destination": "/client/umrahmarket.png" },
+    { "source": "/umramarket.png", "destination": "/client/umramarket.png" },
+    { "source": "/umramarket1.png", "destination": "/client/umramarket1.png" },
+    { "source": "/vite.svg", "destination": "/client/vite.svg" },
+    { "source": "/", "destination": "/api/ssr" },
+    { "source": "/:path((?!.*\\.).*)", "destination": "/api/ssr" }
+  ]
 }

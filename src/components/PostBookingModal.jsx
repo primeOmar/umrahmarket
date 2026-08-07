@@ -359,7 +359,7 @@ const PostBookingModal = ({ booking, user, onClose, onComplete }) => {
         await videoRef.current.play();
       }
       setWebcamStarting(false);
-    } catch (err) {
+    } catch {
       
       stopWebcam();
       setWebcamError('Could not access your camera. You can upload a photo instead.');

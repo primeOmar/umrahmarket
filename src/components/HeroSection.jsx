@@ -19,6 +19,7 @@ import { createPackagePath } from '../utils/packageSeo';
 //   toggleFavorite — (id) => void
 // ─────────────────────────────────────────────────────────────────────────────
 const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, favorites = [], currentUser, onAuthSuccess }) => {
+  const PACKAGES_PER_PAGE = 20;
   const navigate = useNavigate();
   const [showAuthModal, setShowAuthModal] = React.useState(false);
   
@@ -100,6 +101,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   const [priceRange,          setPriceRange]          = useState([0, 10000]);
   const [duration,            setDuration]            = useState('any');
   const [rating,              setRating]              = useState('any');
+  const [currentPage,         setCurrentPage]         = useState(1);
   const [activeFilterGroup,   setActiveFilterGroup]   = useState(null);
 
   const filterRef          = useRef(null);
@@ -260,6 +262,16 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
     }, 300);
     return () => clearTimeout(timer);
   }, [packages, selectedLocations, selectedFilters, selectedHotelStars, selectedMonths, priceRange, duration, rating]);
+
+  // Any filter/package-list change should start from page 1.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [packages, selectedLocations, selectedFilters, selectedHotelStars, selectedMonths, priceRange, duration, rating]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPackages.length / PACKAGES_PER_PAGE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStart = (safeCurrentPage - 1) * PACKAGES_PER_PAGE;
+  const paginatedPackages = filteredPackages.slice(pageStart, pageStart + PACKAGES_PER_PAGE);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   const toggleFilter = (groupId, filterId, isExclusive = false) => {
@@ -625,8 +637,9 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                 <button onClick={clearAllFilters} className="text-emerald-600 text-sm font-medium hover:underline">Clear all filters</button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                {filteredPackages.slice(0, 20).map((pkg) => (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                {paginatedPackages.map((pkg) => (
                   <div
                     key={pkg.id}
                     className="group cursor-pointer"
@@ -714,15 +727,46 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
+                </div>
 
-            {filteredPackages.length > 20 && (
-              <div className="mt-8 text-center">
-                <button className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-all">
-                  Show all {filteredPackages.length} packages
-                </button>
-              </div>
+                {filteredPackages.length > PACKAGES_PER_PAGE && (
+                  <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={safeCurrentPage === 1}
+                      className="px-3 py-2 text-xs sm:text-sm rounded-lg border border-gray-300 text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-emerald-300 hover:bg-emerald-50"
+                    >
+                      Previous
+                    </button>
+
+                    {Array.from({ length: totalPages }).map((_, i) => {
+                      const pageNum = i + 1;
+                      const active = pageNum === safeCurrentPage;
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`min-w-9 px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
+                            active
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-emerald-300 hover:bg-emerald-50'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={safeCurrentPage === totalPages}
+                      className="px-3 py-2 text-xs sm:text-sm rounded-lg border border-gray-300 text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-emerald-300 hover:bg-emerald-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

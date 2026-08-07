@@ -15,6 +15,7 @@ import {
 import { request, getPassportStatus, getPassportStatusBatch, paymentGuard, tokenStore, refreshToken } from '../api';
 import PassportVerificationModal from './PassportVerificationModal';
 import { persistBookingFlow, readPendingBookingFlow, clearPendingBookingFlow } from '../utils/bookingResume';
+import { isLocalBrowser, resolveApiOrigin } from '../utils/apiBase';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS  = 4_000;
@@ -137,8 +138,12 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     setFxLoading(true);
     setFxError(false);
     try {
-      const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
-      const r    = await fetch(apiBase + '/api/fx/rate');
+      if (isLocalBrowser()) {
+        setFxRate(130);
+        return;
+      }
+
+      const r    = await fetch(`${resolveApiOrigin()}/api/fx/rate`);
       const json = await r.json();
       if (!json?.success) throw new Error(json?.message || 'Rate fetch failed');
       setFxRate(json.usdKes);

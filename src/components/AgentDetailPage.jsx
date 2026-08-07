@@ -8,6 +8,8 @@ import {
 import { request } from '../api';
 import AgentVisitTracker from '../visits/AgentVisitTracker'
 import Seo from './Seo';
+
+const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/agents/:id  →  full public agent profile (see agents.routes.js):
 // businessName, firstName, lastName, verificationStatus, agentNumber,
@@ -95,13 +97,13 @@ const AgentDetailPage = () => {
       <Seo
         title={`${name} | Verified Umrah Agent in Kenya | UmrahMarket`}
         description={`${name}${agent.officeMapsUrl ? ' with office location in Kenya' : ''}${agent.yearsExperience ? ` and ${agent.yearsExperience} years of experience` : ''}. View verified travel agent details on UmrahMarket.`}
-        canonical={`${window.location.origin}/agents/${id}`}
+        canonical={`${SITE_ORIGIN}/agents/${id}`}
         image={agent.logoUrl}
         jsonLd={{
           '@context': 'https://schema.org',
           '@type': 'TravelAgency',
           name,
-          url: `${window.location.origin}/agents/${id}`,
+          url: `${SITE_ORIGIN}/agents/${id}`,
           image: agent.logoUrl || undefined,
           telephone: agent.phone || undefined,
           sameAs: agent.websiteUrl ? [agent.websiteUrl] : undefined,
