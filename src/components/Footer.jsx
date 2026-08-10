@@ -3,6 +3,7 @@ import { Mail, Phone, MapPin, Instagram, Youtube } from 'lucide-react';
 import logoImage from '../assets/umramarket1.png';
 import { useNavigate, Link } from 'react-router-dom';
 import AuthModal from './AuthModal';
+import PopularSearchLinks from './PopularSearchLinks';
 // Lazy + mount-gated on purpose: ChatWidget.jsx constructs a Supabase
 // realtime client at module top level, which touches WebSocket — that
 // doesn't exist in Node/SSR. A regular static import gets evaluated during
