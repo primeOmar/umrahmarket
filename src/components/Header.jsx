@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Search,
   Menu,
@@ -87,7 +87,6 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
 
   const goToNav = (item) => {
     setActiveNav(item.label);
-    if (item.path) navigate(item.path);
   };
 
   // Hamburger click — ALWAYS opens/closes the nav drawer. No auth check here,
@@ -117,20 +116,22 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
 
             {/* ── Logo ── */}
             <div className="flex-shrink-0">
-              <img
-                src={logoImage}
-                alt="Umrah Market Logo"
-                className="h-8 sm:h-9 w-auto cursor-pointer hover:opacity-90 transition-opacity duration-300"
-                onClick={() => navigate('/')}
-              />
+              <Link to="/">
+                <img
+                  src={logoImage}
+                  alt="Umrah Market Logo"
+                  className="h-8 sm:h-9 w-auto cursor-pointer hover:opacity-90 transition-opacity duration-300"
+                />
+              </Link>
             </div>
 
             {/* ── Desktop Nav (centered, lg+) ── */}
             <nav className="hidden lg:flex absolute left-1/2 -translate-x-1/2">
               <div className="flex space-x-1 bg-gray-50/80 backdrop-blur-sm rounded-2xl p-1.5 border border-gray-200/60 shadow-sm">
                 {navigationItems.map((item) => (
-                  <button
+                  <Link
                     key={item.label}
+                    to={item.path}
                     onClick={() => goToNav(item)}
                     className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${
                       activeNav === item.label
@@ -142,7 +143,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
                       {activeNav === item.label ? item.activeIcon : item.icon}
                     </span>
                     <span>{item.label}</span>
-                  </button>
+                  </Link>
                 ))}
               </div>
             </nav>
@@ -151,14 +152,14 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
             <div className="flex items-center gap-2">
 
               {/* Verified badge — lg+ only */}
-              <button
-                onClick={() => navigate('/verified')}
+              <Link
+                to="/verified"
                 className="hidden lg:flex items-center px-3 py-2 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/50 hover:border-emerald-300 hover:from-emerald-100 hover:to-teal-100/60 transition-all duration-300 cursor-pointer"
               >
                 <Shield className="h-3.5 w-3.5 text-emerald-600 mr-1.5" />
                 <span className="text-xs font-semibold text-emerald-700">Verified</span>
                 <Sparkles className="h-3 w-3 ml-1 text-emerald-500 opacity-60" />
-              </button>
+              </Link>
 
               {/* Search — desktop */}
               <button className="hidden lg:flex items-center justify-center h-9 w-9 rounded-full hover:bg-gray-100 transition-all duration-300 group">
@@ -250,8 +251,9 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
       <div className="hidden sm:flex lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
         <div className="flex justify-around w-full px-2 py-2">
           {navigationItems.map((item) => (
-            <button
+            <Link
               key={item.label}
+              to={item.path}
               onClick={() => goToNav(item)}
               className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all duration-300 ${
                 activeNav === item.label ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500'
@@ -266,7 +268,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
               {activeNav === item.label && (
                 <div className="h-0.5 w-5 mt-1 bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" />
               )}
-            </button>
+            </Link>
           ))}
           <button
             onClick={() => currentUser
@@ -318,8 +320,9 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
         {/* Nav links */}
         <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
           {navigationItems.map((item) => (
-            <button
+            <Link
               key={item.label}
+              to={item.path}
               onClick={() => { goToNav(item); setMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 activeNav === item.label
@@ -331,20 +334,21 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
                 {activeNav === item.label ? item.activeIcon : item.icon}
               </span>
               {item.label}
-            </button>
+            </Link>
           ))}
         </nav>
 
         {/* Drawer footer */}
         <div className="px-4 py-5 border-t border-gray-100 space-y-3">
-          <button
-            onClick={() => { setMobileMenuOpen(false); navigate('/verified'); }}
+          <Link
+            to="/verified"
+            onClick={() => setMobileMenuOpen(false)}
             className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 transition-colors duration-200"
           >
             <Shield className="h-4 w-4 text-emerald-600" />
             <span className="text-sm font-semibold text-emerald-700">Verified Platform</span>
             <Sparkles className="h-3.5 w-3.5 text-emerald-400 ml-auto" />
-          </button>
+          </Link>
           {currentUser ? (
             <button
               onClick={() => { setMobileMenuOpen(false); onLogout?.(); }}
@@ -369,8 +373,9 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
       <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
         <div className="flex justify-around px-2 py-2">
           {navigationItems.map((item) => (
-            <button
+            <Link
               key={item.label}
+              to={item.path}
               onClick={() => goToNav(item)}
               className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all duration-300 ${
                 activeNav === item.label ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500'
@@ -385,7 +390,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
               {activeNav === item.label && (
                 <div className="h-0.5 w-5 mt-1 bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" />
               )}
-            </button>
+            </Link>
           ))}
 
           {/* Account in bottom nav */}
