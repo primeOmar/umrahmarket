@@ -4,7 +4,7 @@
     { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/assets/:path*", "destination": "/client/assets/:path*" },
     { "source": "/robots.txt", "destination": "/client/robots.txt" },
-    { "source": "/sitemap.xml", "destination": "/client/sitemap.xml" },
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
     { "source": "/umrahmarket.jpg", "destination": "/client/umrahmarket.jpg" },
     { "source": "/umrahmarket.png", "destination": "/client/umrahmarket.png" },
     { "source": "/umramarket.png", "destination": "/client/umramarket.png" },

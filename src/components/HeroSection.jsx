@@ -1,5 +1,5 @@
 // HeroSection.jsx - FULL ORIGINAL + Book Now pre-login auth gating (nothing removed)
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Filter, ChevronDown, X, DollarSign, Star, Clock,
   Check, Heart, AlertCircle, Loader2,SlidersHorizontal, RefreshCw
@@ -18,7 +18,7 @@ import { createPackagePath } from '../utils/packageSeo';
 //   favorites      — string[]
 //   toggleFavorite — (id) => void
 // ─────────────────────────────────────────────────────────────────────────────
-const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, favorites = [], currentUser, onAuthSuccess }) => {
+const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, favorites = [], currentUser, onAuthSuccess, hideDefaultIntro = false }) => {
   const PACKAGES_PER_PAGE = 20;
   const navigate = useNavigate();
   const [showAuthModal, setShowAuthModal] = React.useState(false);
@@ -90,7 +90,14 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   };
 
   // ── Filter state ────────────────────────────────────────────────────────────
-  const [filteredPackages,    setFilteredPackages]    = useState([]);
+  // Seeded from `packages` (not []) — this is what SSR and the very first
+  // client paint render before the filter effect below has ever run. With no
+  // filters active on load, filteredPackages should just BE packages; seeding
+  // with [] made that first paint say "No packages match your filters" even
+  // though nothing was filtered — SSR doesn't run effects at all, and even
+  // client-side there's a mount + 300ms-debounce gap before the effect
+  // corrects it. That gap was the "flash" reported on umrahmarket.net.
+  const [filteredPackages,    setFilteredPackages]    = useState(packages);
   const [filterLoading,       setFilterLoading]       = useState(false);
   const [isScrolled,          setIsScrolled]          = useState(false);
   const [showFilters,         setShowFilters]         = useState(false);
@@ -98,11 +105,40 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   const [selectedLocations,   setSelectedLocations]   = useState([]);
   const [selectedHotelStars,  setSelectedHotelStars]  = useState([]);
   const [selectedMonths,      setSelectedMonths]      = useState([]);
-  const [priceRange,          setPriceRange]          = useState([0, 10000]);
+  // `null` means "no price filter applied yet" — matches how every other
+  // filter here works (an empty array = inactive). Previously this defaulted
+  // to a hardcoded [0, 10000] range that was applied UNCONDITIONALLY (see the
+  // filter effect below), even before the agent ever touched the price
+  // slider. Since package prices are entered in KES by Kenyan agents — a
+  // single Umrah package routinely runs well into six figures — every real
+  // package was silently above that hardcoded $10,000 ceiling and getting
+  // filtered out by default. That's what was causing "No packages match
+  // your filters" on first load with zero filters actually selected.
+  const [priceRange,          setPriceRange]          = useState(null);
   const [duration,            setDuration]            = useState('any');
   const [rating,              setRating]              = useState('any');
   const [currentPage,         setCurrentPage]         = useState(1);
   const [activeFilterGroup,   setActiveFilterGroup]   = useState(null);
+
+  // Price ceiling for the slider, derived from what's actually in the
+  // package list rather than a hardcoded guess — so this works correctly
+  // regardless of whether prices are entered in KES, USD, or anything
+  // else, and never silently clips real packages out of the default view.
+  // Rounded up to a clean step and padded slightly so the max-priced
+  // package isn't sitting right at the slider's edge.
+  const dynamicMaxPrice = useMemo(() => {
+    const prices = packages.map((p) => Number(p.price) || 0).filter((n) => n > 0);
+    if (!prices.length) return 10000;
+    const highest = Math.max(...prices);
+    const padded = Math.ceil((highest * 1.1) / 1000) * 1000;
+    return Math.max(padded, 10000);
+  }, [packages]);
+
+  // The range actually used for filtering/rendering — falls back to the
+  // full [0, dynamicMaxPrice] span whenever the agent/visitor hasn't
+  // deliberately narrowed it (priceRange === null), so an untouched price
+  // filter never excludes anything.
+  const effectivePriceRange = priceRange ?? [0, dynamicMaxPrice];
 
   const filterRef          = useRef(null);
   const dropdownRefs       = useRef({});
@@ -247,7 +283,11 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
         result = result.filter((p) => selectedMonths.some((month) => matchesSelectedMonth(p, month)));
       }
 
-      result = result.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
+      // Only applied once the visitor has actually moved the slider —
+      // otherwise an untouched price filter must never exclude anything.
+      if (priceRange !== null) {
+        result = result.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
+      }
 
       if (duration !== 'any') {
         const [minD, maxD] = duration.split('-').map(Number);
@@ -314,7 +354,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
     setSelectedLocations([]);
     setSelectedHotelStars([]);
     setSelectedMonths([]);
-    setPriceRange([0, 10000]);
+    setPriceRange(null);
     setDuration('any');
     setRating('any');
     setActiveFilterGroup(null);
@@ -334,7 +374,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
     count += selectedFilters.filter(f => f !== 'all' && f !== 'all_months').length;
     if (duration !== 'any') count++;
     if (rating !== 'any') count++;
-    if (priceRange[0] > 0 || priceRange[1] < 10000) count++;
+    if (priceRange !== null) count++;
     return count;
   };
 
@@ -402,19 +442,24 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
             <DollarSign className="h-4 w-4 mr-2 text-emerald-600" />Price Range
           </h3>
           <span className="text-sm text-emerald-600 font-medium">
-            ${priceRange[0].toLocaleString()} – ${priceRange[1] >= 10000 ? '10,000+' : priceRange[1].toLocaleString()}
+            {effectivePriceRange[0].toLocaleString()} – {effectivePriceRange[1] >= dynamicMaxPrice ? `${dynamicMaxPrice.toLocaleString()}+` : effectivePriceRange[1].toLocaleString()}
           </span>
         </div>
         <div className="space-y-3">
-          <input type="range" min="0" max="10000" step="100" value={priceRange[0]}
-            onChange={e => { const v = parseInt(e.target.value); if (v < priceRange[1]) setPriceRange([v, priceRange[1]]); }}
+          <input type="range" min="0" max={dynamicMaxPrice} step="100" value={effectivePriceRange[0]}
+            onChange={e => { const v = parseInt(e.target.value); if (v < effectivePriceRange[1]) setPriceRange([v, effectivePriceRange[1]]); }}
             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-600"
           />
-          <input type="range" min="0" max="10000" step="100" value={priceRange[1]}
-            onChange={e => { const v = parseInt(e.target.value); if (v > priceRange[0]) setPriceRange([priceRange[0], v]); }}
+          <input type="range" min="0" max={dynamicMaxPrice} step="100" value={effectivePriceRange[1]}
+            onChange={e => { const v = parseInt(e.target.value); if (v > effectivePriceRange[0]) setPriceRange([effectivePriceRange[0], v]); }}
             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-600"
           />
-          <div className="flex justify-between text-xs text-gray-400"><span>$0</span><span>$10,000+</span></div>
+          {/* TODO(currency): package prices are entered directly by Kenyan
+              agents with no currency field on the package itself — left
+              unlabeled here rather than guessing $ vs KES. Confirm the real
+              unit, then apply one consistent symbol here AND on the package
+              cards below (formatPrice usages). */}
+          <div className="flex justify-between text-xs text-gray-400"><span>0</span><span>{dynamicMaxPrice.toLocaleString()}+</span></div>
         </div>
       </div>
 
@@ -469,17 +514,22 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
 
       {/* SEO intro — the only H1 on the homepage. Keep this short, plain,
           and out of the way of the filter bar; purely a text/markup
-          addition, no state or behavior here. */}
-      <div className="bg-gradient-to-br from-emerald-50 via-white to-teal-50 border-b border-gray-100">
-        <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8 text-center">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
-            Verified Umrah &amp; Hajj Packages 
-          </h1>
-          <p className="mt-2 text-sm sm:text-base text-gray-600 max-w-2xl mx-auto">
-            Compare Umrah and Hajj packages from licensed, IATA-accredited travel agents with verified pricing, hotels, and inclusions in one place.
-          </p>
+          addition, no state or behavior here.
+          Skipped when hideDefaultIntro is true — landing pages (see
+          LandingPage.jsx) supply their own unique H1/intro above this
+          component instead, so the page never ends up with two H1s. */}
+      {!hideDefaultIntro && (
+        <div className="bg-gradient-to-br from-emerald-50 via-white to-teal-50 border-b border-gray-100">
+          <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8 text-center">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
+              Verified Umrah &amp; Hajj Packages 
+            </h1>
+            <p className="mt-2 text-sm sm:text-base text-gray-600 max-w-2xl mx-auto">
+              Compare Umrah and Hajj packages from licensed, IATA-accredited travel agents with verified pricing, hotels, and inclusions in one place.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
 
       {/* Sticky filter bar — compact single row, overlaps content via sticky+z-index */}

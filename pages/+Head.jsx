@@ -1,6 +1,8 @@
 import React from 'react';
 import { usePageContext } from 'vike-react/usePageContext';
 import { createPackagePath } from '../src/utils/packageSeo';
+import { getLandingPageByPath } from '../src/seo/landingPagesConfig.js';
+import { FAQS as SHARED_FAQS } from '../src/components/FaqSection.jsx';
 
 // window.location.origin doesn't exist server-side, so the canonical host is
 // hardcoded here (confirmed: umrahmarket.net redirects to this www host).
@@ -75,6 +77,38 @@ const buildBreadcrumbJsonLd = (crumbs = []) => ({
     position: i + 1,
     name: crumb.name,
     item: toAbsolute(crumb.path),
+  })),
+});
+
+// CollectionPage + ItemList — the correct schema pair for a page that lists
+// multiple packages (as opposed to Product, which is for a single package's
+// own detail page — that's handled separately below). Google's rich-result
+// eligibility for list pages keys off ItemList; CollectionPage marks the
+// page itself as a listing rather than a single entity.
+const buildLandingPageJsonLd = (entry, packages, canonical) => ({
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: entry.h1,
+  description: entry.metaDescription,
+  url: canonical,
+  mainEntity: {
+    '@type': 'ItemList',
+    itemListElement: packages.slice(0, 20).map((pkg, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      url: toAbsolute(createPackagePath(pkg)),
+      name: getPathPackageTitle(pkg),
+    })),
+  },
+});
+
+const buildFaqJsonLd = (faqs) => ({
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((f) => ({
+    '@type': 'Question',
+    name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a },
   })),
 });
 
@@ -185,6 +219,69 @@ export default function Head() {
         <meta name="twitter:image" content={image} />
         <script id="seo-json-ld" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }} />
         <script id="seo-json-ld-breadcrumb" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
+      </>
+    );
+  }
+
+  // ── Programmatic SEO landing pages ────────────────────────────────────
+  // pageContext.data.landingPage is the matched config path (set by
+  // +data.js) — checked even when the fetch failed server-side (packages
+  // will just be an empty array in that case; see hasEnoughContent below),
+  // so this branch still renders the right title/copy/canonical instead of
+  // silently falling through to a blank page.
+  const landingPageEntry = pageContext.data?.landingPage
+    ? getLandingPageByPath(pageContext.data.landingPage)
+    : null;
+
+  if (landingPageEntry) {
+    const packages = Array.isArray(pageContext.data?.packages) ? pageContext.data.packages : [];
+    const canonical = toAbsolute(landingPageEntry.path);
+    // Kenya's two head-term hub pages get a rolling current-year suffix —
+    // computed here, not baked into the static config, so it never goes
+    // stale the way a hardcoded "2027" would a year from now.
+    const year = new Date().getFullYear();
+    const yearSuffix = (landingPageEntry.path === '/umrah-packages-kenya' || landingPageEntry.path === '/hajj-packages-kenya')
+      ? ` ${year}`
+      : '';
+    const title = landingPageEntry.title.replace(' | ', `${yearSuffix} | `);
+
+    // A landing page whose SSR fetch found (or matched) zero live packages
+    // still has real, useful intro/FAQ content — but indexing an
+    // empty-inventory page as a normal result is exactly the kind of thin
+    // content Google penalizes the whole domain's quality signal for. Serve
+    // it noindex,follow instead: still reachable for link equity and still
+    // shows real content to a visitor, just not competing for rank until
+    // there's actual inventory behind it. Swap back to index once
+    // `packages.length > 0` here (this check re-runs on every request, so
+    // it flips to indexable automatically the moment agents add matching
+    // packages — no manual re-flagging needed).
+    const hasEnoughContent = packages.length > 0;
+    const faqs = [...(landingPageEntry.faqs || []), ...SHARED_FAQS];
+
+    const breadcrumbSchema = buildBreadcrumbJsonLd([
+      { name: 'Home', path: '/' },
+      { name: landingPageEntry.breadcrumbName, path: landingPageEntry.path },
+    ]);
+
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={landingPageEntry.metaDescription} />
+        <meta name="keywords" content={landingPageEntry.keywords} />
+        <meta name="robots" content={hasEnoughContent ? 'index, follow' : 'noindex, follow'} />
+        <link rel="canonical" href={canonical} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="UmrahMarket" />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={landingPageEntry.metaDescription} />
+        <meta property="og:image" content={`${SITE_ORIGIN}/umramarket1.png`} />
+        <meta property="og:url" content={canonical} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={landingPageEntry.metaDescription} />
+        <script id="seo-json-ld" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildLandingPageJsonLd(landingPageEntry, packages, canonical)) }} />
+        <script id="seo-json-ld-breadcrumb" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
+        <script id="seo-json-ld-faq" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildFaqJsonLd(faqs)) }} />
       </>
     );
   }

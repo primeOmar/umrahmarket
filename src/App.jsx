@@ -22,6 +22,8 @@ import AgentDetailPage from './components/AgentDetailPage';
 import VerifyEmailPage from './components/VerifyEmailPage';
 import { isEmailVerified } from './utils/emailVerification';
 import Seo from './components/Seo';
+import LandingPage from './components/LandingPage';
+import { LANDING_PAGES } from './seo/landingPagesConfig.js';
 
 // window.location.origin doesn't exist during SSR — guarded fallback to the
 // real production origin so the Home route's Seo/jsonLd props (evaluated
@@ -196,16 +198,36 @@ function App({
       // 3. Mark auth as ready — protected routes can now evaluate
       setAuthReady(true);
 
-      // 4. Fetch public packages — skipped when Vike's SSR loader already
-      // seeded them (avoids a flash of real content -> skeleton -> content
-      // right after hydration on '/').
-      if (!initialPackages) {
+      // 4. Fetch public packages — skipped ONLY when Vike's SSR loader
+      // already seeded the FULL list on the actual homepage (avoids a
+      // flash of real content -> skeleton -> content right after hydration
+      // on '/'). Landing pages (see landingPagesConfig.js) also arrive
+      // with `initialPackages` seeded — but as a server-FILTERED subset,
+      // not the full list — so they still need this fetch to run in the
+      // background; otherwise `packages` state would stay stuck on that
+      // narrow subset for the rest of the session, and every OTHER route
+      // reached via client-side navigation would silently show the wrong,
+      // too-narrow package list. LandingPage.jsx re-applies its own filter
+      // to whatever `packages` it's handed, so it's correct both before
+      // and after this fetch resolves.
+      // NOTE: `!!initialPackages` used to be the check here, but arrays are
+      // ALWAYS truthy in JS — including []. So when the SSR loader in
+      // +data.js came back with a genuinely empty (or shape-mismatched)
+      // result, `initialPackages` was `[]`, `!!initialPackages` was `true`,
+      // and this permanently skipped the client-side fetchPackages() call
+      // below — leaving the homepage stuck on zero packages for the rest of
+      // the session with no retry. Checking .length actually distinguishes
+      // "SSR successfully seeded real packages" from "SSR ran but got
+      // nothing," so a bad/empty SSR response now correctly falls through
+      // to the normal client-side fetch instead of getting stuck.
+      const isHomepageSSR = initialPathname === '/' && Array.isArray(initialPackages) && initialPackages.length > 0;
+      if (!isHomepageSSR) {
         fetchPackages();
       }
     };
 
     bootstrap();
-  }, [fetchPackages, initialPackages]);
+  }, [fetchPackages, initialPackages, initialPathname]);
 
   const toggleFavorite = async (id) => {
     const user = currentUser || userStore.get();
@@ -548,6 +570,43 @@ function App({
               <Footer />
             </>
           } />
+
+          {/* Programmatic SEO landing pages — one Route per entry in
+              landingPagesConfig.js, generated here so adding/removing a
+              config entry never requires touching this file. Each shares
+              the exact same props HeroSection gets on the homepage;
+              LandingPage.jsx applies that config entry's own filter to
+              whatever `packages` it's handed (the SSR-narrowed initial set,
+              then the full list once the background fetch above resolves)
+              so the grid stays correct through both stages. */}
+          {LANDING_PAGES.map((entry) => (
+            <Route key={entry.path} path={entry.path} element={
+              <>
+                <Header
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  onAuthSuccess={(user) => {
+                    setCurrentUser(user);
+                    userStore.set(user);
+                  }}
+                />
+                <LandingPage
+                  packages={packages}
+                  loading={pkgLoading}
+                  error={pkgError}
+                  onRetry={fetchPackages}
+                  favorites={favorites}
+                  toggleFavorite={toggleFavorite}
+                  currentUser={currentUser}
+                  onAuthSuccess={(user) => {
+                    setCurrentUser(user);
+                    userStore.set(user);
+                  }}
+                />
+                <Footer />
+              </>
+            } />
+          ))}
 
           {/* Google OAuth popup routes — deliberately NO <Footer />. These render
               inside the small popup window, not the main tab, and are meant to

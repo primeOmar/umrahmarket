@@ -20,6 +20,9 @@ const buildFormData = (formData, imageFiles = [], keepImageUrls = []) => {
   PACKAGE_SCALARS.forEach((k) => {
     if (formData[k] != null && formData[k] !== '') body.append(k, formData[k]);
   });
+  if (Array.isArray(formData.cities) && formData.cities.length > 0) {
+    body.append('cities', JSON.stringify(formData.cities));
+  }
   body.append('highlights', JSON.stringify(formData.highlights ?? []));
   body.append('inclusions',  JSON.stringify(formData.inclusions  ?? []));
   body.append('exclusions',  JSON.stringify(formData.exclusions  ?? []));
@@ -27,6 +30,14 @@ const buildFormData = (formData, imageFiles = [], keepImageUrls = []) => {
   // JSON object; server falls back any blank tier to the adult price.
   if (formData.price_tiers) {
     body.append('price_tiers', JSON.stringify(formData.price_tiers));
+  }
+  // Hotel details for every selected city beyond Makkah/Madinah (Jeddah,
+  // Dubai, Riyadh, Taif, or a custom-typed one) — Makkah/Madinah keep their
+  // own dedicated top-level fields above for backward compatibility; this
+  // single JSON map covers everything else so a new city never needs a new
+  // form field or a server column.
+  if (formData.city_hotels && Object.keys(formData.city_hotels).length > 0) {
+    body.append('city_hotels', JSON.stringify(formData.city_hotels));
   }
   // Existing photos the agent kept (edit) or carried over (duplicate) —
   // newly uploaded files are appended separately below and merged server-side.
@@ -145,6 +156,11 @@ export const normalise = (pkg) => {
     excludes:   Array.isArray(pkg.exclusions)  ? pkg.exclusions  : Array.isArray(pkg.excludes)  ? pkg.excludes  : [],
     highlights: Array.isArray(pkg.highlights)  ? pkg.highlights  : [],
     location: pkg.location || pkg.destination || 'Makkah & Madinah',
+    // Full city list + per-city hotel details (Jeddah/Dubai/Riyadh/Taif/
+    // custom) — additive fields, safe to ignore for any consumer that only
+    // cares about the legacy `location` bucket.
+    cities: Array.isArray(pkg.cities) ? pkg.cities : ['makkah'],
+    cityHotels: (pkg.city_hotels && typeof pkg.city_hotels === 'object') ? pkg.city_hotels : {},
     type: pkg.type || (pkg.is_hajj ? 'hajj' : 'umrah'),
     // Real owner name for display (card/detail page "by {agent_name}").
     // No fake fallback here — better to hide the line than show a made-up agency.
@@ -153,4 +169,4 @@ export const normalise = (pkg) => {
   };
 };
 
-export { tokenStore }; 
+export { tokenStore };

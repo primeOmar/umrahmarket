@@ -6,13 +6,98 @@ import {
 import { createPackage, updatePackage, getItinerary, saveItinerary } from "../services/packagesApi";
 import {
   Field, sanitizeText, sanitizeNumber, sanitizeDate,
-  InputEl, TextareaEl, Stars, HotelBlock,
+  InputEl, Stars, HotelBlock,
   RadioPillGroup, PresetChips, errorRingStyle,
 } from "./Packageformcomponents";
 import toast from "./Toast";
 import { processPackageImages } from "./imageProcessing";
 
 const STEPS = ["Basic Info", "Hotels", "Pricing", "Itinerary", "Highlights & Photos"];
+
+const CITY_MAKKAH = "makkah";
+const CITY_PRESET_OPTIONS = [
+  { value: "madinah", label: "Madinah", icon: "🕌" },
+  { value: "jeddah", label: "Jeddah", icon: "🌊" },
+  { value: "dubai", label: "Dubai", icon: "🏙️" },
+  { value: "riyadh", label: "Riyadh", icon: "🌆" },
+  { value: "taif", label: "Taif", icon: "⛰️" },
+];
+
+const CITY_ALIASES = {
+  madina: "madinah",
+  medina: "madinah",
+  jiddah: "jeddah",
+  mecca: "makkah",
+  makka: "makkah",
+};
+
+function normalizeCityValue(value = "") {
+  const cleaned = String(value)
+    .toLowerCase()
+    .replace(/[^a-z\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/ /g, "_");
+  if (!cleaned) return "";
+  return CITY_ALIASES[cleaned] || cleaned;
+}
+
+function normalizeCities(cities = []) {
+  const seen = new Set();
+  const out = [CITY_MAKKAH];
+  seen.add(CITY_MAKKAH);
+  cities.forEach((raw) => {
+    const city = normalizeCityValue(raw);
+    if (!city || city === CITY_MAKKAH || seen.has(city)) return;
+    seen.add(city);
+    out.push(city);
+  });
+  return out;
+}
+
+function deriveLegacyLocation(cities = []) {
+  const set = new Set(normalizeCities(cities));
+  if (set.has("jeddah")) return "makkah_madinah_jeddah";
+  if (set.has("madinah")) return "makkah_madinah";
+  return "makkah";
+}
+
+function citiesFromLegacyLocation(location = "") {
+  const norm = String(location || "").toLowerCase();
+  if (norm === "makkah_madinah_jeddah") return ["makkah", "madinah", "jeddah"];
+  if (norm === "makkah_madinah") return ["makkah", "madinah"];
+  return ["makkah"];
+}
+
+// Cities that get their own dedicated hotel step: Makkah is always shown
+// and always required. Every other city the agent selects in step 0 (a
+// preset like Madinah/Jeddah/Dubai, or a free-typed custom city) also gets
+// a hotel block on step 1 — required, since it only shows up because the
+// agent explicitly added it. "Extra" = every selected city except Makkah.
+const CITY_MADINAH = "madinah";
+function extraCitiesOf(cities) {
+  return normalizeCities(cities).filter((c) => c !== CITY_MAKKAH);
+}
+
+const HOTEL_FIELD_SUFFIXES = [
+  "hotel_name", "hotel_rating", "hotel_distance", "hotel_address",
+  "check_in_date", "check_out_date",
+];
+
+function clearCityHotelFields(obj, city) {
+  HOTEL_FIELD_SUFFIXES.forEach((suffix) => { delete obj[`${city}_${suffix}`]; });
+  return obj;
+}
+
+function cityLabelFromValue(value = "") {
+  const norm = normalizeCityValue(value);
+  if (!norm) return "";
+  if (norm === CITY_MAKKAH) return "Makkah";
+  return norm
+    .split("_")
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(" ");
+}
 
 // Server (itinerary.controller.js) caps at 60 days and sanitises to the same
 // limits — these mirror that so the agent sees accurate feedback client-side
@@ -89,7 +174,7 @@ const EXCLUSION_OPTIONS = [
 ];
 
 const EMPTY = {
-  name: "", type: "umrah", location: "makkah", description: "",
+  name: "", type: "umrah", location: "makkah", cities: ["makkah"],
   price: "", original_price: "", discount: "", duration: "",
   // Age-tier pricing — `price` above doubles as the required Adult (12+) price.
   // The other three are optional per-package overrides; a blank tier falls
@@ -114,7 +199,7 @@ const PACKAGE_TEMPLATES = [
     label: "Umrah · Economy 7N",
     icon: "🕋",
     data: {
-      type: "umrah", location: "makkah_madinah", duration: "7",
+      type: "umrah", location: "makkah_madinah", cities: ["makkah", "madinah"], duration: "7",
       min_group_size: "15", max_group_size: "40",
       highlights: ["Shared transfers", "Expert Umrah guide", "Daily breakfast"],
       inclusions: ["Return flights", "Saudi visa processing", "Makkah hotel", "Madinah hotel", "Shared transfers", "Daily breakfast"],
@@ -126,7 +211,7 @@ const PACKAGE_TEMPLATES = [
     label: "Umrah · Premium 14N",
     icon: "🌙",
     data: {
-      type: "umrah", location: "makkah_madinah", duration: "14",
+      type: "umrah", location: "makkah_madinah", cities: ["makkah", "madinah"], duration: "14",
       min_group_size: "10", max_group_size: "25",
       highlights: ["Private transfers", "Premium hotel (near Haram)", "Haramain high-speed train", "5L Zamzam water"],
       inclusions: ["Return flights", "Saudi visa processing", "Makkah hotel", "Madinah hotel", "Private transfers", "Full board (all meals)", "Guided Ziyarat tours", "Umrah kit"],
@@ -138,7 +223,7 @@ const PACKAGE_TEMPLATES = [
     label: "Hajj · Gold 21N",
     icon: "☪️",
     data: {
-      type: "hajj", location: "makkah_madinah_jeddah", duration: "21",
+      type: "hajj", location: "makkah_madinah_jeddah", cities: ["makkah", "madinah", "jeddah"], duration: "21",
       min_group_size: "20", max_group_size: "60",
       highlights: ["Luxury accommodation", "24/7 support", "Spiritual guidance sessions", "Medical insurance"],
       inclusions: ["Return flights", "Saudi visa processing", "Hajj permit assistance", "Makkah hotel", "Madinah hotel", "Full board (all meals)", "Group guide", "24/7 customer support", "Medical insurance"],
@@ -188,13 +273,13 @@ function buildDefaultItinerary(duration, location) {
 }
 
 function sanitizeFormPayload(form) {
+  const safeCities = normalizeCities(form.cities);
   return {
     ...form,
     name:                  sanitizeText(form.name, 120),
     type:                  ["umrah", "hajj"].includes(form.type) ? form.type : "umrah",
-    location:              ["makkah", "makkah_madinah", "makkah_madinah_jeddah"].includes(form.location)
-                             ? form.location : "makkah",
-    description:           sanitizeText(form.description, 1200),
+    location:              deriveLegacyLocation(safeCities),
+    cities:                safeCities,
     price:                 sanitizeNumber(form.price),
     original_price:        sanitizeNumber(form.original_price),
     discount:              sanitizeNumber(form.discount),
@@ -228,6 +313,23 @@ function sanitizeFormPayload(form) {
     madinah_hotel_address:  sanitizeText(form.madinah_hotel_address, 120),
     madinah_check_in_date:  sanitizeDate(form.madinah_check_in_date),
     madinah_check_out_date: sanitizeDate(form.madinah_check_out_date),
+    // Every OTHER selected city (Jeddah, Dubai, Riyadh, Taif, or anything
+    // custom-typed) — Makkah/Madinah keep their own dedicated columns above
+    // for backward compatibility; everything else goes through this single
+    // generic map so new cities never need a schema change.
+    city_hotels: safeCities
+      .filter((c) => c !== CITY_MAKKAH && c !== CITY_MADINAH)
+      .reduce((acc, city) => {
+        acc[city] = {
+          hotel_name:     sanitizeText(form[`${city}_hotel_name`] || "", 120),
+          hotel_rating:   Number(form[`${city}_hotel_rating`]) || "",
+          hotel_distance: sanitizeText(form[`${city}_hotel_distance`] || "", 30),
+          hotel_address:  sanitizeText(form[`${city}_hotel_address`] || "", 120),
+          check_in_date:  sanitizeDate(form[`${city}_check_in_date`] || ""),
+          check_out_date: sanitizeDate(form[`${city}_check_out_date`] || ""),
+        };
+        return acc;
+      }, {}),
     highlights: form.highlights.map((t) => sanitizeText(t, 80)).filter(Boolean),
     inclusions: form.inclusions.map((t) => sanitizeText(t, 80)).filter(Boolean),
     exclusions: form.exclusions.map((t) => sanitizeText(t, 80)).filter(Boolean),
@@ -317,7 +419,6 @@ function formatDraftAge(ts) {
 function draftHasContent(form, itinerary) {
   return !!(
     (form.name && form.name.trim()) ||
-    (form.description && form.description.trim()) ||
     form.price ||
     form.makkah_hotel_name ||
     form.madinah_hotel_name ||
@@ -325,18 +426,89 @@ function draftHasContent(form, itinerary) {
   );
 }
 
+// ── SEO package naming ───────────────────────────────────────────────────────
+// Package titles are the single highest-leverage on-page SEO signal we control
+// per listing (it's what shows as the blue link in search results and drives
+// most of the click-through), so naming is generated here from the package's
+// own real attributes — duration, route, hotel class, travel year — instead
+// of left to free-text. Every package gets a consistent, keyword-rich title
+// built the same way, which is what lets umrahmarket.net compete on search
+// terms against established Kenyan agencies rather than every agent inventing
+// their own (often un-searched) wording. Agents can still hand-edit the
+// result if they want to, but the default the field starts with — and
+// reverts to on "Regenerate" — is always this SEO version.
+const LOCATION_LABELS = {
+  makkah:                "Makkah",
+  makkah_madinah:        "Makkah & Madinah",
+  makkah_madinah_jeddah: "Makkah, Madinah & Jeddah",
+};
+
+// Primary market this naming pattern is tuned for — Kenya is the anchor
+// market today (largest agent base and search volume across the region).
+// Revisit/parameterise this if the target market mix shifts.
+const SEO_TARGET_MARKET = "Kenya";
+
+function buildSeoPackageName(form) {
+  const typeLabel = form.type === "hajj" ? "Hajj" : "Umrah";
+  const locationLabel = LOCATION_LABELS[form.location] || LOCATION_LABELS.makkah_madinah;
+
+  const nights = parseInt(form.duration, 10);
+  const durationPart = nights > 0 ? `${nights}-Day ` : "";
+
+  // Prefer the travel year the agent has actually set (available_from);
+  // fall back to the current year so even a fresh, empty draft gets a
+  // plausible, ranking-friendly title instead of a blank/undefined year.
+  const fromDate = form.available_from ? new Date(form.available_from) : null;
+  const fromYear = fromDate && !isNaN(fromDate.getTime()) ? fromDate.getFullYear() : NaN;
+  const year = Number.isFinite(fromYear) ? fromYear : new Date().getFullYear();
+  // Month is genuinely useful for search — "umrah packages december 2026"
+  // is a real, distinct query from "umrah packages 2026" — but only include
+  // it once a travel date is actually set; a still-blank draft shouldn't
+  // claim a month that hasn't been chosen yet.
+  const monthLabel = fromDate && !isNaN(fromDate.getTime())
+    ? fromDate.toLocaleDateString("en-US", { month: "long" })
+    : "";
+  const monthPart = monthLabel ? `${monthLabel} ` : "";
+
+  const starCandidates = [Number(form.makkah_hotel_rating), Number(form.madinah_hotel_rating)]
+    .filter((n) => n > 0);
+  const starPart = starCandidates.length ? ` (${Math.max(...starCandidates)}★ Hotels)` : "";
+
+  return `${durationPart}${typeLabel} Package ${monthPart}${year} — ${locationLabel}${starPart} | Book from ${SEO_TARGET_MARKET}`;
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function calcDurationNights(form) {
-  const dates = [
-    form.makkah_check_in_date,
-    form.makkah_check_out_date,
-    form.madinah_check_in_date,
-    form.madinah_check_out_date,
-  ].filter(Boolean).map((d) => new Date(d).getTime()).filter((n) => !isNaN(n));
+  // Total trip span across every hotel the agent has filled in — not just
+  // Makkah/Madinah — so a Jeddah/Dubai/custom-city leg is reflected too.
+  const dates = normalizeCities(form.cities)
+    .flatMap((city) => [form[`${city}_check_in_date`], form[`${city}_check_out_date`]])
+    .filter(Boolean)
+    .map((d) => new Date(d).getTime())
+    .filter((n) => !isNaN(n));
   if (dates.length < 2) return "";
   const nights = Math.round((Math.max(...dates) - Math.min(...dates)) / 86400000);
   return nights > 0 ? String(nights) : "";
+}
+
+// There's no separate "Available From/To" date input anywhere in this
+// modal — the earliest hotel check-in IS the trip's start date, and the
+// latest check-out IS its end date, so deriving availability from the
+// hotel dates already being filled in (rather than asking for the same
+// dates again in a second field an agent can forget) is both less
+// error-prone and the only thing that can actually populate these fields.
+// This is also what buildSeoPackageName's month/year comes from.
+function calcAvailabilityWindow(form) {
+  const dates = normalizeCities(form.cities)
+    .flatMap((city) => [form[`${city}_check_in_date`], form[`${city}_check_out_date`]])
+    .filter(Boolean)
+    .map((d) => ({ raw: d, t: new Date(d).getTime() }))
+    .filter((d) => !isNaN(d.t));
+  if (!dates.length) return { from: "", to: "" };
+  const from = dates.reduce((a, b) => (b.t < a.t ? b : a)).raw;
+  const to   = dates.reduce((a, b) => (b.t > a.t ? b : a)).raw;
+  return { from, to };
 }
 
 // ── validation ───────────────────────────────────────────────────────────────
@@ -350,7 +522,7 @@ function calcDurationNights(form) {
 // Which step a given field lives on — used to light up the right dot on the
 // step bar and to know which step's errors to show inline right now.
 const FIELD_STEP = {
-  name: 0,
+  name: 4,
   makkah_hotel_name: 1, makkah_hotel_rating: 1, makkah_check_in_date: 1, makkah_check_out_date: 1,
   madinah_hotel_name: 1, madinah_hotel_rating: 1, madinah_check_in_date: 1, madinah_check_out_date: 1,
   price: 2, duration: 2, available_to: 2, max_group_size: 2,
@@ -358,6 +530,15 @@ const FIELD_STEP = {
   itinerary: 3,
   images: 4,
 };
+
+// Extra cities (anything beyond Makkah/Madinah) get their hotel error keys
+// generated dynamically as `${city}_hotel_name` etc., so they can't live in
+// the static FIELD_STEP map above — this catches them by suffix instead.
+function fieldStepOf(key) {
+  if (FIELD_STEP[key] !== undefined) return FIELD_STEP[key];
+  if (HOTEL_FIELD_SUFFIXES.some((suffix) => key.endsWith(`_${suffix}`))) return 1;
+  return undefined;
+}
 
 // Fields that are validated as a pair (date ranges, min/max) — editing
 // either side clears both, since the previously-shown error might now be
@@ -374,40 +555,44 @@ const RELATED_ERROR_KEYS = {
   max_group_size: ["min_group_size", "max_group_size"],
 };
 
+// Same pairing behaviour as RELATED_ERROR_KEYS above, but for any city's
+// check-in/check-out dates — Makkah/Madinah are already listed explicitly,
+// this covers every dynamically-added extra city.
+function relatedErrorKeysOf(key) {
+  if (RELATED_ERROR_KEYS[key]) return RELATED_ERROR_KEYS[key];
+  const match = key.match(/^(.+)_(check_in_date|check_out_date)$/);
+  if (match) return [`${match[1]}_check_in_date`, `${match[1]}_check_out_date`];
+  return [key];
+}
+
+// Validates one city's hotel block (name, rating, date range) against the
+// same rules for Makkah, Madinah, or any extra city — errors are keyed by
+// that city's own field names so they slot straight into <Field error=…>.
+function validateHotelBlock(errors, city, form) {
+  if (!(form[`${city}_hotel_name`] || "").trim()) errors[`${city}_hotel_name`] = "Hotel name is required";
+  if (!form[`${city}_hotel_rating`]) errors[`${city}_hotel_rating`] = "Star rating is required";
+  if (!form[`${city}_check_in_date`]) errors[`${city}_check_in_date`] = "Check-in date is required";
+  if (!form[`${city}_check_out_date`]) errors[`${city}_check_out_date`] = "Check-out date is required";
+  if (
+    form[`${city}_check_in_date`] && form[`${city}_check_out_date`] &&
+    new Date(form[`${city}_check_out_date`]) <= new Date(form[`${city}_check_in_date`])
+  ) {
+    errors[`${city}_check_out_date`] = "Must be after check-in";
+  }
+}
+
 function validateStepFields(stepIdx, form, itinerary, images, existingImageUrls) {
   const errors = {};
-  // Every package includes Makkah; Madinah (and Jeddah transit packages,
-  // which still route through Madinah) need a Madinah hotel too.
-  const needsMadinah = form.location !== "makkah";
-
-  if (stepIdx === 0) {
-    if (!form.name.trim()) errors.name = "Package name is required";
-  }
+  // Every package includes Makkah, always required. Every OTHER city the
+  // agent actually picked in step 0 — Madinah, Jeddah, Dubai, Riyadh, Taif,
+  // or a custom-typed one — is required here too, since a hotel block for
+  // it only appears at all because it was explicitly selected. A city the
+  // agent never picked has no block and is never validated.
+  const extraCities = extraCitiesOf(form.cities); // excludes Makkah, includes Madinah if selected
 
   if (stepIdx === 1) {
-    if (!form.makkah_hotel_name.trim()) errors.makkah_hotel_name = "Hotel name is required";
-    if (!form.makkah_hotel_rating) errors.makkah_hotel_rating = "Star rating is required";
-    if (!form.makkah_check_in_date) errors.makkah_check_in_date = "Check-in date is required";
-    if (!form.makkah_check_out_date) errors.makkah_check_out_date = "Check-out date is required";
-    if (
-      form.makkah_check_in_date && form.makkah_check_out_date &&
-      new Date(form.makkah_check_out_date) <= new Date(form.makkah_check_in_date)
-    ) {
-      errors.makkah_check_out_date = "Must be after check-in";
-    }
-
-    if (needsMadinah) {
-      if (!form.madinah_hotel_name.trim()) errors.madinah_hotel_name = "Hotel name is required";
-      if (!form.madinah_hotel_rating) errors.madinah_hotel_rating = "Star rating is required";
-      if (!form.madinah_check_in_date) errors.madinah_check_in_date = "Check-in date is required";
-      if (!form.madinah_check_out_date) errors.madinah_check_out_date = "Check-out date is required";
-      if (
-        form.madinah_check_in_date && form.madinah_check_out_date &&
-        new Date(form.madinah_check_out_date) <= new Date(form.madinah_check_in_date)
-      ) {
-        errors.madinah_check_out_date = "Must be after check-in";
-      }
-    }
+    validateHotelBlock(errors, CITY_MAKKAH, form);
+    extraCities.forEach((city) => validateHotelBlock(errors, city, form));
   }
 
   if (stepIdx === 2) {
@@ -450,6 +635,10 @@ function validateStepFields(stepIdx, form, itinerary, images, existingImageUrls)
     if (existingImageUrls.length + images.length === 0) {
       errors.images = "Add at least one photo of the package";
     }
+    // Belt-and-suspenders: name is always machine-generated from type/
+    // location/duration, so this should never actually be empty — but if
+    // it somehow is, don't let a blank title reach the server.
+    if (!form.name || !form.name.trim()) errors.name = "Package name could not be generated — fill in the type, location & duration above";
   }
 
   return errors;
@@ -662,6 +851,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   const [activeTemplate, setActiveTemplate] = useState(null);
   const [errors, setErrors] = useState({}); // field name -> message, see validateStepFields
   const fileRef             = useRef(null);
+  const [customCityInput, setCustomCityInput] = useState("");
 
   // Draft auto-save
   const [draftKey, setDraftKey]       = useState(() => getDraftKey(mode, initialPackage));
@@ -692,6 +882,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       setExistingImageUrls([]);
       setItinerary([]); setItinTouched(false); setCollapsedDays({});
       setActiveTemplate(null);
+      setCustomCityInput("");
       setErrors({});
       setStep(0);
       setStatus("idle");
@@ -699,11 +890,29 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     }
 
     const pkg = initialPackage;
+    // Hydrate the flat `${city}_hotel_name` etc. fields HotelBlock reads
+    // from the generic `city_hotels` map the server sends back — same shape
+    // sanitizeFormPayload() produces on save, just inverted.
+    const cityHotelFields = {};
+    if (pkg.city_hotels && typeof pkg.city_hotels === "object") {
+      Object.entries(pkg.city_hotels).forEach(([city, h]) => {
+        if (!h || typeof h !== "object") return;
+        cityHotelFields[`${city}_hotel_name`]     = h.hotel_name || "";
+        cityHotelFields[`${city}_hotel_rating`]   = h.hotel_rating != null ? String(h.hotel_rating) : "";
+        cityHotelFields[`${city}_hotel_distance`] = h.hotel_distance || "";
+        cityHotelFields[`${city}_hotel_address`]  = h.hotel_address || "";
+        cityHotelFields[`${city}_check_in_date`]  = h.check_in_date || "";
+        cityHotelFields[`${city}_check_out_date`] = h.check_out_date || "";
+      });
+    }
     setForm({
-      name:                  mode === "duplicate" ? `${pkg.name || ""} (Copy)` : (pkg.name || ""),
+      // Always machine-generated — the SEO-name effect below recomputes this
+      // immediately from type/location/duration/hotel data, so whatever was
+      // previously saved here is just a placeholder until that effect runs.
+      name:                  "",
       type:                  pkg.type || "umrah",
       location:              pkg.location || "makkah",
-      description:           pkg.description || "",
+      cities:                normalizeCities(Array.isArray(pkg.cities) && pkg.cities.length ? pkg.cities : citiesFromLegacyLocation(pkg.location)),
       price:                 pkg.price != null ? String(pkg.price) : "",
       original_price:        pkg.original_price != null ? String(pkg.original_price) : "",
       discount:              pkg.discount != null ? String(pkg.discount) : "",
@@ -735,9 +944,11 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       highlights: Array.isArray(pkg.highlights) ? pkg.highlights : [],
       inclusions: Array.isArray(pkg.inclusions) ? pkg.inclusions : [],
       exclusions: Array.isArray(pkg.exclusions) ? pkg.exclusions : [],
+      ...cityHotelFields,
     });
     setExistingImageUrls(Array.isArray(pkg.image_urls) ? pkg.image_urls : []);
     setImages([]); setPrev([]); setImageMeta([]);
+    setCustomCityInput("");
     setActiveTemplate(null);
     setErrors({});
     setStep(0);
@@ -763,15 +974,53 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       .finally(() => setItinLoading(false));
   }, [isOpen, mode, initialPackage]); // eslint-disable-line
 
-  // Auto-calculate duration from hotel dates
+  // A single string fingerprint of every selected city's hotel dates —
+  // used as the dependency for both effects below. It has to be a single
+  // value (not one array entry per city) because the number of selected
+  // cities changes at runtime, and a useEffect's dependency array can't
+  // change length between renders.
+  const hotelDatesFingerprint = normalizeCities(form.cities)
+    .map((c) => `${form[`${c}_check_in_date`] || ""}|${form[`${c}_check_out_date`] || ""}`)
+    .join(",");
+
+  // Auto-calculate duration from hotel dates — across every selected city,
+  // not just Makkah/Madinah.
   useEffect(() => {
     const nights = calcDurationNights(form);
     if (nights !== form.duration) {
       setForm((p) => ({ ...p, duration: nights }));
     }
+  }, [hotelDatesFingerprint]); // eslint-disable-line
+
+  // Auto-derive the availability window from the same hotel dates — see
+  // calcAvailabilityWindow's comment for why this isn't a separate manual
+  // field. This is what feeds the month/year into the SEO name below.
+  useEffect(() => {
+    const { from, to } = calcAvailabilityWindow(form);
+    if (from !== form.available_from || to !== form.available_to) {
+      setForm((p) => ({ ...p, available_from: from, available_to: to }));
+    }
+  }, [hotelDatesFingerprint]); // eslint-disable-line
+
+  // Auto-generate the SEO package name from type/location/duration/hotel
+  // class/travel-year — always, since naming is fully platform-controlled
+  // (no free-text override). Recomputes any time a contributing field
+  // changes; the agent only ever sees the result, on the final step.
+  useEffect(() => {
+    const nextLocation = deriveLegacyLocation(form.cities);
+    if (nextLocation !== form.location) {
+      setForm((p) => ({ ...p, location: nextLocation }));
+    }
+  }, [form.cities, form.location]);
+
+  useEffect(() => {
+    const generated = buildSeoPackageName(form);
+    if (generated !== form.name) {
+      setForm((p) => ({ ...p, name: generated }));
+    }
   }, [
-    form.makkah_check_in_date, form.makkah_check_out_date,
-    form.madinah_check_in_date, form.madinah_check_out_date,
+    form.type, form.location, form.duration, form.available_from,
+    form.makkah_hotel_rating, form.madinah_hotel_rating,
   ]); // eslint-disable-line
 
   // Seed a default itinerary the first time the agent reaches that step, so
@@ -812,7 +1061,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
 
   const set = (k, v) => {
     setForm((p) => ({ ...p, [k]: v }));
-    const keysToClear = RELATED_ERROR_KEYS[k] || [k];
+    const keysToClear = relatedErrorKeysOf(k);
     if (keysToClear.some((kk) => errors[kk])) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -823,8 +1072,8 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   };
   const isLast = step === STEPS.length - 1;
   // Which step dots should read as "needs attention" right now.
-  const errorSteps = new Set(Object.keys(errors).map((k) => FIELD_STEP[k]).filter((v) => v !== undefined));
-  const currentStepHasErrors = Object.keys(errors).some((k) => FIELD_STEP[k] === step);
+  const errorSteps = new Set(Object.keys(errors).map((k) => fieldStepOf(k)).filter((v) => v !== undefined));
+  const currentStepHasErrors = Object.keys(errors).some((k) => fieldStepOf(k) === step);
   const busy   = status === "loading";
   const ok     = status === "success";
 
@@ -840,10 +1089,46 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       toast.success(`${tmpl.label} applied — duration, highlights & inclusions prefilled`);
     } else {
       // "Start blank" previously only toggled the highlight and left
-      // whatever a prior template had already filled in place.
-      setForm((p) => ({ ...EMPTY, name: p.name }));
-      toast.info("Starting blank — all fields reset except the package name");
+      // whatever a prior template had already filled in place. Name isn't
+      // preserved specially anymore — it's machine-generated, so it just
+      // regenerates on its own once type/location/duration are refilled.
+      setForm((p) => ({ ...EMPTY }));
+      toast.info("Starting blank — all fields reset");
     }
+  };
+
+  const toggleOptionalCity = (cityValue) => {
+    const norm = normalizeCityValue(cityValue);
+    if (!norm || norm === CITY_MAKKAH) return;
+    let wasRemoved = false;
+    setForm((p) => {
+      const current = normalizeCities(p.cities);
+      const exists = current.includes(norm);
+      wasRemoved = exists;
+      const next = exists ? current.filter((c) => c !== norm) : [...current, norm];
+      const updated = { ...p, cities: normalizeCities(next) };
+      // Deselecting a city means its hotel block disappears from step 1 —
+      // drop that city's now-irrelevant hotel fields so stale data (e.g. a
+      // hotel name typed in, then the city removed) never gets silently
+      // carried through to submit.
+      if (exists) clearCityHotelFields(updated, norm);
+      return updated;
+    });
+    if (wasRemoved) {
+      setErrors((prev) => clearCityHotelFields({ ...prev }, norm));
+    }
+  };
+
+  const addCustomCity = () => {
+    const norm = normalizeCityValue(customCityInput);
+    if (!norm) return;
+    if (norm === CITY_MAKKAH) {
+      toast.info("Makkah is already included by default.");
+      setCustomCityInput("");
+      return;
+    }
+    setForm((p) => ({ ...p, cities: normalizeCities([...(p.cities || []), norm]) }));
+    setCustomCityInput("");
   };
 
   // ── draft restore/discard ────────────────────────────────────────────────
@@ -1002,7 +1287,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     // (e.g. spotted at submit time, then the agent jumped back) stay visible.
     setErrors((prev) => {
       const next = { ...prev };
-      Object.keys(next).forEach((k) => { if (FIELD_STEP[k] === step) delete next[k]; });
+      Object.keys(next).forEach((k) => { if (fieldStepOf(k) === step) delete next[k]; });
       return next;
     });
     setStep(step + 1);
@@ -1204,16 +1489,18 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                 </div>
               </Field>
 
-              <Field label="Package Name" required error={errors.name}>
-                <InputEl
-                  value={form.name}
-                  onChange={(e) => set("name", e.target.value)}
-                  placeholder="e.g. 14-Night Hajj Gold Package"
-                  sanitize="text"
-                  maxLen={120}
-                  style={errors.name ? errorRingStyle : {}}
-                />
-              </Field>
+              <div
+                className="flex items-start gap-2.5 rounded-2xl px-4 py-3"
+                style={{ background: "#F5FAF5", border: "1px solid #C8DFC8" }}
+              >
+                <Sparkles className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "#1a6b4a" }} />
+                <p className="text-xs leading-relaxed" style={{ color: "#4a7c5f" }}>
+                  <span className="font-bold" style={{ color: "#0D3D2B" }}>Package name is handled for you.</span>{" "}
+                  We build an SEO-optimized title from the type, route, duration &amp; hotel details you enter
+                  below — you'll see the final name on the last step, before publishing.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 gap-3">
                 <Field label="Type" required>
                   <RadioPillGroup
@@ -1227,38 +1514,114 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                   />
                 </Field>
                 <Field label="Primary Location" required hint="which cities this package covers">
-                  <RadioPillGroup
-                    color="gold"
-                    value={form.location}
-                    onChange={(v) => set("location", v)}
-                    options={[
-                      { value: "makkah",                 label: "Makkah Only",              icon: "🕋" },
-                      { value: "makkah_madinah",          label: "Makkah & Madinah",         icon: "🕌" },
-                      { value: "makkah_madinah_jeddah",   label: "Makkah, Madinah & Jeddah",  icon: "🌊" },
-                    ]}
-                  />
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
+                        style={{ background: "linear-gradient(135deg,#0D3D2B,#1a6b4a)", color: "#fff" }}
+                      >
+                        <Check className="h-3 w-3" /> Makkah (mandatory)
+                      </span>
+                    </div>
+
+                    <p className="text-xs" style={{ color: "#7aaa8a" }}>
+                      Add one or more optional cities this package includes.
+                    </p>
+
+                    <div className="flex flex-wrap gap-2">
+                      {CITY_PRESET_OPTIONS.map((opt) => {
+                        const selected = normalizeCities(form.cities).includes(opt.value);
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => toggleOptionalCity(opt.value)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold border transition-all"
+                            style={
+                              selected
+                                ? { background: "linear-gradient(135deg,#C9A84C,#a8882f)", color: "#fff", borderColor: "transparent" }
+                                : { background: "#F5FAF5", color: "#4a7c5f", borderColor: "#C8DFC8" }
+                            }
+                          >
+                            <span>{opt.icon}</span>
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <InputEl
+                        value={customCityInput}
+                        onChange={(e) => setCustomCityInput(sanitizeText(e.target.value, 40))}
+                        placeholder="Add custom city (e.g. Abu Dhabi)"
+                        sanitize="text"
+                        maxLen={40}
+                      />
+                      <button
+                        type="button"
+                        onClick={addCustomCity}
+                        className="px-3.5 py-2 rounded-xl text-sm font-semibold transition-all"
+                        style={{ background: "#F0F8F0", color: "#0D3D2B", border: "1px solid #C8DFC8" }}
+                      >
+                        Add
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {normalizeCities(form.cities).map((city) => {
+                        const isMakkah = city === CITY_MAKKAH;
+                        return (
+                          <span
+                            key={city}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                            style={
+                              isMakkah
+                                ? { background: "rgba(13,61,43,0.12)", color: "#0D3D2B" }
+                                : { background: "rgba(201,168,76,0.16)", color: "#8a6a1a" }
+                            }
+                          >
+                            {cityLabelFromValue(city)}
+                            {!isMakkah && (
+                              <button
+                                type="button"
+                                onClick={() => toggleOptionalCity(city)}
+                                className="rounded-full"
+                                style={{ lineHeight: 1 }}
+                                aria-label={`Remove ${cityLabelFromValue(city)}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </Field>
               </div>
               <p className="text-xs -mt-1" style={{ color: "#7aaa8a" }}>
-                Clients filter by exactly which of these three a package covers — pick the option that matches this package's full itinerary, not just where it starts.
+                Makkah is always included. Optional city picks are customizable per package.
               </p>
-              <Field label="Description" hint="optional">
-                <TextareaEl
-                  rows={3}
-                  value={form.description}
-                  onChange={(e) => set("description", e.target.value)}
-                  placeholder="Describe the spiritual highlights of this package…"
-                  maxLen={1200}
-                />
-              </Field>
             </>
           )}
 
           {/* STEP 1 — Hotels (duration auto-calculated from dates here) */}
+          {/* One hotel block per city actually selected back in Basic Info —
+              Makkah always shows (mandatory), and every other picked city
+              (Madinah, Jeddah, Dubai, Riyadh, Taif, or a custom one) gets its
+              own required block. A city that wasn't selected never appears
+              here at all, so there's nothing stale to fill in or skip. */}
           {step === 1 && (
             <>
+              <p className="text-xs -mt-1" style={{ color: "#7aaa8a" }}>
+                Showing hotels for {extraCitiesOf(form.cities).length > 0
+                  ? `Makkah + ${extraCitiesOf(form.cities).map(cityLabelFromValue).join(", ")}`
+                  : "Makkah"} — based on the cities you picked in Basic Info.
+              </p>
               <HotelBlock
                 city="makkah"
+                label="Makkah"
                 icon={<MapPin className="h-4 w-4" style={{ color: "#C9A84C" }} />}
                 formData={form}
                 set={set}
@@ -1270,19 +1633,23 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                   checkOut: errors.makkah_check_out_date,
                 }}
               />
-              <HotelBlock
-                city="madinah"
-                icon={<Building2 className="h-4 w-4" style={{ color: "#C9A84C" }} />}
-                formData={form}
-                set={set}
-                required={form.location !== "makkah"}
-                errors={{
-                  name: errors.madinah_hotel_name,
-                  rating: errors.madinah_hotel_rating,
-                  checkIn: errors.madinah_check_in_date,
-                  checkOut: errors.madinah_check_out_date,
-                }}
-              />
+              {extraCitiesOf(form.cities).map((city) => (
+                <HotelBlock
+                  key={city}
+                  city={city}
+                  label={cityLabelFromValue(city)}
+                  icon={<Building2 className="h-4 w-4" style={{ color: "#C9A84C" }} />}
+                  formData={form}
+                  set={set}
+                  required
+                  errors={{
+                    name: errors[`${city}_hotel_name`],
+                    rating: errors[`${city}_hotel_rating`],
+                    checkIn: errors[`${city}_check_in_date`],
+                    checkOut: errors[`${city}_check_out_date`],
+                  }}
+                />
+              ))}
               {form.duration && (
                 <div
                   className="flex items-center gap-3 rounded-2xl px-4 py-3"
@@ -1499,6 +1866,26 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
           {/* STEP 4 — Details & Images */}
           {step === 4 && (
             <>
+              {/* Final SEO package name — machine-generated, display only */}
+              <Field label="Package Name" error={errors.name}>
+                <div
+                  className="flex items-center gap-2.5 rounded-xl px-3.5 py-3"
+                  style={{
+                    background: "#EEF5EE",
+                    border: `1px solid ${errors.name ? "#dc2626" : "#C8DFC8"}`,
+                  }}
+                >
+                  <Sparkles className="h-4 w-4 flex-shrink-0" style={{ color: "#1a6b4a" }} />
+                  <p className="text-sm font-semibold flex-1" style={{ color: "#0D3D2B" }}>
+                    {form.name || "—"}
+                  </p>
+                </div>
+                <p className="text-xs mt-1.5" style={{ color: "#7aaa8a" }}>
+                  Generated automatically from this package's type, route, duration &amp; hotel class — this is
+                  exactly what pilgrims will see when they search for and book this package.
+                </p>
+              </Field>
+
               {/* Highlights */}
               <Field label="Highlights" hint="tap to select">
                 <OptionGrid

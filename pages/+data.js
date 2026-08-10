@@ -4,6 +4,11 @@
 // immediately in Node (no localStorage there). Kept as a plain, dependency-free
 // fetch() instead, hitting the same public endpoints packagesApi.js / AgentsPage
 // / AgentDetailPage already use client-side.
+//
+// landingPagesConfig.js is safe to import here too — it's a pure, dependency-
+// free module with no browser globals, same constraint this file itself
+// follows.
+import { getLandingPageByPath, filterPackagesForLandingPage } from '../src/seo/landingPagesConfig.js';
 
 const formatDistanceMeters = (value, label = 'Haram') => {
   const meters = Number(value);
@@ -75,10 +80,11 @@ const normalise = (pkg) => {
   };
 };
 
-// Every return path always includes all four keys (packages, package, agents,
-// agent) — even when a branch only cares about one of them — so consumers
-// (+Page.jsx → App.jsx) never have to guess which keys exist on a given page.
-const EMPTY = { packages: null, package: null, agents: null, agent: null };
+// Every return path always includes all five keys (packages, package, agents,
+// agent, landingPage) — even when a branch only cares about one of them — so
+// consumers (+Page.jsx → App.jsx) never have to guess which keys exist on a
+// given page.
+const EMPTY = { packages: null, package: null, agents: null, agent: null, landingPage: null };
 
 export default async function data(pageContext) {
   const pathname = pageContext.urlPathname || '/';
@@ -139,6 +145,34 @@ export default async function data(pageContext) {
     }
   }
 
+  // ── Programmatic SEO landing pages ────────────────────────────────────
+  // Checked before the agents/homepage branches below. Reuses the exact
+  // same /packages/all-active endpoint the homepage already fetches from,
+  // then filters server-side using the matching landingPagesConfig entry —
+  // so the crawler's very first response already has the real, filtered
+  // package list in the HTML, not an empty shell that fills in after
+  // hydration.
+  const landingPage = getLandingPageByPath(pathname);
+  if (landingPage) {
+    try {
+      const res = await fetch(`${BASE_API}/packages/all-active`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Packages fetch failed: ${res.status}`);
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (json.packages ?? json.data ?? []);
+      const normalised = list.map(normalise);
+      const filtered = filterPackagesForLandingPage(landingPage, normalised);
+      return { ...EMPTY, packages: filtered, landingPage: landingPage.path };
+    } catch (err) {
+      console.error('[+data.js] SSR landing-page fetch failed, falling back to client fetch:', err.message);
+      // Still flag which landing page this is even on fetch failure, so
+      // +Head.jsx / LandingPage.jsx render the right title/copy instead of
+      // silently falling through to a generic 404.
+      return { ...EMPTY, landingPage: landingPage.path };
+    }
+  }
+
   // ── Homepage ───────────────────────────────────────────────────────────
   if (pathname !== '/') {
     return EMPTY;
@@ -151,6 +185,16 @@ export default async function data(pageContext) {
     if (!res.ok) throw new Error(`Packages fetch failed: ${res.status}`);
     const json = await res.json();
     const list = Array.isArray(json) ? json : (json.packages ?? json.data ?? []);
+    if (list.length === 0) {
+      // A 200 response that resolves to zero packages is ambiguous: it
+      // could be a genuinely empty result set, or the backend responding
+      // with a shape this parser doesn't recognize (e.g. { data: { packages
+      // : [...] } } instead of { packages: [...] }), silently swallowed by
+      // the `?? []` fallback above. Logging the raw shape here turns that
+      // silent failure into something visible in server logs instead of
+      // just showing up as "no packages" on the live site with no clue why.
+      console.error('[+data.js] Homepage SSR fetch returned ZERO packages. Raw response keys:', Object.keys(json || {}), 'isArray:', Array.isArray(json), 'sample:', JSON.stringify(json).slice(0, 500));
+    }
     return { ...EMPTY, packages: list.map(normalise) };
   } catch (err) {
     // Fail soft: if the Render backend is slow/down during a crawler's

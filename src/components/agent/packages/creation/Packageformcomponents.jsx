@@ -733,14 +733,26 @@ export const DateRangePicker = ({
 // HotelBlock
 // ─────────────────────────────────────────────────────────────────────────────
 
+// `city`: normalised city key (e.g. "makkah", "madinah", "jeddah", or any
+// custom city an agent typed in) — used as the prefix for this block's form
+// fields (`${city}_hotel_name`, etc.), so any city works with no special-casing.
+// `label`: display name for the city. Falls back to a title-cased version of
+// `city` if not passed, so older call-sites that relied on the previous
+// makkah/madinah-only default still render sensibly.
 // `required`: true when this city must be filled in for the package to be
-// complete (Makkah always; Madinah/others whenever the package's selected
-// location includes them). `errors`: { name, rating, checkIn, checkOut } —
-// each an error message string or undefined, keyed to this city's fields.
-export const HotelBlock = ({ city, icon, formData, set, required = false, errors = {} }) => {
-  const label = city === "makkah" ? "Makkah" : "Madinah";
-  const hint  = city === "makkah" ? "distance from Haram" : "distance from Prophet's Mosque";
+// complete (Makkah always; every other selected city too, since an agent
+// only sees this block at all once they've explicitly picked that city).
+// `errors`: { name, rating, checkIn, checkOut } — each an error message
+// string or undefined, keyed to this city's fields.
+export const HotelBlock = ({ city, label, icon, formData, set, required = false, errors = {} }) => {
+  const resolvedLabel = label || (city === "makkah" ? "Makkah" : city === "madinah" ? "Madinah" : city.charAt(0).toUpperCase() + city.slice(1));
+  const hint  = city === "makkah" ? "distance from Haram" : city === "madinah" ? "distance from Prophet's Mosque" : "distance from city centre";
   const hasError = !!(errors.name || errors.rating || errors.checkIn || errors.checkOut);
+  // Dynamically-added cities may not have their fields in `formData` yet
+  // (they're only initialised the first time the agent types into a field),
+  // so every read here falls back to "" rather than letting `undefined`
+  // reach a controlled input.
+  const val = (suffix) => formData[`${city}_${suffix}`] ?? "";
 
   return (
     <div
@@ -755,7 +767,7 @@ export const HotelBlock = ({ city, icon, formData, set, required = false, errors
           {icon}
         </div>
         <h3 className="font-bold text-sm" style={{ color: "#0D3D2B" }}>
-          {label} Hotel
+          {resolvedLabel} Hotel
         </h3>
         <span
           className="ml-auto text-xs font-bold uppercase tracking-wide"
@@ -768,16 +780,16 @@ export const HotelBlock = ({ city, icon, formData, set, required = false, errors
       <div className="grid grid-cols-2 gap-3">
         <Field label="Hotel Name" error={errors.name}>
           <InputEl
-            value={formData[`${city}_hotel_name`]}
+            value={val("hotel_name")}
             onChange={(e) => set(`${city}_hotel_name`, e.target.value)}
-            placeholder={`e.g. Mövenpick ${label}`}
+            placeholder={`e.g. Mövenpick ${resolvedLabel}`}
             sanitize="text"
             style={errors.name ? errorRingStyle : {}}
           />
         </Field>
         <Field label="Star Rating" error={errors.rating}>
           <Stars
-            value={formData[`${city}_hotel_rating`]}
+            value={val("hotel_rating")}
             onChange={(v) => set(`${city}_hotel_rating`, v)}
             error={errors.rating}
           />
@@ -786,7 +798,7 @@ export const HotelBlock = ({ city, icon, formData, set, required = false, errors
 
       <Field label="Distance" hint={hint}>
         <InputEl
-          value={formData[`${city}_hotel_distance`]}
+          value={val("hotel_distance")}
           onChange={(e) => set(`${city}_hotel_distance`, e.target.value)}
           placeholder="e.g. 200m"
           sanitize="text"
@@ -796,7 +808,7 @@ export const HotelBlock = ({ city, icon, formData, set, required = false, errors
 
       <Field label="Address">
         <InputEl
-          value={formData[`${city}_hotel_address`]}
+          value={val("hotel_address")}
           onChange={(e) => set(`${city}_hotel_address`, e.target.value)}
           placeholder="Optional address"
           sanitize="text"
@@ -804,26 +816,26 @@ export const HotelBlock = ({ city, icon, formData, set, required = false, errors
       </Field>
 
       <DateRangePicker
-        checkIn={formData[`${city}_check_in_date`]}
-        checkOut={formData[`${city}_check_out_date`]}
+        checkIn={val("check_in_date")}
+        checkOut={val("check_out_date")}
         onChangeCheckIn={(v) => set(`${city}_check_in_date`, sanitizeDate(v))}
         onChangeCheckOut={(v) => set(`${city}_check_out_date`, sanitizeDate(v))}
         errorCheckIn={errors.checkIn}
         errorCheckOut={errors.checkOut}
       />
 
-      {formData[`${city}_check_in_date`] && formData[`${city}_check_out_date`] && (
+      {val("check_in_date") && val("check_out_date") && (
         <p className="text-xs font-semibold" style={{ color: "#C9A84C" }}>
           🌙{" "}
           {Math.max(
             0,
             Math.round(
-              (new Date(formData[`${city}_check_out_date`]) -
-                new Date(formData[`${city}_check_in_date`])) /
+              (new Date(val("check_out_date")) -
+                new Date(val("check_in_date"))) /
                 86400000
             )
           )}{" "}
-          nights in {label}
+          nights in {resolvedLabel}
         </p>
       )}
     </div>

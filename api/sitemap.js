@@ -1,23 +1,32 @@
-// api/sitemap.js
-//
-// Dynamic sitemap — implements the TODO left in the static sitemap.xml
-// comment ("When ready, generate those from Supabase..."). Isolated Vercel
-// serverless function, same shape/spirit as the existing api/package-meta.js
-// OG-image function: read-only, additive, and cannot affect any other route.
-//
-// Uses the same plain fetch() approach as pages/+data.js (not an SDK import)
-// so it stays consistent with the one other server-side data loader already
-// in this codebase, and needs no new dependencies.
-//
-// Safety: every dynamic section (packages, agents) is wrapped in its own
-// try/catch. If the Render backend is slow or down, that section is simply
-// skipped — the function still returns 200 with whatever static + dynamic
-// URLs it *did* manage to gather. It never throws, never 500s, and never
-// blocks a request waiting past a short timeout.
-
 const _apiBase = process.env.VITE_API_BASE || process.env.VITE_API_URL || 'http://localhost:5000';
 const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
 const SITE_ORIGIN = 'https://www.umrahmarket.net';
+
+// Verbatim copy of package-meta.js's toSlug(), duplicated on purpose rather
+// than imported — same reasoning as +data.js's duplicated normalise():
+// this function runs in an isolated Vercel serverless function and should
+// not depend on src/utils/packageSeo.js in case that module ever picks up
+// a browser-only dependency. If you change slug generation in
+// packageSeo.js's createPackagePath(), mirror the change here too.
+const toSlug = (value = '') => {
+  const text = String(value)
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+  return text || 'umrah-package';
+};
+
+// Matches createPackagePath()'s output (used as the canonical URL in
+// +Head.jsx) so sitemap entries never diverge from the page's own
+// canonical tag — no wasted crawl budget on a redirect/canonicalization hop.
+const buildPackagePath = (pkg) => {
+  const title = pkg.name || pkg.title || 'Umrah Package';
+  return `/umra-package/${toSlug(title)}/${pkg.id}`;
+};
 
 // Static routes — mirrors the existing sitemap.xml exactly.
 const STATIC_ROUTES = [
@@ -47,12 +56,7 @@ const fetchPackageUrls = async () => {
     return list
       .filter((p) => p && p.id)
       .map((p) => ({
-        // NOTE: uses the simple /package/:id form, which App.jsx already
-        // routes correctly. If you want sitemap URLs to exactly match the
-        // slug-based canonical (createPackagePath, used in +Head.jsx),
-        // swap this for that same helper — Google will still index either
-        // way since the canonical tag on the page itself is authoritative.
-        path: `/package/${p.id}`,
+        path: buildPackagePath(p),
         changefreq: 'weekly',
         priority: '0.8',
         lastmod: p.updated_at || p.created_at || null,
