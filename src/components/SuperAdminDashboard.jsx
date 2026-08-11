@@ -4,7 +4,8 @@ import {
   LogOut, Search, Menu, X, Shield, Activity, TrendingUp, Briefcase,
   Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
   Eye, EyeOff, Lock, MapPin, BookOpen, ExternalLink,
-  HelpCircle, Flag, MessagesSquare,ChartNoAxesCombined 
+  HelpCircle, Flag, MessagesSquare,ChartNoAxesCombined,
+  Mail, Send, CheckSquare, Square
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -1365,18 +1366,76 @@ const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
     a.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     a.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showComposeModal, setShowComposeModal] = useState(false);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(a => selectedIds.has(a.id));
+
+  const toggleOne = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelectedIds(prev => {
+      if (allFilteredSelected) return new Set();
+      const next = new Set(prev);
+      filtered.forEach(a => next.add(a.id));
+      return next;
+    });
+  };
+
+  const selectedAgents = filtered.filter(a => selectedIds.has(a.id));
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Agents</h1>
-        <p className="text-sm text-gray-500 mt-1">{agents.length} registered agencies</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Agents</h1>
+          <p className="text-sm text-gray-500 mt-1">{agents.length} registered agencies</p>
+        </div>
+
+        <button
+          onClick={() => setShowComposeModal(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Mail className="h-4 w-4" />
+          {selectedIds.size > 0 ? `Email ${selectedIds.size} selected` : 'Compose email'}
+        </button>
       </div>
+
       <TableWrapper>
         <table className="w-full">
-          <thead><tr><Th>Agent</Th><Th>Email</Th><Th>Location</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th></tr></thead>
+          <thead>
+            <tr>
+              <th className="w-10 px-4 py-3">
+                <button onClick={toggleAll} className="flex items-center" aria-label="Select all">
+                  {allFilteredSelected
+                    ? <CheckSquare className="h-4 w-4 text-blue-600" />
+                    : <Square className="h-4 w-4 text-gray-300" />}
+                </button>
+              </th>
+              <Th>Agent</Th><Th>Email</Th><Th>Location</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(agent => (
               <ObservedRow key={agent.id} id={agent.id} isPending={agent.status === 'pending'} onViewed={onViewAgent}>
+                <Td>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleOne(agent.id); }}
+                    className="flex items-center"
+                    aria-label={`Select ${agent.name}`}
+                  >
+                    {selectedIds.has(agent.id)
+                      ? <CheckSquare className="h-4 w-4 text-blue-600" />
+                      : <Square className="h-4 w-4 text-gray-300" />}
+                  </button>
+                </Td>
                 <Td><span className="font-medium text-gray-900">{agent.name}</span></Td>
                 <Td>{agent.email}</Td>
                 <Td>
@@ -1394,10 +1453,206 @@ const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
                 <Td className="text-gray-400">{agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : '—'}</Td>
               </ObservedRow>
             ))}
-            {filtered.length === 0 && <EmptyRow colSpan={6} message="No agents found" />}
+            {filtered.length === 0 && <EmptyRow colSpan={7} message="No agents found" />}
           </tbody>
         </table>
       </TableWrapper>
+
+      {showComposeModal && (
+        <BatchEmailModal
+          agents={selectedAgents}
+          onClose={() => setShowComposeModal(false)}
+          onSent={() => { setSelectedIds(new Set()); setShowComposeModal(false); }}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BatchEmailModal — compose subject/message, send to every selected agent,
+// show a results summary. Styling matches ConfirmDisburseModal /
+// ReceiptPreviewModal in AccountingTab.jsx for consistency.
+// ─────────────────────────────────────────────────────────────────────────────
+const BatchEmailModal = ({ agents, onClose, onSent }) => {
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [extraEmailsInput, setExtraEmailsInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null); // { sentCount, failedCount, failed, recipientCount }
+
+  const parsedExtraEmails = useMemo(() => {
+    const parts = extraEmailsInput
+      .split(/[\n,;]+/)
+      .map((v) => v.trim().toLowerCase())
+      .filter(Boolean);
+    return Array.from(new Set(parts));
+  }, [extraEmailsInput]);
+
+  const invalidExtraEmails = useMemo(() => {
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return parsedExtraEmails.filter((email) => !EMAIL_REGEX.test(email));
+  }, [parsedExtraEmails]);
+
+  const canSend =
+    subject.trim() &&
+    message.trim() &&
+    !sending &&
+    invalidExtraEmails.length === 0 &&
+    (agents.length > 0 || parsedExtraEmails.length > 0);
+
+  const totalRecipients = agents.length + parsedExtraEmails.length;
+
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      const res = await saApi.post('/superadmin/agents/batch-email', {
+        agentIds: agents.map(a => a.id),
+        extraEmails: parsedExtraEmails,
+        subject: subject.trim(),
+        message: message.trim(),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        toast.error(json.message || 'Failed to send batch email');
+        setSending(false);
+        return;
+      }
+
+      setResult(json);
+      if (json.failedCount === 0) {
+        toast.success(`Sent to all ${json.sentCount} recipients`);
+      } else {
+        toast.error(`${json.sentCount} sent, ${json.failedCount} failed`);
+      }
+    } catch (err) {
+      toast.error('Network error sending batch email');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={sending ? undefined : onClose}>
+      <div
+        className="bg-white rounded-2xl overflow-hidden max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-sky-100 bg-gradient-to-r from-sky-50 via-white to-emerald-50 flex-shrink-0">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Premium Broadcast</p>
+            <p className="text-xs text-gray-500 mt-0.5">Email selected agents and outside contacts in one send</p>
+          </div>
+          {!sending && (
+            <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100">
+              <X className="h-4 w-4 text-gray-500" />
+            </button>
+          )}
+        </div>
+
+        {!result ? (
+          <div className="overflow-auto flex-1 px-5 py-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Selected agents</p>
+                <p className="text-sm font-semibold text-emerald-900 mt-1">{agents.length}</p>
+              </div>
+              <div className="rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Additional emails</p>
+                <p className="text-sm font-semibold text-sky-900 mt-1">{parsedExtraEmails.length}</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Add external recipient emails</label>
+              <textarea
+                value={extraEmailsInput}
+                onChange={(e) => setExtraEmailsInput(e.target.value)}
+                placeholder="partner@example.com, lead@company.com or one email per line"
+                rows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-400 resize-none"
+              />
+              <p className="mt-1.5 text-[11px] text-gray-500">Use commas or new lines. Duplicates are removed automatically.</p>
+              {invalidExtraEmails.length > 0 && (
+                <p className="mt-1.5 text-xs text-red-600">
+                  Invalid email{invalidExtraEmails.length === 1 ? '' : 's'}: {invalidExtraEmails.slice(0, 4).join(', ')}
+                  {invalidExtraEmails.length > 4 ? ` +${invalidExtraEmails.length - 4} more` : ''}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Subject</label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="e.g. New Umrah packages now live for Ramadan"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-400"
+                maxLength={150}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Message</label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder={'Write your message. Leave a blank line between paragraphs.\n\n**bold text**, [link text](https://...), and lines starting with - become bullets.\nPut a link on its own line (e.g. 👉 Register now: [Sign up](https://...)) to render it as a button.'}
+                rows={9}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-400 resize-none"
+              />
+              <p className="mt-1.5 text-[11px] text-gray-400">
+                Supports **bold**, [link](https://...), and “- ” bullet lines. A link alone on its own line becomes a button.
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-lg px-3 py-2.5 text-xs text-gray-500">
+              Recipients: {agents.length} selected agent{agents.length === 1 ? '' : 's'}
+              {parsedExtraEmails.length > 0 ? ` + ${parsedExtraEmails.length} external email${parsedExtraEmails.length === 1 ? '' : 's'}` : ''}
+              {totalRecipients === 0 ? ' (none yet)' : ''}
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-auto flex-1 px-5 py-6 text-center">
+            <div className="mx-auto w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mb-4">
+              <CheckCircle className="h-6 w-6 text-emerald-600" />
+            </div>
+            <p className="text-sm font-semibold text-gray-900">
+              Sent to {result.sentCount} of {(result.recipientCount ?? (result.sentCount + result.failedCount))} recipients
+            </p>
+            {result.failedCount > 0 && (
+              <div className="mt-4 text-left bg-red-50 border border-red-100 rounded-lg p-3">
+                <p className="text-xs font-semibold text-red-700 mb-1.5">{result.failedCount} failed</p>
+                <ul className="text-xs text-red-600 space-y-1">
+                  {result.failed.map(f => <li key={f.email}>{f.email}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 flex-shrink-0">
+          {!result ? (
+            <>
+              <button onClick={onClose} disabled={sending} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
+                Cancel
+              </button>
+              <button
+                onClick={handleSend}
+                disabled={!canSend}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white text-sm font-semibold rounded-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sending ? <Loader className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sending ? `Sending to ${totalRecipients}…` : `Send to ${totalRecipients}`}
+              </button>
+            </>
+          ) : (
+            <button onClick={onSent} className="px-4 py-2 bg-sky-600 text-white text-sm font-semibold rounded-lg hover:bg-sky-700">
+              Done
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
