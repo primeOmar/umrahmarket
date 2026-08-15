@@ -1955,21 +1955,17 @@ const AgentDashboard = ({ user, onLogout }) => {
   useEffect(() => { refreshVerificationStatus(); }, []);
 
   // ── Proactive "you haven't uploaded documents yet" prompt ────────────────
-  // The gate modal above only ever appeared reactively, when the agent
-  // clicked "create package" and got blocked. New agents who haven't tried
-  // that yet had no reason to know verification was even required. Surface
-  // the same modal automatically, once, right after the dashboard loads —
-  // but only when nothing has been uploaded at all; an agent who's already
-  // mid-review or fixing a rejection has already seen this and doesn't
-  // need to be re-nagged every time they open the dashboard.
-  const autoUploadPromptShownRef = useRef(false);
-  useEffect(() => {
-    if (verificationLoading || !verificationStatus || autoUploadPromptShownRef.current) return;
-    autoUploadPromptShownRef.current = true;
-    if (!verificationStatus.isApproved && !verificationStatus.hasUploadedDocuments) {
-      setShowVerificationGate(true);
-    }
-  }, [verificationLoading, verificationStatus]);
+  // GATE COMMENTED OUT (see handleAttemptCreatePackage below): agents can
+  // now post packages before document approval. Original auto-popup kept
+  // below, commented out, so it can be flipped back on later.
+  // const autoUploadPromptShownRef = useRef(false);
+  // useEffect(() => {
+  //   if (verificationLoading || !verificationStatus || autoUploadPromptShownRef.current) return;
+  //   autoUploadPromptShownRef.current = true;
+  //   if (!verificationStatus.isApproved && !verificationStatus.hasUploadedDocuments) {
+  //     setShowVerificationGate(true);
+  //   }
+  // }, [verificationLoading, verificationStatus]);
 
   // DocumentsTab (./agent/documents/DocumentsTab) handles its own uploads
   // and isn't available here to hook a completion callback into directly.
@@ -2008,40 +2004,43 @@ const AgentDashboard = ({ user, onLogout }) => {
   // never be more than one request stale, and an agent who was just
   // approved doesn't need to log out/in or reload to find out.
   const [checkingApproval, setCheckingApproval] = useState(false);
-  // BUG FIX: this previously started with `if (checkingApproval) return;`
-  // as a double-click guard. If checkingApproval ever got stuck `true` —
-  // a hung request, a state update that fired after the component
-  // re-rendered, or simply two effects racing — every future click would
-  // silently return here before the function body ever ran: no network
-  // request, no console error, nothing. That matches exactly what was
-  // reported (zero network activity, zero console errors, gate modal
-  // rendering against stale/initial `null` state). The buttons already
-  // have `disabled={checkingApproval}` to prevent double-clicks at the UI
-  // layer, which is the correct/safe place for that guard — the handler
-  // itself doesn't need a second, more fragile copy of the same check.
-  const handleAttemptCreatePackage = async () => {
-    
+  // GATE COMMENTED OUT: agents no longer need document approval to post
+  // packages. Original approval-check logic kept below, commented out, so
+  // the gate can be restored by uncommenting it and removing the two lines
+  // directly below it.
+  //
+  // NOTE: the backend also enforced this independently via a
+  // requireApprovedAgent middleware (see packages.route.js) — that's been
+  // commented out there too, in the same way, for the same reason.
+  const handleAttemptCreatePackage = () => {
     setPackageModalMode('create');
     setEditingPackage(null);
-    setCheckingApproval(true);
-    try {
-      const data = await getAgentVerificationStatus();
-      setVerificationStatus(data);
-      setVerificationLoading(false);
-      if (data?.isApproved === true) {
-        setShowCreatePackage(true);
-      } else {
-        setShowVerificationGate(true);
-      }
-    } catch (err) {
-      
-      // Fail safe: if we can't confirm approval right now, don't silently
-      // let an unverified (or unknown) agent through — show the gate.
-      setShowVerificationGate(true);
-    } finally {
-      setCheckingApproval(false);
-    }
+    setShowCreatePackage(true);
   };
+  // Original gated version — restore this (and delete the bypass above) to
+  // re-enable the document-approval requirement:
+  //
+  // const handleAttemptCreatePackage = async () => {
+  //   setPackageModalMode('create');
+  //   setEditingPackage(null);
+  //   setCheckingApproval(true);
+  //   try {
+  //     const data = await getAgentVerificationStatus();
+  //     setVerificationStatus(data);
+  //     setVerificationLoading(false);
+  //     if (data?.isApproved === true) {
+  //       setShowCreatePackage(true);
+  //     } else {
+  //       setShowVerificationGate(true);
+  //     }
+  //   } catch (err) {
+  //     // Fail safe: if we can't confirm approval right now, don't silently
+  //     // let an unverified (or unknown) agent through — show the gate.
+  //     setShowVerificationGate(true);
+  //   } finally {
+  //     setCheckingApproval(false);
+  //   }
+  // };
 
   const handleRequestReview = async () => {
     setRequestingReview(true);
