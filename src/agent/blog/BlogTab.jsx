@@ -3,10 +3,11 @@ import {
   Plus, Edit, Trash2, Search, Loader2, RefreshCw, AlertCircle,
   Newspaper, Image as ImageIcon, Video, Upload, X, Eye,
   Calendar, ExternalLink, Tag as TagIcon, CheckCircle2, FileEdit,
+  FileText,
 } from 'lucide-react';
 import {
   getBlogPosts, getBlogPost, createBlogPost, updateBlogPost,
-  deleteBlogPost, uploadBlogMedia,
+  deleteBlogPost, uploadBlogMedia, uploadBlogAttachment,
 } from '../services/blogApi';
 
 const CATEGORIES = ['News', 'Guides', 'Umrah Tips', 'Hajj Tips', 'Agent Spotlights'];
@@ -171,6 +172,74 @@ const MediaUploadField = ({ label, icon: Icon, mediaType, value, onChange, accep
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AttachmentUploadField — PDF attachment (e.g. full magazine issue)
+// ─────────────────────────────────────────────────────────────────────────────
+const AttachmentUploadField = ({ value, onChange }) => {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [localError, setLocalError] = useState('');
+  const inputRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLocalError('');
+    setUploading(true);
+    setProgress(0);
+    try {
+      const { publicUrl, key, name } = await uploadBlogAttachment(file, setProgress);
+      onChange({ url: publicUrl, key, name: name || file.name });
+    } catch (err) {
+      setLocalError(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        Attach magazine / full document <span className="text-gray-400 font-normal">(PDF, optional)</span>
+      </label>
+
+      {value?.url ? (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border border-gray-200 rounded-xl bg-gray-50">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-red-50 rounded-lg flex-shrink-0">
+              <FileText className="h-5 w-5 text-red-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-800 truncate">{value.name || 'Attached PDF'}</p>
+              <a href={value.url} target="_blank" rel="noreferrer" className="text-xs text-emerald-600 hover:underline">Preview</a>
+            </div>
+          </div>
+          <button type="button" onClick={() => onChange(null)} className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0">
+            <X className="h-4 w-4 text-gray-500" />
+          </button>
+        </div>
+      ) : (
+        <label className="flex items-center justify-center gap-2 h-16 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/30 transition-colors">
+          {uploading ? (
+            <>
+              <Loader2 className="h-5 w-5 text-emerald-500 animate-spin" />
+              <span className="text-xs text-gray-500">{progress}%</span>
+            </>
+          ) : (
+            <>
+              <FileText className="h-5 w-5 text-gray-400" />
+              <span className="text-xs text-gray-500">Click to upload PDF (max 25MB)</span>
+            </>
+          )}
+          <input ref={inputRef} type="file" accept="application/pdf" onChange={handleFile} className="hidden" disabled={uploading} />
+        </label>
+      )}
+      {localError && <p className="text-xs text-red-500 mt-1">{localError}</p>}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PostEditorModal
 // ─────────────────────────────────────────────────────────────────────────────
 const emptyForm = {
@@ -179,6 +248,7 @@ const emptyForm = {
   author_name: '',
   cover_image: null, // { url, key }
   cover_video: null,
+  attachment: null,  // { url, key, name }
 };
 
 const PostEditorModal = ({ post, onClose, onSaved }) => {
@@ -206,6 +276,7 @@ const PostEditorModal = ({ post, onClose, onSaved }) => {
           author_name: full.author_name || '',
           cover_image: full.cover_image_url ? { url: full.cover_image_url, key: full.cover_image_key } : null,
           cover_video: full.cover_video_url ? { url: full.cover_video_url, key: full.cover_video_key } : null,
+          attachment: full.attachment_url ? { url: full.attachment_url, key: full.attachment_key, name: full.attachment_name } : null,
         });
         setSlugTouched(true);
       } catch (err) {
@@ -239,6 +310,9 @@ const PostEditorModal = ({ post, onClose, onSaved }) => {
     cover_image_key: form.cover_image?.key || null,
     cover_video_url: form.cover_video?.url || null,
     cover_video_key: form.cover_video?.key || null,
+    attachment_url: form.attachment?.url || null,
+    attachment_key: form.attachment?.key || null,
+    attachment_name: form.attachment?.name || null,
     status,
   });
 
@@ -338,6 +412,11 @@ const PostEditorModal = ({ post, onClose, onSaved }) => {
                 value={form.cover_video} onChange={(v) => update({ cover_video: v })}
               />
             </div>
+
+            <AttachmentUploadField
+              value={form.attachment}
+              onChange={(v) => update({ attachment: v })}
+            />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>

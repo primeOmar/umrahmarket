@@ -121,8 +121,7 @@ export const uploadBlogMedia = async (file, mediaType, onProgress) => {
   throw new Error(`Unsupported mediaType: ${mediaType}`);
 };
 
-const uploadBlogImage = async (file, onProgress) => {
-  const formData = new FormData();
+const uploadBlogImage = async (file, onProgress) => {  const formData = new FormData();
   formData.append('image', file);
 
   const token = getToken();
@@ -174,4 +173,37 @@ const uploadBlogVideo = async (file, onProgress) => {
   });
 
   return { publicUrl, key };
+};
+
+// ── PDF attachment upload ───────────────────────────────────────────────────
+// Same backend-proxy pattern as uploadBlogImage — used for attaching a
+// source document (e.g. a full magazine/newspaper issue a post references)
+// that readers can open below the post.
+export const uploadBlogAttachment = async (file, onProgress) => {
+  const formData = new FormData();
+  formData.append('attachment', file);
+
+  const token = getToken();
+
+  const data = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BASE_API}/superadmin/blog/upload-attachment`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      try {
+        const body = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && body.success !== false) resolve(body.data);
+        else reject(new Error(body.message || `Upload failed (${xhr.status})`));
+      } catch {
+        reject(new Error('Upload failed — invalid server response'));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Upload failed'));
+    xhr.send(formData);
+  });
+
+  return data; // { publicUrl, key, name }
 };

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { ArrowLeft, Calendar, Eye, AlertCircle, RefreshCw, Tag } from 'lucide-react';
+import { ArrowLeft, Calendar, Eye, AlertCircle, RefreshCw, Tag, FileText, Download } from 'lucide-react';
 import { request } from '../api';
 import Seo from './Seo';
 
@@ -147,6 +147,33 @@ const BlogPostPage = ({ initialPost = null }) => {
                 {t}
               </span>
             ))}
+          </div>
+        )}
+
+        {post.attachment_url && (
+          <div className="mt-8 pt-6 border-t border-gray-100">
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2.5 bg-red-50 rounded-xl flex-shrink-0">
+                  <FileText className="h-6 w-6 text-red-500" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {post.attachment_name || 'Read the full document'}
+                  </p>
+                  <p className="text-xs text-gray-500">PDF</p>
+                </div>
+              </div>
+              <a
+                href={post.attachment_url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl transition-colors flex-shrink-0"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Open PDF</span>
+              </a>
+            </div>
           </div>
         )}
       </article>
