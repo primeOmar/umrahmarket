@@ -11,12 +11,18 @@ export default function Page() {
   // initialPackages already uses, so no other page's behavior changes.
   const initialAgents = pageContext.data?.agents ?? null;
   const initialAgent = pageContext.data?.agent ?? null;
+  // Same convention as initialAgents/initialAgent — only populated on
+  // '/blog' (list) and '/blog/:slug' (post detail).
+  const initialBlogPosts = pageContext.data?.blogPosts ?? null;
+  const initialBlogPost = pageContext.data?.blogPost ?? null;
 
   return (
     <App
       initialPackages={initialPackages}
       initialAgents={initialAgents}
       initialAgent={initialAgent}
+      initialBlogPosts={initialBlogPosts}
+      initialBlogPost={initialBlogPost}
       initialPathname={pageContext.urlPathname || '/'}
       initialAuthReady={pageContext.urlPathname === '/'}
     />

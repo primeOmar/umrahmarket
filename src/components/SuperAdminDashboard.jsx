@@ -5,7 +5,7 @@ import {
   Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
   Eye, EyeOff, Lock, MapPin, BookOpen, ExternalLink,
   HelpCircle, Flag, MessagesSquare,ChartNoAxesCombined,
-  Mail, Send, CheckSquare, Square
+  Mail, Send, CheckSquare, Square, Newspaper
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -16,6 +16,7 @@ import PublicChatTab, { usePublicChatUnread } from '../publicchat/PublicChatTab'
 import ComplaintsTab from '../complains/ComplaintsTab'
 import FaqsTab from '../faq/FaqsTab';
 import AgentShopTraffic from '../visits/AgentShopTraffic'
+import BlogTab from '../agent/blog/BlogTab';
 
 // ─── API base (no trailing /api duplication) ──────────────────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
@@ -684,6 +685,7 @@ const navItems = [
   { id: 'packages',   label: 'Packages',     icon: Package },
   { id: 'resources',  label: 'Resources',    icon: BookOpen },
   { id: 'faqs',       label: 'FAQs',         icon: HelpCircle },
+  { id: 'blog',       label: 'Blog',         icon: Newspaper },
   { id: 'complaints', label: 'Complains',    icon: Flag },
   { id: 'publicchat', label: 'Public Chat', icon: MessagesSquare, count: publicChatUnread },
     { id: 'visits', label: 'Agents Visits',  icon: ChartNoAxesCombined },
@@ -823,6 +825,7 @@ const navItems = [
           {activeTab === 'clients'   && <ClientsTab  clients={clients} searchQuery={searchQuery} onViewClient={id => markItemViewed('clients', id)} />}
           {activeTab === 'resources' && <ResourcesTab />}
              {activeTab === 'faqs'       && <FaqsTab />}
+             {activeTab === 'blog'       && <BlogTab />}
                 {activeTab === 'visits'       && <AgentShopTraffic />}
                     {activeTab === 'complaints' && <ComplaintsTab />}
 {activeTab === 'publicchat' && (

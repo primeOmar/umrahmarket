@@ -24,6 +24,13 @@ const getPathAgentId = (pathname = '') => {
   return null;
 };
 
+// '/blog/:slug' — but NOT '/blog' itself (list route, no slug segment).
+const getBlogSlug = (pathname = '') => {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts[0] === 'blog' && parts[1]) return parts[1];
+  return null;
+};
+
 const getPathPackageTitle = (packageData = {}) => packageData.title || packageData.name || 'Umrah Package';
 
 const buildPackageDescription = (packageData = {}) => {
@@ -98,6 +105,40 @@ const buildLandingPageJsonLd = (entry, packages, canonical) => ({
       position: i + 1,
       url: toAbsolute(createPackagePath(pkg)),
       name: getPathPackageTitle(pkg),
+    })),
+  },
+});
+
+const buildBlogPostingJsonLd = (post, canonical) => ({
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.title,
+  description: post.meta_description || post.excerpt,
+  image: post.cover_image_url ? [post.cover_image_url] : undefined,
+  datePublished: post.published_at,
+  dateModified: post.updated_at || post.published_at,
+  author: { '@type': 'Person', name: post.author_name || 'UmrahMarket Team' },
+  publisher: {
+    '@type': 'Organization',
+    name: 'UmrahMarket',
+    logo: { '@type': 'ImageObject', url: `${SITE_ORIGIN}/umramarket1.png` },
+  },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+});
+
+const buildBlogListJsonLd = (posts, canonical) => ({
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name: 'UmrahMarket Blog',
+  description: 'News, guides, and Umrah & Hajj tips for pilgrims from Kenya.',
+  url: canonical,
+  mainEntity: {
+    '@type': 'ItemList',
+    itemListElement: posts.slice(0, 20).map((post, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      url: toAbsolute(`/blog/${post.slug}`),
+      name: post.title,
     })),
   },
 });
@@ -282,6 +323,77 @@ export default function Head() {
         <script id="seo-json-ld" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildLandingPageJsonLd(landingPageEntry, packages, canonical)) }} />
         <script id="seo-json-ld-breadcrumb" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
         <script id="seo-json-ld-faq" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildFaqJsonLd(faqs)) }} />
+      </>
+    );
+  }
+
+  // '/blog/:slug' — checked BEFORE the plain '/blog' list branch below,
+  // gated on blogPost actually being present (SSR fetch succeeded); if
+  // null (fetch failed, or a stale-cache edge case), this falls through
+  // and BlogPostPage.jsx's own client-side <Seo> still covers it after
+  // hydration, same pattern as the agent detail branch below.
+  const blogPost = pageContext.data?.blogPost || null;
+  if (blogPost && getBlogSlug(pathname)) {
+    const title = blogPost.meta_title || `${blogPost.title} | UmrahMarket Blog`;
+    const description = blogPost.meta_description || blogPost.excerpt || '';
+    const canonical = toAbsolute(`/blog/${blogPost.slug}`);
+    const image = blogPost.cover_image_url || `${SITE_ORIGIN}/umramarket1.png`;
+
+    const breadcrumbSchema = buildBreadcrumbJsonLd([
+      { name: 'Home', path: '/' },
+      { name: 'Blog', path: '/blog' },
+      { name: blogPost.title, path: `/blog/${blogPost.slug}` },
+    ]);
+
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta name="robots" content="index, follow" />
+        <link rel="canonical" href={canonical} />
+        <meta property="og:type" content="article" />
+        <meta property="og:site_name" content="UmrahMarket" />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:image" content={image} />
+        <meta property="og:url" content={canonical} />
+        <meta property="article:published_time" content={blogPost.published_at || ''} />
+        <meta property="article:modified_time" content={blogPost.updated_at || blogPost.published_at || ''} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        <meta name="twitter:image" content={image} />
+        <script id="seo-json-ld" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildBlogPostingJsonLd(blogPost, canonical)) }} />
+        <script id="seo-json-ld-breadcrumb" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
+      </>
+    );
+  }
+
+  if (pathname === '/blog') {
+    const title = 'Umrah & Hajj News, Guides and Tips | UmrahMarket Blog';
+    const description = 'News, updates, guides, and practical tips for Umrah and Hajj pilgrims travelling from Kenya.';
+    const canonical = `${SITE_ORIGIN}/blog`;
+    const posts = Array.isArray(pageContext.data?.blogPosts) ? pageContext.data.blogPosts : [];
+
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta name="keywords" content="umrah blog kenya, hajj guide kenya, umrah tips, hajj news kenya" />
+        <meta name="robots" content="index, follow" />
+        <link rel="canonical" href={canonical} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="UmrahMarket" />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:image" content={`${SITE_ORIGIN}/umramarket1.png`} />
+        <meta property="og:url" content={canonical} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        {posts.length > 0 && (
+          <script id="seo-json-ld" type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildBlogListJsonLd(posts, canonical)) }} />
+        )}
       </>
     );
   }

@@ -19,6 +19,8 @@ import ExperiencesPage from './components/ExperiencesPage';
 import VerifiedPage from './components/VerifiedPage';
 import AgentsPage from './components/AgentsPage';
 import AgentDetailPage from './components/AgentDetailPage';
+import BlogListPage from './components/BlogListPage';
+import BlogPostPage from './components/BlogPostPage';
 import VerifyEmailPage from './components/VerifyEmailPage';
 import { isEmailVerified } from './utils/emailVerification';
 import Seo from './components/Seo';
@@ -157,6 +159,8 @@ function App({
   initialPackages = null,
   initialAgents = null,
   initialAgent = null,
+  initialBlogPosts = null,
+  initialBlogPost = null,
   initialPathname = '/',
   initialAuthReady = false,
 }) {
@@ -567,6 +571,37 @@ function App({
                 }}
               />
               <AgentDetailPage initialAgent={initialAgent} />
+              <Footer />
+            </>
+          } />
+
+          <Route path="/blog" element={
+            <>
+              {/* BlogListPage.jsx renders its own <Seo> — kept as the
+                  single source of truth for this route's meta tags. */}
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <BlogListPage initialPosts={initialBlogPosts} />
+              <Footer />
+            </>
+          } />
+          <Route path="/blog/:slug" element={
+            <>
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <BlogPostPage initialPost={initialBlogPost} />
               <Footer />
             </>
           } />

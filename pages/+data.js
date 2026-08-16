@@ -38,6 +38,18 @@ const isAgentsListPath = (pathname = '') => {
   return parts.length === 1 && parts[0] === 'agents';
 };
 
+const isBlogListPath = (pathname = '') => {
+  const parts = pathname.split('/').filter(Boolean);
+  return parts.length === 1 && parts[0] === 'blog';
+};
+
+// '/blog/:slug' — but NOT '/blog' itself (list route, no slug segment).
+const getBlogSlug = (pathname = '') => {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts[0] === 'blog' && parts[1]) return parts[1];
+  return null;
+};
+
 // Verbatim copy of packagesApi.js's normalise() — duplicated on purpose so
 // this file never has to import that module (see note above). If you change
 // normalise() in packagesApi.js, mirror the change here too.
@@ -80,11 +92,11 @@ const normalise = (pkg) => {
   };
 };
 
-// Every return path always includes all five keys (packages, package, agents,
-// agent, landingPage) — even when a branch only cares about one of them — so
-// consumers (+Page.jsx → App.jsx) never have to guess which keys exist on a
-// given page.
-const EMPTY = { packages: null, package: null, agents: null, agent: null, landingPage: null };
+// Every return path always includes all keys (packages, package, agents,
+// agent, landingPage, blogPosts, blogPost) — even when a branch only cares
+// about one of them — so consumers (+Page.jsx → App.jsx) never have to guess
+// which keys exist on a given page.
+const EMPTY = { packages: null, package: null, agents: null, agent: null, landingPage: null, blogPosts: null, blogPost: null };
 
 export default async function data(pageContext) {
   const pathname = pageContext.urlPathname || '/';
@@ -141,6 +153,41 @@ export default async function data(pageContext) {
       return { ...EMPTY, agents: list };
     } catch (err) {
       console.error('[+data.js] SSR agents fetch failed, falling back to client fetch:', err.message);
+      return EMPTY;
+    }
+  }
+
+  // ── Blog post detail ──────────────────────────────────────────────────
+  const blogSlug = getBlogSlug(pathname);
+  if (blogSlug) {
+    try {
+      const res = await fetch(`${BASE_API}/blog/${blogSlug}`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Blog post fetch failed: ${res.status}`);
+      const json = await res.json();
+      const post = json?.data || json?.post || json;
+      return { ...EMPTY, blogPost: post };
+    } catch (err) {
+      // Fail soft — BlogPostPage.jsx's own client fetch takes over exactly
+      // as it does today when no SSR data is present.
+      console.error('[+data.js] SSR blog post fetch failed, falling back to client fetch:', err.message);
+      return EMPTY;
+    }
+  }
+
+  // ── Blog index ───────────────────────────────────────────────────────
+  if (isBlogListPath(pathname)) {
+    try {
+      const res = await fetch(`${BASE_API}/blog`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Blog posts fetch failed: ${res.status}`);
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (json.data ?? json.posts ?? []);
+      return { ...EMPTY, blogPosts: list };
+    } catch (err) {
+      console.error('[+data.js] SSR blog list fetch failed, falling back to client fetch:', err.message);
       return EMPTY;
     }
   }

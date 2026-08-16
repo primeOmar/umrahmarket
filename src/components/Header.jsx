@@ -12,6 +12,7 @@ import {
   Globe,
   BookOpen,
   Users,
+  Newspaper,
 } from 'lucide-react';
 import logoImage from '../assets/umramarket.png';
 import AuthModal from './AuthModal';
@@ -44,6 +45,12 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
       path: '/agents',
       icon: <Users className="h-4 w-4" />,
       activeIcon: <Users className="h-4 w-4" fill="currentColor" />,
+    },
+    {
+      label: 'Blog',
+      path: '/blog',
+      icon: <Newspaper className="h-4 w-4" />,
+      activeIcon: <Newspaper className="h-4 w-4" fill="currentColor" />,
     },
   ];
 
