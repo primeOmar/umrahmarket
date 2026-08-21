@@ -1,35 +1,32 @@
-const _apiBase = process.env.VITE_API_BASE || process.env.VITE_API_URL || 'http://localhost:5000';
-const BASE_API = _apiBase.endsWith('/api') ? _apiBase : `${_apiBase}/api`;
+// api/sitemap.js
+// ─────────────────────────────────────────────────────────────────────────────
+// Vercel serverless function. Your vercel.json already rewrites
+// /sitemap.xml -> /api/sitemap, so this file just needs to exist at
+// api/sitemap.js in your project root (same convention as api/ssr.js) and
+// it's live — no other config or Render deployment needed.
+//
+// Replaces the old committed static sitemap.xml, which is how the 7
+// landing pages in src/seo/landingPagesConfig.js silently fell out of the
+// live sitemap while package/agent URLs kept getting added by hand. This
+// builds fresh on every request (cached briefly) from:
+//   1. FIXED_ROUTES        — small static list
+//   2. LANDING_PAGES        — imported live from landingPagesConfig.js
+//   3. Active packages      — from Supabase "packages" table
+//   4. Verified agents      — from Supabase "profiles" table
+//      (role = 'agent' AND approved = true AND verification_status = 'approved')
+//      There is no separate "agents" table — agents are rows in "profiles".
+// ─────────────────────────────────────────────────────────────────────────────
+import { createClient } from '@supabase/supabase-js';
+import { LANDING_PAGES } from '../src/seo/landingPagesConfig.js';
+
 const SITE_ORIGIN = 'https://www.umrahmarket.net';
 
-// Verbatim copy of package-meta.js's toSlug(), duplicated on purpose rather
-// than imported — same reasoning as +data.js's duplicated normalise():
-// this function runs in an isolated Vercel serverless function and should
-// not depend on src/utils/packageSeo.js in case that module ever picks up
-// a browser-only dependency. If you change slug generation in
-// packageSeo.js's createPackagePath(), mirror the change here too.
-const toSlug = (value = '') => {
-  const text = String(value)
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
-  return text || 'umrah-package';
-};
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY, // service role — this runs server-side only
+);
 
-// Matches createPackagePath()'s output (used as the canonical URL in
-// +Head.jsx) so sitemap entries never diverge from the page's own
-// canonical tag — no wasted crawl budget on a redirect/canonicalization hop.
-const buildPackagePath = (pkg) => {
-  const title = pkg.name || pkg.title || 'Umrah Package';
-  return `/umra-package/${toSlug(title)}/${pkg.id}`;
-};
-
-// Static routes — mirrors the existing sitemap.xml exactly.
-const STATIC_ROUTES = [
+const FIXED_ROUTES = [
   { path: '/', changefreq: 'daily', priority: '1.0' },
   { path: '/agents', changefreq: 'daily', priority: '0.9' },
   { path: '/guidance', changefreq: 'monthly', priority: '0.7' },
@@ -37,89 +34,107 @@ const STATIC_ROUTES = [
   { path: '/verified', changefreq: 'monthly', priority: '0.6' },
 ];
 
-const withTimeout = (ms) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return { signal: controller.signal, clear: () => clearTimeout(timer) };
-};
+// Simple in-memory cache. Serverless functions can cold-start and lose
+// this between invocations, which is fine — worst case is an extra
+// Supabase query on a cold start, not a stale sitemap.
+let cache = { xml: null, expiresAt: 0 };
+const CACHE_TTL_MS = 15 * 60 * 1000;
 
-const fetchPackageUrls = async () => {
-  const { signal, clear } = withTimeout(5000);
-  try {
-    const res = await fetch(`${BASE_API}/packages/all-active`, {
-      headers: { Accept: 'application/json' },
-      signal,
-    });
-    if (!res.ok) throw new Error(`Packages fetch failed: ${res.status}`);
-    const json = await res.json();
-    const list = Array.isArray(json) ? json : (json.packages ?? json.data ?? []);
-    return list
-      .filter((p) => p && p.id)
-      .map((p) => ({
-        path: buildPackagePath(p),
-        changefreq: 'weekly',
-        priority: '0.8',
-        lastmod: p.updated_at || p.created_at || null,
-      }));
-  } catch (err) {
-    console.error('[api/sitemap] package fetch skipped:', err.message);
-    return [];
-  } finally {
-    clear();
+function slugify(name) {
+  return String(name || 'package')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+function urlEntry(loc, changefreq, priority, lastmod) {
+  return `  <url>
+    <loc>${loc}</loc>
+${lastmod ? `    <lastmod>${lastmod}</lastmod>\n` : ''}    <changefreq>${changefreq}</changefreq>
+    <priority>${priority}</priority>
+  </url>`;
+}
+
+async function buildSitemapXml() {
+  const entries = [];
+
+  // 1. Fixed static routes
+  for (const r of FIXED_ROUTES) {
+    entries.push(urlEntry(`${SITE_ORIGIN}${r.path}`, r.changefreq, r.priority));
   }
-};
 
-const fetchAgentUrls = async () => {
-  const { signal, clear } = withTimeout(5000);
-  try {
-    const res = await fetch(`${BASE_API}/agents`, {
-      headers: { Accept: 'application/json' },
-      signal,
-    });
-    if (!res.ok) throw new Error(`Agents fetch failed: ${res.status}`);
-    const json = await res.json();
-    const list = Array.isArray(json) ? json : (json.agents ?? json.data ?? []);
-    return list
-      // Same verified-only filter AgentsPage.jsx already applies client-side
-      // — keeps the sitemap consistent with what's actually shown/linked.
-      .filter((a) => a && a.id && (a.verificationStatus === 'verified' || a.verificationStatus === 'approved'))
-      .map((a) => ({
-        path: `/agents/${a.id}`,
-        changefreq: 'weekly',
-        priority: '0.7',
-        lastmod: null,
-      }));
-  } catch (err) {
-    console.error('[api/sitemap] agent fetch skipped:', err.message);
-    return [];
-  } finally {
-    clear();
+  // 2. Programmatic landing pages — reads landingPagesConfig.js live, so a
+  //    newly added landing page shows up here on the next request with no
+  //    extra step.
+  for (const entry of LANDING_PAGES) {
+    entries.push(urlEntry(`${SITE_ORIGIN}${entry.path}`, 'weekly', '0.8'));
   }
-};
 
-const escapeXml = (str) => String(str).replace(/[<>&'"]/g, (c) => ({
-  '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;',
-}[c]));
+  // 3. Live active packages
+  const { data: packages, error: pkgError } = await supabase
+    .from('packages')
+    .select('id, name, status, updated_at')
+    .eq('status', 'Active'); // exact casing as stored in the DB
 
-const toUrlEntry = ({ path, changefreq, priority, lastmod }) => {
-  const loc = `${SITE_ORIGIN}${path}`;
-  const lastmodTag = lastmod ? `<lastmod>${new Date(lastmod).toISOString().slice(0, 10)}</lastmod>` : '';
-  return `  <url>\n    <loc>${escapeXml(loc)}</loc>\n    ${lastmodTag}\n    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
-};
+  if (pkgError) {
+    console.error('[sitemap] failed to fetch packages:', pkgError.message);
+  } else {
+    for (const pkg of packages || []) {
+      const slug = slugify(pkg.name);
+      const lastmod = pkg.updated_at ? new Date(pkg.updated_at).toISOString().slice(0, 10) : null;
+      entries.push(
+        urlEntry(`${SITE_ORIGIN}/umra-package/${slug}/${pkg.id}`, 'weekly', '0.8', lastmod),
+      );
+    }
+  }
+
+  // 4. Verified agents — these are "profiles" rows with role='agent',
+  //    not a separate agents table.
+  const { data: agents, error: agentError } = await supabase
+    .from('profiles')
+    .select('id, updated_at, role, approved, verification_status')
+    .eq('role', 'agent')
+    .eq('approved', true)
+    .eq('verification_status', 'approved');
+
+  if (agentError) {
+    console.error('[sitemap] failed to fetch agent profiles:', agentError.message);
+  } else {
+    for (const agent of agents || []) {
+      const lastmod = agent.updated_at ? new Date(agent.updated_at).toISOString().slice(0, 10) : null;
+      entries.push(urlEntry(`${SITE_ORIGIN}/agents/${agent.id}`, 'weekly', '0.7', lastmod));
+    }
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dynamic sitemap for umrahmarket.net, served via Vercel serverless
+  function (api/sitemap.js) through the existing /sitemap.xml -> /api/sitemap
+  rewrite in vercel.json. Built live on each request (cached
+  ${CACHE_TTL_MS / 60000} min) from fixed routes, landingPagesConfig.js,
+  active Supabase packages, and verified agent profiles.
+  Do not reintroduce a committed static sitemap.xml file — that's what
+  caused the 7 landing pages to silently disappear from the live sitemap
+  before.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries.join('\n')}
+</urlset>
+`;
+}
 
 export default async function handler(req, res) {
-  const [packageEntries, agentEntries] = await Promise.all([
-    fetchPackageUrls(),
-    fetchAgentUrls(),
-  ]);
-
-  const allEntries = [...STATIC_ROUTES, ...packageEntries, ...agentEntries];
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${allEntries.map(toUrlEntry).join('\n')}\n</urlset>\n`;
-
-  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
-  // Cached at the edge for an hour so crawler traffic doesn't hammer the
-  // Render backend on every request; stale-while-revalidate keeps it fast.
-  res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
-  res.status(200).send(xml);
+  try {
+    const now = Date.now();
+    if (!cache.xml || cache.expiresAt < now) {
+      cache.xml = await buildSitemapXml();
+      cache.expiresAt = now + CACHE_TTL_MS;
+    }
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.status(200).send(cache.xml);
+  } catch (err) {
+    console.error('[sitemap] fatal error building sitemap:', err);
+    res.status(500).send('Error generating sitemap');
+  }
 }
