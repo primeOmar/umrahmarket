@@ -20,6 +20,7 @@ import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/pa
 import BookingFlow from './BookingFlow';
 import { readPendingBookingFlow } from '../utils/bookingResume';
 import PostBookingModal from './PostBookingModal';
+import WhatsAppNumberModal from './WhatsAppNumberModal';
 import MessagesPanel from './MessagesPanel';
 import { supabase } from '../config/supabaseClient';
 import { useFxRate } from '../hooks/useFxRate';
@@ -2039,6 +2040,21 @@ const ClientDashboard = ({ user, onLogout }) => {
   // Kept for the explicit "remove" button in the Favorites tab
   const handleUnfavourite = (pkg) => handleToggleFavourite(pkg);
 
+  // ── WhatsApp number capture (Google sign-ups never get a phone number
+  // from Google — this asks directly, once per login, as soon as the
+  // dashboard has a user and knows their profile has no number on file).
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const whatsappPromptShown = React.useRef(false);
+
+  useEffect(() => {
+    if (!user?.id || whatsappPromptShown.current) return;
+    if (!currentUser) return; // wait for the real profile, not just the login stub
+    if (!currentUser.phone) {
+      whatsappPromptShown.current = true;
+      setShowWhatsAppModal(true);
+    }
+  }, [user?.id, currentUser]);
+
   // ── Post-booking details modal (contacts / next-of-kin / passport photo) ──
   // { id, package_id, package } of the booking still missing one of these.
   const [postBookingTarget, setPostBookingTarget] = useState(null);
@@ -2473,6 +2489,26 @@ const ClientDashboard = ({ user, onLogout }) => {
         />
       )}
 
+      {/* ── WhatsApp Number Modal ──────────────────────────────────────────────
+           Shown once per login whenever the profile has no phone number on
+           file — covers Google sign-ups (Google never shares a phone number)
+           without needing to detect the auth provider. Takes priority over
+           the post-booking details modal below so they never stack.
+      ── */}
+      {showWhatsAppModal && (
+        <WhatsAppNumberModal
+          onSaved={(updatedUser) => {
+            if (updatedUser) {
+              setCurrentUser(updatedUser);
+              userStore.set(updatedUser);
+            }
+            setShowWhatsAppModal(false);
+            showToast('WhatsApp number saved', 'success');
+          }}
+          onSkip={() => setShowWhatsAppModal(false)}
+        />
+      )}
+
       {/* ── Post-Booking Details Modal ───────────────────────────────────────
            Contacts (email + mobile), next-of-kin (name + mobile), and the
            passport photo — shown immediately after a successful payment, and
@@ -2481,7 +2517,7 @@ const ClientDashboard = ({ user, onLogout }) => {
            step still goes through the existing OCR verification endpoint —
            nothing about that scan is changed here.
       ── */}
-      {postBookingTarget && (
+      {postBookingTarget && !showWhatsAppModal && (
         <PostBookingModal
           booking={postBookingTarget}
           user={user}

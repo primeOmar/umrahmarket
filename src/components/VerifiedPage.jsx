@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield, ShieldCheck, ArrowLeft, X, ScanLine,
-  Building2, Landmark, FileCheck, BadgeCheck, Store,
+  Building2, Landmark, FileCheck, BadgeCheck, Store, Plane,
   ExternalLink, Copy, Check,
 } from 'lucide-react';
 import Header from './Header';
@@ -83,6 +83,25 @@ const DOCUMENTS = [
       steps: [
         'This recognition is issued directly to Kenyan agencies by the Saudi Ministry of Hajj & Umrah and is not listed on a public self-service checker.',
         'To confirm authenticity, contact us with the reference number above and we\u2019ll share the underlying documentation.',
+      ],
+    },
+  },
+  {
+    id: 'iata-accreditation',
+    icon: Plane,
+    title: 'IATA Accreditation (GoLite)',
+    issuer: 'International Air Transport Association (IATA)',
+    number: '41221261',
+    issued: '2026',
+    status: 'Active',
+    verify: {
+      type: 'portal',
+      portalUrl: 'https://www.checkacode.com',
+      portalLabel: 'checkacode.com',
+      steps: [
+        'Go to checkacode.com, IATA\u2019s official certificate verification service.',
+        'Enter the IATA code shown above (41221261).',
+        'Confirm the accreditation type shows as GoLite and the certificate is listed as valid for 2026.',
       ],
     },
   },
