@@ -17,6 +17,7 @@ import ComplaintsTab from '../complains/ComplaintsTab'
 import FaqsTab from '../faq/FaqsTab';
 import AgentShopTraffic from '../visits/AgentShopTraffic'
 import BlogTab from '../agent/blog/BlogTab';
+import TasksTab from '../tasks/TasksTab';
 
 // ─── API base (no trailing /api duplication) ──────────────────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
