@@ -9,9 +9,9 @@ const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=1200&q=80";
 
 const PRICE_TIER_LABELS = [
-  { key: "adult",       label: "Adult",       sub: "12+ yrs" },
-  { key: "child",       label: "Child",       sub: "7–11 yrs" },
-  { key: "minor_child", label: "Young Child", sub: "2–6 yrs" },
+  { key: "adult",       label: "Adult",       sub: "11+ yrs" },
+  { key: "child",       label: "Child",       sub: "6–11 yrs" },
+  { key: "minor_child", label: "Child",       sub: "2–5 yrs" },
   { key: "infant",      label: "Infant",      sub: "Under 2 yrs" },
 ];
 

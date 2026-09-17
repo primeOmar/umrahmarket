@@ -176,10 +176,14 @@ const EXCLUSION_OPTIONS = [
 const EMPTY = {
   name: "", type: "umrah", location: "makkah", cities: ["makkah"],
   price: "", original_price: "", discount: "", duration: "",
-  // Age-tier pricing — `price` above doubles as the required Adult (12+) price.
-  // The other three are optional per-package overrides; a blank tier falls
-  // back to the adult price on save (handled server-side too).
+  // Age-tier pricing — `price` above doubles as the required Adult (11+)
+  // price. The other three auto-calculate from it (see AGE_TIER_PERCENTS)
+  // but the agent can override any of them; a blank tier falls back to the
+  // adult price on save (handled server-side too).
   child_price: "", minor_child_price: "", infant_price: "",
+  // Must be explicitly re-ticked any time the adult price or a tier price
+  // changes — see validateStepFields, step 2.
+  price_tiers_confirmed: false,
   available_from: "", available_to: "",
   max_group_size: "50", min_group_size: "1",
   makkah_hotel_name: "", makkah_hotel_rating: "", makkah_hotel_distance: "",
@@ -188,6 +192,23 @@ const EMPTY = {
   madinah_hotel_address: "", madinah_check_in_date: "", madinah_check_out_date: "",
   highlights: [], inclusions: [], exclusions: [],
 };
+
+// Age-tier pricing — percentage of the adult price each group auto-fills
+// to. The agent sees these values pre-filled and must confirm (or edit,
+// then confirm) them before the package can be created/saved.
+const AGE_TIER_PERCENTS = { child: 0.95, minor_child: 0.85, infant: 0.45 };
+
+const AGE_TIER_FIELDS = [
+  { key: "child",       field: "child_price",       label: "Child",       sub: "6–11 yrs", percent: 0.95 },
+  { key: "minor_child", field: "minor_child_price", label: "Child",       sub: "2–5 yrs",  percent: 0.85 },
+  { key: "infant",      field: "infant_price",      label: "Infant",      sub: "Under 2 yrs", percent: 0.45 },
+];
+
+function computeAutoTierPrice(adultPrice, percent) {
+  const n = Number(adultPrice);
+  if (!n || isNaN(n) || n <= 0) return "";
+  return (Math.round(n * percent * 100) / 100).toFixed(2);
+}
 
 // ── Quick-start templates ───────────────────────────────────────────────────
 // One tap fills the most common combinations so the agent only has to type
@@ -526,7 +547,7 @@ const FIELD_STEP = {
   makkah_hotel_name: 1, makkah_hotel_rating: 1, makkah_check_in_date: 1, makkah_check_out_date: 1,
   madinah_hotel_name: 1, madinah_hotel_rating: 1, madinah_check_in_date: 1, madinah_check_out_date: 1,
   price: 2, duration: 2, available_to: 2, max_group_size: 2,
-  child_price: 2, minor_child_price: 2, infant_price: 2,
+  child_price: 2, minor_child_price: 2, infant_price: 2, price_tiers_confirmed: 2,
   itinerary: 3,
   images: 4,
 };
@@ -608,6 +629,12 @@ function validateStepFields(stepIdx, form, itinerary, images, existingImageUrls)
     }
     if (form.infant_price !== "" && (isNaN(Number(form.infant_price)) || Number(form.infant_price) < 0)) {
       errors.infant_price = "Enter a valid price or leave blank";
+    }
+    // Age-tier prices are auto-calculated from the adult price, but they're
+    // still just a suggestion — the agent must explicitly confirm (or edit,
+    // then confirm) before the package can be created/saved.
+    if (form.price && Number(form.price) > 0 && !form.price_tiers_confirmed) {
+      errors.price_tiers_confirmed = "Please review and confirm the age-tier prices below";
     }
     if (
       form.available_from && form.available_to &&
@@ -852,6 +879,9 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   const [errors, setErrors] = useState({}); // field name -> message, see validateStepFields
   const fileRef             = useRef(null);
   const [customCityInput, setCustomCityInput] = useState("");
+  // Which age-tier fields the agent has manually edited — untouched tiers
+  // keep auto-recalculating off the adult price; touched ones don't.
+  const [tierTouched, setTierTouched] = useState({ child: false, minor_child: false, infant: false });
 
   // Draft auto-save
   const [draftKey, setDraftKey]       = useState(() => getDraftKey(mode, initialPackage));
@@ -883,6 +913,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       setItinerary([]); setItinTouched(false); setCollapsedDays({});
       setActiveTemplate(null);
       setCustomCityInput("");
+      setTierTouched({ child: false, minor_child: false, infant: false });
       setErrors({});
       setStep(0);
       setStatus("idle");
@@ -925,6 +956,10 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       child_price:       pkg.price_tiers?.child       != null ? String(pkg.price_tiers.child)       : "",
       minor_child_price: pkg.price_tiers?.minor_child != null ? String(pkg.price_tiers.minor_child) : "",
       infant_price:      pkg.price_tiers?.infant      != null ? String(pkg.price_tiers.infant)      : "",
+      // Prices already saved on this package were reviewed & confirmed when
+      // it was created/last edited — only require reconfirmation if the
+      // agent actually changes the adult price or a tier value now.
+      price_tiers_confirmed: true,
       available_from:        pkg.available_from || "",
       available_to:          pkg.available_to || "",
       max_group_size:        pkg.max_group_size != null ? String(pkg.max_group_size) : "50",
@@ -950,6 +985,14 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     setImages([]); setPrev([]); setImageMeta([]);
     setCustomCityInput("");
     setActiveTemplate(null);
+    // A tier is "touched" (won't auto-recalculate) if this package already
+    // has an explicit value saved for it — an unset tier should still fill
+    // in automatically the first time the agent sets an adult price.
+    setTierTouched({
+      child:       pkg.price_tiers?.child       != null,
+      minor_child: pkg.price_tiers?.minor_child != null,
+      infant:      pkg.price_tiers?.infant      != null,
+    });
     setErrors({});
     setStep(0);
     setStatus("idle");
@@ -973,6 +1016,24 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       })
       .finally(() => setItinLoading(false));
   }, [isOpen, mode, initialPackage]); // eslint-disable-line
+
+  // Auto-calculate age-tier prices from the adult price for any tier the
+  // agent hasn't manually edited (see AGE_TIER_FIELDS/tierTouched). Any
+  // recalculation invalidates the previous confirmation, so the agent has
+  // to review it again before moving on.
+  useEffect(() => {
+    setForm((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      AGE_TIER_FIELDS.forEach(({ key, field, percent }) => {
+        if (tierTouched[key]) return;
+        const auto = computeAutoTierPrice(prev.price, percent);
+        if (prev[field] !== auto) { next[field] = auto; changed = true; }
+      });
+      if (changed) next.price_tiers_confirmed = false;
+      return changed ? next : prev;
+    });
+  }, [form.price, tierTouched]);
 
   // A single string fingerprint of every selected city's hotel dates —
   // used as the dependency for both effects below. It has to be a single
@@ -1136,7 +1197,11 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   const restoreDraft = () => {
     const draft = readDraft(draftKey);
     if (!draft) { setDraftBanner(null); return; }
-    setForm((p) => ({ ...p, ...draft.form }));
+    setForm((p) => ({ ...p, ...draft.form, price_tiers_confirmed: false }));
+    // Whatever tier values were in the draft are the agent's own — don't
+    // let the auto-calc effect silently overwrite them, and make them
+    // re-confirm since they're revisiting pricing after time away.
+    setTierTouched({ child: true, minor_child: true, infant: true });
     if (Array.isArray(draft.itinerary) && draft.itinerary.length) {
       setItinerary(draft.itinerary);
       setItinTouched(true);
@@ -1672,8 +1737,8 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
           {/* STEP 2 — Pricing */}
           {step === 2 && (
             <>
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Adult Price (12+ yrs)" required error={errors.price}>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Adult Price (11+ yrs)" required error={errors.price}>
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
                     <InputEl
@@ -1708,55 +1773,81 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                 </Field> */}
               </div>
 
-              {/* Age-tier pricing — all optional, each falls back to the
-                  adult price above if left blank. Wired to the booking modal
-                  next so a client can select how many of each age group. */}
-              <Field label="Pricing by Age Group" hint="optional · leave blank to charge the adult price for that group">
+              {/* Age-tier pricing — auto-calculated as a percentage of the
+                  adult price the moment it's entered. The agent can edit any
+                  tier to override it; editing marks that tier "touched" so
+                  it stops auto-recalculating, and always requires the
+                  confirmation checkbox below to be re-ticked. */}
+              <Field label="Pricing by Age Group" hint="auto-calculated from the adult price — edit any field to override">
                 <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>Child (7–11 yrs)</p>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
-                      <InputEl
-                        type="number" min="0" step="0.01"
-                        value={form.child_price}
-                        onChange={(e) => set("child_price", e.target.value)}
-                        placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
-                        style={errors.child_price ? errorRingStyle : {}}
-                      />
+                  {AGE_TIER_FIELDS.map(({ key, field, label, sub, percent }) => (
+                    <div key={key}>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>
+                        {label} ({sub} · {Math.round(percent * 100)}%)
+                      </p>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
+                        <InputEl
+                          type="number" min="0" step="0.01"
+                          value={form[field]}
+                          onChange={(e) => {
+                            set(field, e.target.value);
+                            setTierTouched((t) => ({ ...t, [key]: true }));
+                            set("price_tiers_confirmed", false);
+                          }}
+                          placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
+                          style={errors[field] ? errorRingStyle : {}}
+                        />
+                      </div>
+                      {tierTouched[key] && form.price && (
+                        <button
+                          type="button"
+                          className="text-[11px] font-semibold mt-1 underline"
+                          style={{ color: "#4a7c5f" }}
+                          onClick={() => {
+                            setTierTouched((t) => ({ ...t, [key]: false }));
+                            set("price_tiers_confirmed", false);
+                          }}
+                        >
+                          Reset to auto ({computeAutoTierPrice(form.price, percent) || "0.00"})
+                        </button>
+                      )}
+                      {errors[field] && <p className="text-xs mt-1 text-red-500">{errors[field]}</p>}
                     </div>
-                    {errors.child_price && <p className="text-xs mt-1 text-red-500">{errors.child_price}</p>}
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>Minor Child (2–6 yrs)</p>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
-                      <InputEl
-                        type="number" min="0" step="0.01"
-                        value={form.minor_child_price}
-                        onChange={(e) => set("minor_child_price", e.target.value)}
-                        placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
-                        style={errors.minor_child_price ? errorRingStyle : {}}
-                      />
-                    </div>
-                    {errors.minor_child_price && <p className="text-xs mt-1 text-red-500">{errors.minor_child_price}</p>}
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>Infant (under 2 yrs)</p>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
-                      <InputEl
-                        type="number" min="0" step="0.01"
-                        value={form.infant_price}
-                        onChange={(e) => set("infant_price", e.target.value)}
-                        placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
-                        style={errors.infant_price ? errorRingStyle : {}}
-                      />
-                    </div>
-                    {errors.infant_price && <p className="text-xs mt-1 text-red-500">{errors.infant_price}</p>}
-                  </div>
+                  ))}
                 </div>
               </Field>
+
+              {/* Confirmation gate — required before the agent can move past
+                  this step, since these numbers are what clients actually
+                  pay per traveler and shouldn't ship un-reviewed. */}
+              <div
+                className="rounded-2xl p-4"
+                style={{
+                  background: form.price_tiers_confirmed ? "#F0F8F0" : "#FEF9EC",
+                  border: `1px solid ${errors.price_tiers_confirmed ? "#dc2626" : form.price_tiers_confirmed ? "#C8DFC8" : "#f0d78a"}`,
+                }}
+              >
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form.price_tiers_confirmed}
+                    onChange={(e) => set("price_tiers_confirmed", e.target.checked)}
+                    className="mt-0.5 h-4 w-4 flex-shrink-0"
+                  />
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: "#0D3D2B" }}>
+                      I've reviewed the age-group prices above and confirm they're correct
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: "#7aaa8a" }}>
+                      Child/infant prices auto-fill from the adult price (95% / 85% / 45%) — edit any field above first if they're not what you want.
+                    </p>
+                  </div>
+                </label>
+                {errors.price_tiers_confirmed && (
+                  <p className="text-xs mt-2 text-red-500">{errors.price_tiers_confirmed}</p>
+                )}
+              </div>
 
               <PriceBreakdown price={form.price} />
               
