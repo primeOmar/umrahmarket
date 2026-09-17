@@ -1,5 +1,6 @@
 // HeroSection.jsx - FULL ORIGINAL + Book Now pre-login auth gating (nothing removed)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Filter, ChevronDown, X, DollarSign, Star, Clock,
   Check, Heart, AlertCircle, Loader2,SlidersHorizontal, RefreshCw
@@ -144,6 +145,12 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   const dropdownRefs       = useRef({});
   const groupBtnRefs       = useRef({});
   const advancedFilterBtnRef = useRef(null);
+  // Ref on the portaled desktop "Filters" panel itself. Needed because that
+  // panel is now rendered via createPortal into document.body (see below),
+  // so it's no longer a DOM descendant of `filterRef` — the click-outside
+  // handler has to check this ref separately or every click inside the
+  // panel would look like an "outside" click and close it instantly.
+  const advancedPanelRef   = useRef(null);
 
   // Viewport-relative coordinates for the two flyout panels below. Computed
   // imperatively (not via CSS `absolute`) so they always render above the
@@ -161,7 +168,10 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
   // ── Click-outside ───────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
-      if (filterRef.current && !filterRef.current.contains(e.target)) setShowFilters(false);
+      const insideAdvancedPanel = advancedPanelRef.current?.contains(e.target);
+      if (filterRef.current && !filterRef.current.contains(e.target) && !insideAdvancedPanel) {
+        setShowFilters(false);
+      }
       const insideDropdown = Object.values(dropdownRefs.current).some(r => r?.contains(e.target));
       if (!insideDropdown && !e.target.closest('.filter-group-button')) setActiveFilterGroup(null);
     };
@@ -556,7 +566,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                   <ChevronDown className={`h-3 w-3 transition-transform ${activeFilterGroup === group.id ? 'rotate-180' : ''}`} />
                 </button>
 
-                {activeFilterGroup === group.id && (
+                {activeFilterGroup === group.id && createPortal(
                   <div
                     ref={el => dropdownRefs.current[group.id] = el}
                     className="fixed bg-white rounded-xl shadow-2xl border border-gray-100 z-[9999] w-52"
@@ -577,7 +587,8 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </div>,
+                  document.body
                 )}
               </div>
             ))}
@@ -604,13 +615,15 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                   </span>
                 )}
               </button>
-              {showFilters && (
+              {showFilters && createPortal(
                 <div
+                  ref={advancedPanelRef}
                   className="hidden sm:block fixed bg-white rounded-xl shadow-2xl border border-gray-100 z-[9999] max-h-[80vh] overflow-y-auto"
                   style={{ top: filtersPanelPos.top, left: filtersPanelPos.left, width: filtersPanelPos.width }}
                 >
                   <AdvancedFilterContent />
-                </div>
+                </div>,
+                document.body
               )}
             </div>
 

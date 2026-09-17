@@ -690,6 +690,7 @@ const navItems = [
   { id: 'complaints', label: 'Complains',    icon: Flag },
   { id: 'publicchat', label: 'Public Chat', icon: MessagesSquare, count: publicChatUnread },
     { id: 'visits', label: 'Agents Visits',  icon: ChartNoAxesCombined },
+  { id: 'tasks',      label: 'Tasks',         icon: CheckSquare },
   { id: 'audit',      label: 'Audit Logs',   icon: Activity },
   { id: 'accounting', label: 'Accounting',   icon: TrendingUp },
   { id: 'settings',   label: 'Settings',     icon: Settings },
@@ -829,6 +830,7 @@ const navItems = [
              {activeTab === 'blog'       && <BlogTab />}
                 {activeTab === 'visits'       && <AgentShopTraffic />}
                     {activeTab === 'complaints' && <ComplaintsTab />}
+                  {activeTab === 'tasks'      && <TasksTab />}
 {activeTab === 'publicchat' && (
   <PublicChatTab
     conversations={publicChatConversations}
