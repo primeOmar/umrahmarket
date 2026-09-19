@@ -14,7 +14,7 @@ const PRICE_TIER_LABELS = [
   { key: "minor_child", label: "Child",       sub: "2–5 yrs" },
   { key: "infant",      label: "Infant",      sub: "Under 2 yrs" },
 ];
-
+const COUNTRY_LABELS = { TZ: { label: "Tanzania", flag: "\ud83c\uddf9\ud83c\uddff" }, SO: { label: "Somalia", flag: "\ud83c\uddf8\ud83c\uddf4" } };
 // Agent-side read-only preview — no booking/payment flow, since agents can't
 // book their own packages. Just what they need to sanity-check a listing:
 // photos, pricing, hotel info, inclusions, itinerary. "Edit Package" hands
@@ -49,6 +49,9 @@ const PackagePreviewModal = ({ pkg, onClose, onEdit }) => {
     minor_child: pkg.price_tiers?.minor_child ?? pkg.price,
     infant:      pkg.price_tiers?.infant      ?? pkg.price,
   };
+  // Optional per-nationality overrides \u2014 only countries the agent actually
+  // enabled show up here; anything else pays the default pricing above.
+  const countryPricing = (pkg.country_pricing && typeof pkg.country_pricing === "object") ? pkg.country_pricing : {};
 
   const nextImg = () => setActiveImg((i) => (i + 1) % images.length);
   const prevImg = () => setActiveImg((i) => (i - 1 + images.length) % images.length);
@@ -165,6 +168,30 @@ const PackagePreviewModal = ({ pkg, onClose, onEdit }) => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Per-nationality overrides — only shown for countries the agent enabled */}
+          {Object.keys(countryPricing).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#7aaa8a" }}>Other Nationality Pricing</p>
+              {Object.entries(countryPricing).map(([code, tiers]) => {
+                const meta = COUNTRY_LABELS[code] || { label: code, flag: "" };
+                return (
+                  <div key={code}>
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: "#0D3D2B" }}>{meta.flag} {meta.label}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {PRICE_TIER_LABELS.map(({ key, label, sub }) => (
+                        <div key={key} className="rounded-xl px-3 py-2.5" style={{ background: "#F8FCF8", border: "1px solid #C8DFC8" }}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "#7aaa8a" }}>{label}</p>
+                          <p className="text-sm font-bold" style={{ color: "#0D3D2B" }}>${tiers?.[key] ?? tiers?.adult ?? "—"}</p>
+                          <p className="text-[10px]" style={{ color: "#a8b8ae" }}>{sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 

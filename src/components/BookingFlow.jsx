@@ -46,6 +46,35 @@ function normalisePhone(raw) {
 }
 const SAFARICOM_RE = /^254[17]\d{8}$/;
 
+// A client's account phone number is the only "which country is this
+// pilgrim from" signal we have at booking time (there's no separate
+// nationality field on the client profile — passport nationality is only
+// captured later, per traveler, during passport verification). Dial code
+// prefix is a reasonable proxy: +254 Kenya, +255 Tanzania, +252 Somalia.
+// Anything else (Uganda, no phone on file, etc.) is treated as "unrestricted"
+// — only Tanzania/Somalia are ever gated, since those are the only two
+// nationalities a package can have a distinct opt-in price for.
+function deriveClientCountry(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('254')) return 'KE';
+  if (digits.startsWith('255')) return 'TZ';
+  if (digits.startsWith('252')) return 'SO';
+  return 'OTHER';
+}
+
+// Kenyan pilgrims (and anyone whose country couldn't be pinned to TZ/SO)
+// always book at the package's default price. A Tanzanian or Somali
+// pilgrim can only book if the agent explicitly opted that country into
+// its own pricing (see CreatePackageModal's "Other Nationality Pricing").
+function countryPricingAvailable(pkg, country) {
+  if (!country || country === 'KE' || country === 'OTHER') return true;
+  const entry = pkg?.countryPricing?.[country];
+  return !!(entry && Number(entry.adult) > 0);
+}
+
+const COUNTRY_NAMES = { TZ: 'Tanzania', SO: 'Somalia' };
+
 // ─── tiny shared UI ───────────────────────────────────────────────────────────
 const inputCls = (err) =>
   `w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors text-gray-900 ${
@@ -69,12 +98,19 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
   // step machine:
   // 'agent-blocked' (agents can't book — sell packages, not buy them) →
+  // 'country-unavailable' (pilgrim's country has no pricing set on this
+  //   package — see deriveClientCountry/countryPricingAvailable) →
   // 'travelers' (pick counts) → 'passport-check' (loading, checks EVERY
   //   traveler at once) → 'passport' (current traveler in travelerQueue needs
   //   verification, repeats until all are done) → 'select' → 'card' | 'mpesa' | 'bank'
   // any method → 'processing' → 'success' | 'error'
   // 'mpesa' → 'polling' → 'success' | 'error'
-  const [step,     setStep]     = useState(() => (user?.role === 'agent' ? 'agent-blocked' : 'travelers'));
+  const clientCountry = deriveClientCountry(user?.phone);
+  const [step,     setStep]     = useState(() => {
+    if (user?.role === 'agent') return 'agent-blocked';
+    if (!countryPricingAvailable(pkg, clientCountry)) return 'country-unavailable';
+    return 'travelers';
+  });
   const [errorMsg, setErrorMsg] = useState('');
 
   // travelers — how many people this booking is for, broken down by age
@@ -223,6 +259,19 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     }
   }, [user?.role, step]);
 
+  // Same defense-in-depth reasoning: if `pkg` resolves/changes after mount
+  // and turns out to have no pricing for this pilgrim's country, don't let
+  // a stale 'travelers' step slip through.
+  useEffect(() => {
+    if (
+      user?.role !== 'agent' &&
+      !countryPricingAvailable(pkg, clientCountry) &&
+      !['agent-blocked', 'country-unavailable'].includes(step)
+    ) {
+      setStep('country-unavailable');
+    }
+  }, [pkg, clientCountry, user?.role, step]);
+
   // Passport must be verified for EVERY traveler on THIS booking before
   // payment is allowed — not just the account holder's own passport. Only
   // runs once traveler counts are confirmed (travelerQueue is built), since
@@ -354,9 +403,16 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   // ── traveler-derived pricing ────────────────────────────────────────────
   // Falls back to the package's flat `price` for any tier the agent didn't
   // set, so this works even for packages saved before per-tier pricing
-  // existed. This total is advisory only — the backend recomputes it fresh
-  // from price_tiers on every initiate() call and never trusts this number.
-  const tierPrices = pkg.priceTiers || {
+  // existed. A Tanzanian/Somali pilgrim uses that country's own price_tiers
+  // instead of the default (Kenyan) ones — reaching this point already
+  // guarantees one exists (see countryPricingAvailable's gate above). This
+  // total is advisory only — the backend recomputes it fresh from
+  // price_tiers/country_pricing on every initiate() call and never trusts
+  // this number.
+  const countryOverride = (clientCountry && clientCountry !== 'KE' && clientCountry !== 'OTHER')
+    ? pkg.countryPricing?.[clientCountry]
+    : null;
+  const tierPrices = countryOverride || pkg.priceTiers || {
     adult: pkg.price, child: pkg.price, minor_child: pkg.price, infant: pkg.price,
   };
   const totalTravelers = TRAVELER_TIERS.reduce((sum, t) => sum + (travelers[t.key] || 0), 0);
@@ -726,7 +782,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
         </div>
 
         {/* package summary */}
-        {step !== 'success' && step !== 'agent-blocked' && (
+        {step !== 'success' && step !== 'agent-blocked' && step !== 'country-unavailable' && (
           <div className="px-5 py-3 bg-gray-50 border-b flex-shrink-0 space-y-2">
             <div className="flex items-center gap-3">
               <img src={pkg.image} alt={pkg.title} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
@@ -805,6 +861,29 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
                   You're signed in as an agent. Booking is only available on client
                   accounts — this account is for listing and managing your own
                   packages.
+                </p>
+              </div>
+              <button onClick={handleClose}
+                className="w-full max-w-xs py-3 font-bold text-white rounded-xl"
+                style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
+                Got it
+              </button>
+            </div>
+          )}
+
+          {/* ══ COUNTRY PRICING UNAVAILABLE — pilgrim's country has no
+              price set on this package (Kenya is always fine; Tanzania/
+              Somalia need an explicit agent opt-in) ══ */}
+          {step === 'country-unavailable' && (
+            <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+              <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
+                <Globe className="h-7 w-7 text-amber-600" />
+              </div>
+              <div>
+                <p className="font-bold text-gray-900">Not available for {COUNTRY_NAMES[clientCountry] || 'your country'} yet</p>
+                <p className="text-sm text-gray-500 mt-1 max-w-xs">
+                  This agent hasn't set a price for {COUNTRY_NAMES[clientCountry] || 'your country'} pilgrims on this
+                  package yet. Please check back later, or explore other packages.
                 </p>
               </div>
               <button onClick={handleClose}

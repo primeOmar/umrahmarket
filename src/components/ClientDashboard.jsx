@@ -1956,6 +1956,7 @@ const ClientDashboard = ({ user, onLogout }) => {
       agencyName: sourcePkg.agent_name ?? booking?.agency_name,
       price: sourcePkg.price_per_person ?? sourcePkg.price,
       price_tiers: sourcePkg.price_tiers,
+      country_pricing: sourcePkg.country_pricing,
       available_seats: sourcePkg.available_seats,
       average_rating: sourcePkg.average_rating,
     });

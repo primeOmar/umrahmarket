@@ -31,6 +31,12 @@ const buildFormData = (formData, imageFiles = [], keepImageUrls = []) => {
   if (formData.price_tiers) {
     body.append('price_tiers', JSON.stringify(formData.price_tiers));
   }
+  // Optional per-nationality price overrides (e.g. { TZ: {...}, SO: {...} })
+  // — only present for countries the agent actually enabled; a country left
+  // off simply isn't sent, so that pilgrim keeps paying the default price.
+  if (formData.country_pricing && Object.keys(formData.country_pricing).length > 0) {
+    body.append('country_pricing', JSON.stringify(formData.country_pricing));
+  }
   // Hotel details for every selected city beyond Makkah/Madinah (Jeddah,
   // Dubai, Riyadh, Taif, or a custom-typed one) — Makkah/Madinah keep their
   // own dedicated top-level fields above for backward compatibility; this
@@ -149,6 +155,11 @@ export const normalise = (pkg) => {
       minor_child: Number(pkg.price_tiers?.minor_child ?? pkg.price ?? 0),
       infant:      Number(pkg.price_tiers?.infant      ?? pkg.price ?? 0),
     },
+    // Optional per-nationality overrides, keyed by ISO country code (e.g.
+    // TZ, SO) — absent/empty when the agent never enabled one. Left as raw
+    // pass-through (not defaulted per-tier) so callers can tell "no override"
+    // apart from "override equals the default price".
+    countryPricing: (pkg.country_pricing && typeof pkg.country_pricing === 'object') ? pkg.country_pricing : {},
     duration: Number(pkg.duration ?? 7),
     discount: Number(pkg.discount ?? 0),
     rating: Number(pkg.makkah_hotel_rating ?? pkg.rating ?? 4.5),

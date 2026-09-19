@@ -184,6 +184,15 @@ const EMPTY = {
   // Must be explicitly re-ticked any time the adult price or a tier price
   // changes — see validateStepFields, step 2.
   price_tiers_confirmed: false,
+  // Optional per-nationality pricing — the price/child_price/etc. above are
+  // always the Kenyan (default) price. An agent can additionally opt in to
+  // a different price for Tanzanian or Somali pilgrims; each has its own
+  // adult price plus the same auto-calculated age tiers. A country with its
+  // toggle left off simply has no override and every pilgrim from that
+  // country pays the default (Kenyan) price.
+  country_pricing_enabled: { TZ: false, SO: false },
+  tz_price: "", tz_child_price: "", tz_minor_child_price: "", tz_infant_price: "", tz_price_tiers_confirmed: false,
+  so_price: "", so_child_price: "", so_minor_child_price: "", so_infant_price: "", so_price_tiers_confirmed: false,
   available_from: "", available_to: "",
   max_group_size: "50", min_group_size: "1",
   makkah_hotel_name: "", makkah_hotel_rating: "", makkah_hotel_distance: "",
@@ -208,6 +217,44 @@ function computeAutoTierPrice(adultPrice, percent) {
   const n = Number(adultPrice);
   if (!n || isNaN(n) || n <= 0) return "";
   return (Math.round(n * percent * 100) / 100).toFixed(2);
+}
+
+// Optional per-nationality pricing (Kenya is the implicit default — the
+// plain `price`/`*_price` fields above). Each additional country an agent
+// enables gets the exact same adult + auto-calculated age-tier shape, just
+// namespaced with its lowercase code (`tz_price`, `so_child_price`, …).
+const COUNTRY_PRICING_OPTIONS = [
+  { code: "TZ", label: "Tanzania", flag: "🇹🇿" },
+  { code: "SO", label: "Somalia", flag: "🇸🇴" },
+];
+
+// Same shape as AGE_TIER_FIELDS, namespaced for a given country prefix
+// (e.g. "tz" → key "tz_child", field "tz_child_price") so the exact same
+// auto-calc effect, validation and JSX can be reused for every country
+// instead of duplicating them per-country.
+function ageTierFieldsFor(prefix) {
+  if (!prefix) return AGE_TIER_FIELDS;
+  return AGE_TIER_FIELDS.map(({ key, field, label, sub, percent }) => ({
+    key: `${prefix}_${key}`,
+    field: `${prefix}_${field}`,
+    label, sub, percent,
+  }));
+}
+
+// The auto-calculated value each tier field would currently show, for every
+// group (default + each optional country) at once — used both to seed the
+// "is this field still following auto?" baseline on load, and to recompute
+// it after every price change. See the auto-calc effect below for how the
+// baseline is used to tell an untouched field apart from a deliberate
+// override without needing any manual "touched" flag or reset button.
+function computeAutoBaseline({ price, tz_price, so_price }) {
+  const baseline = {};
+  [["", price], ["tz", tz_price], ["so", so_price]].forEach(([prefix, adult]) => {
+    ageTierFieldsFor(prefix).forEach(({ key, percent }) => {
+      baseline[key] = computeAutoTierPrice(adult, percent);
+    });
+  });
+  return baseline;
 }
 
 // ── Quick-start templates ───────────────────────────────────────────────────
@@ -318,6 +365,23 @@ function sanitizeFormPayload(form) {
       minor_child: form.minor_child_price === "" ? null : sanitizeNumber(form.minor_child_price),
       infant:      form.infant_price === ""      ? null : sanitizeNumber(form.infant_price),
     },
+    // Optional per-nationality overrides \u2014 only countries the agent actually
+    // enabled (and gave a valid adult price to) are included. Anything else
+    // is simply absent, so that pilgrim keeps paying the default (Kenyan)
+    // price/price_tiers above \u2014 no schema change needed per country added.
+    country_pricing: COUNTRY_PRICING_OPTIONS.reduce((acc, { code }) => {
+      const prefix = code.toLowerCase();
+      if (!form.country_pricing_enabled?.[code]) return acc;
+      const adult = sanitizeNumber(form[`${prefix}_price`]);
+      if (!adult || Number(adult) <= 0) return acc;
+      acc[code] = {
+        adult,
+        child:       form[`${prefix}_child_price`]       === "" ? null : sanitizeNumber(form[`${prefix}_child_price`]),
+        minor_child: form[`${prefix}_minor_child_price`] === "" ? null : sanitizeNumber(form[`${prefix}_minor_child_price`]),
+        infant:      form[`${prefix}_infant_price`]      === "" ? null : sanitizeNumber(form[`${prefix}_infant_price`]),
+      };
+      return acc;
+    }, {}),
     min_group_size:        sanitizeNumber(form.min_group_size),
     max_group_size:        sanitizeNumber(form.max_group_size),
     available_from:        sanitizeDate(form.available_from),
@@ -548,6 +612,8 @@ const FIELD_STEP = {
   madinah_hotel_name: 1, madinah_hotel_rating: 1, madinah_check_in_date: 1, madinah_check_out_date: 1,
   price: 2, duration: 2, available_to: 2, max_group_size: 2,
   child_price: 2, minor_child_price: 2, infant_price: 2, price_tiers_confirmed: 2,
+  tz_price: 2, tz_child_price: 2, tz_minor_child_price: 2, tz_infant_price: 2, tz_price_tiers_confirmed: 2,
+  so_price: 2, so_child_price: 2, so_minor_child_price: 2, so_infant_price: 2, so_price_tiers_confirmed: 2,
   itinerary: 3,
   images: 4,
 };
@@ -636,6 +702,25 @@ function validateStepFields(stepIdx, form, itinerary, images, existingImageUrls)
     if (form.price && Number(form.price) > 0 && !form.price_tiers_confirmed) {
       errors.price_tiers_confirmed = "Please review and confirm the age-tier prices below";
     }
+    // Same rules as the default (Kenyan) price above, but only for a
+    // country the agent has actually enabled — an untouched, disabled
+    // country never blocks step 2.
+    COUNTRY_PRICING_OPTIONS.forEach(({ code, label }) => {
+      if (!form.country_pricing_enabled?.[code]) return;
+      const prefix = code.toLowerCase();
+      if (!form[`${prefix}_price`] || Number(form[`${prefix}_price`]) <= 0) {
+        errors[`${prefix}_price`] = `A valid ${label} price is required, or turn ${label} pricing off`;
+      }
+      ["child_price", "minor_child_price", "infant_price"].forEach((suffix) => {
+        const field = `${prefix}_${suffix}`;
+        if (form[field] !== "" && (isNaN(Number(form[field])) || Number(form[field]) < 0)) {
+          errors[field] = "Enter a valid price or leave blank";
+        }
+      });
+      if (form[`${prefix}_price`] && Number(form[`${prefix}_price`]) > 0 && !form[`${prefix}_price_tiers_confirmed`]) {
+        errors[`${prefix}_price_tiers_confirmed`] = `Please review and confirm the ${label} prices below`;
+      }
+    });
     if (
       form.available_from && form.available_to &&
       new Date(form.available_to) < new Date(form.available_from)
@@ -879,9 +964,13 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
   const [errors, setErrors] = useState({}); // field name -> message, see validateStepFields
   const fileRef             = useRef(null);
   const [customCityInput, setCustomCityInput] = useState("");
-  // Which age-tier fields the agent has manually edited — untouched tiers
-  // keep auto-recalculating off the adult price; touched ones don't.
-  const [tierTouched, setTierTouched] = useState({ child: false, minor_child: false, infant: false });
+  // Last auto-computed value for each tier field (default + tz_/so_), used
+  // to tell whether a field is still "following" the adult price or has
+  // been deliberately overridden — see the auto-calc effect below. There's
+  // no separate "touched" flag to manage or a "reset to auto" button to
+  // click: a field resumes auto-following the instant it's cleared, or
+  // happens to match the current auto value again.
+  const [autoTierBaseline, setAutoTierBaseline] = useState(() => computeAutoBaseline({ price: "", tz_price: "", so_price: "" }));
 
   // Draft auto-save
   const [draftKey, setDraftKey]       = useState(() => getDraftKey(mode, initialPackage));
@@ -913,7 +1002,7 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       setItinerary([]); setItinTouched(false); setCollapsedDays({});
       setActiveTemplate(null);
       setCustomCityInput("");
-      setTierTouched({ child: false, minor_child: false, infant: false });
+      setAutoTierBaseline(computeAutoBaseline({ price: "", tz_price: "", so_price: "" }));
       setErrors({});
       setStep(0);
       setStatus("idle");
@@ -960,6 +1049,23 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       // it was created/last edited — only require reconfirmation if the
       // agent actually changes the adult price or a tier value now.
       price_tiers_confirmed: true,
+      // Per-nationality overrides — a country is "enabled" only if it already
+      // has a saved entry; its fields are re-hydrated the same way the
+      // default price/tiers are above.
+      country_pricing_enabled: {
+        TZ: pkg.country_pricing?.TZ != null,
+        SO: pkg.country_pricing?.SO != null,
+      },
+      tz_price:                 pkg.country_pricing?.TZ?.adult       != null ? String(pkg.country_pricing.TZ.adult)       : "",
+      tz_child_price:           pkg.country_pricing?.TZ?.child       != null ? String(pkg.country_pricing.TZ.child)       : "",
+      tz_minor_child_price:     pkg.country_pricing?.TZ?.minor_child != null ? String(pkg.country_pricing.TZ.minor_child) : "",
+      tz_infant_price:          pkg.country_pricing?.TZ?.infant      != null ? String(pkg.country_pricing.TZ.infant)      : "",
+      tz_price_tiers_confirmed: true,
+      so_price:                 pkg.country_pricing?.SO?.adult       != null ? String(pkg.country_pricing.SO.adult)       : "",
+      so_child_price:           pkg.country_pricing?.SO?.child       != null ? String(pkg.country_pricing.SO.child)       : "",
+      so_minor_child_price:     pkg.country_pricing?.SO?.minor_child != null ? String(pkg.country_pricing.SO.minor_child) : "",
+      so_infant_price:          pkg.country_pricing?.SO?.infant      != null ? String(pkg.country_pricing.SO.infant)      : "",
+      so_price_tiers_confirmed: true,
       available_from:        pkg.available_from || "",
       available_to:          pkg.available_to || "",
       max_group_size:        pkg.max_group_size != null ? String(pkg.max_group_size) : "50",
@@ -985,14 +1091,16 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     setImages([]); setPrev([]); setImageMeta([]);
     setCustomCityInput("");
     setActiveTemplate(null);
-    // A tier is "touched" (won't auto-recalculate) if this package already
-    // has an explicit value saved for it — an unset tier should still fill
-    // in automatically the first time the agent sets an adult price.
-    setTierTouched({
-      child:       pkg.price_tiers?.child       != null,
-      minor_child: pkg.price_tiers?.minor_child != null,
-      infant:      pkg.price_tiers?.infant      != null,
-    });
+    // Seed the auto baseline from what's actually saved, so a saved tier
+    // price that doesn't match what auto-calc would produce for the loaded
+    // adult price is correctly treated as a deliberate override (won't be
+    // silently recalculated) — while one that does match just keeps
+    // following future adult-price edits, same as a brand new package.
+    setAutoTierBaseline(computeAutoBaseline({
+      price: pkg.price,
+      tz_price: pkg.country_pricing?.TZ?.adult,
+      so_price: pkg.country_pricing?.SO?.adult,
+    }));
     setErrors({});
     setStep(0);
     setStatus("idle");
@@ -1017,23 +1125,50 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
       .finally(() => setItinLoading(false));
   }, [isOpen, mode, initialPackage]); // eslint-disable-line
 
-  // Auto-calculate age-tier prices from the adult price for any tier the
-  // agent hasn't manually edited (see AGE_TIER_FIELDS/tierTouched). Any
-  // recalculation invalidates the previous confirmation, so the agent has
-  // to review it again before moving on.
+  // Auto-calculate age-tier prices from the adult price, for the default
+  // pricing and every optional country's pricing independently. A tier
+  // field keeps following its adult price automatically — no click, no
+  // "touched" flag to manage — for as long as its value is blank or still
+  // equal to whatever was last auto-filled into it. The moment the agent
+  // types a genuinely different number, that field stops being overwritten
+  // (their edit sticks) until they clear it back to blank, at which point
+  // it instantly resumes auto-following. Any recalculation invalidates the
+  // relevant confirmation checkbox, so the agent reviews it again.
+  const tierFieldsFingerprint = [
+    "price", "child_price", "minor_child_price", "infant_price",
+    "tz_price", "tz_child_price", "tz_minor_child_price", "tz_infant_price",
+    "so_price", "so_child_price", "so_minor_child_price", "so_infant_price",
+  ].map((k) => form[k]).join("|");
+
   useEffect(() => {
-    setForm((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      AGE_TIER_FIELDS.forEach(({ key, field, percent }) => {
-        if (tierTouched[key]) return;
-        const auto = computeAutoTierPrice(prev.price, percent);
-        if (prev[field] !== auto) { next[field] = auto; changed = true; }
+    const groups = [
+      { prefix: "",   adultField: "price",    confirmField: "price_tiers_confirmed" },
+      { prefix: "tz", adultField: "tz_price", confirmField: "tz_price_tiers_confirmed" },
+      { prefix: "so", adultField: "so_price", confirmField: "so_price_tiers_confirmed" },
+    ];
+
+    const formPatch = {};
+    const baselinePatch = {};
+    let anyGroupChanged = false;
+
+    groups.forEach(({ prefix, adultField, confirmField }) => {
+      let groupChanged = false;
+      ageTierFieldsFor(prefix).forEach(({ key, field, percent }) => {
+        const auto = computeAutoTierPrice(form[adultField], percent);
+        const currentVal = form[field];
+        const priorAuto = autoTierBaseline[key];
+        // "In sync" = blank, or still equal to the last value we auto-filled
+        // \u2014 i.e. the agent hasn't actually diverged from auto themselves.
+        const inSync = currentVal === "" || currentVal === priorAuto;
+        if (inSync && currentVal !== auto) { formPatch[field] = auto; groupChanged = true; }
+        if (auto !== priorAuto) baselinePatch[key] = auto;
       });
-      if (changed) next.price_tiers_confirmed = false;
-      return changed ? next : prev;
+      if (groupChanged) { formPatch[confirmField] = false; anyGroupChanged = true; }
     });
-  }, [form.price, tierTouched]);
+
+    if (anyGroupChanged) setForm((p) => ({ ...p, ...formPatch }));
+    if (Object.keys(baselinePatch).length > 0) setAutoTierBaseline((b) => ({ ...b, ...baselinePatch }));
+  }, [tierFieldsFingerprint]); // eslint-disable-line
 
   // A single string fingerprint of every selected city's hotel dates —
   // used as the dependency for both effects below. It has to be a single
@@ -1198,10 +1333,15 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
     const draft = readDraft(draftKey);
     if (!draft) { setDraftBanner(null); return; }
     setForm((p) => ({ ...p, ...draft.form, price_tiers_confirmed: false }));
-    // Whatever tier values were in the draft are the agent's own — don't
-    // let the auto-calc effect silently overwrite them, and make them
-    // re-confirm since they're revisiting pricing after time away.
-    setTierTouched({ child: true, minor_child: true, infant: true });
+    // Re-seed the baseline from the draft's own adult prices, so a tier
+    // value that already diverges from what auto-calc would produce stays
+    // that way (treated as the agent's deliberate override) instead of
+    // being silently recalculated the moment they resume editing.
+    setAutoTierBaseline(computeAutoBaseline({
+      price: draft.form.price,
+      tz_price: draft.form.tz_price,
+      so_price: draft.form.so_price,
+    }));
     if (Array.isArray(draft.itinerary) && draft.itinerary.length) {
       setItinerary(draft.itinerary);
       setItinTouched(true);
@@ -1774,11 +1914,12 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
               </div>
 
               {/* Age-tier pricing — auto-calculated as a percentage of the
-                  adult price the moment it's entered. The agent can edit any
-                  tier to override it; editing marks that tier "touched" so
-                  it stops auto-recalculating, and always requires the
-                  confirmation checkbox below to be re-ticked. */}
-              <Field label="Pricing by Age Group" hint="auto-calculated from the adult price — edit any field to override">
+                  adult price, and stays that way as the adult price changes.
+                  Editing a field to a different number overrides it going
+                  forward; clearing it back to blank instantly resumes
+                  auto-calculating. Any change requires the confirmation
+                  checkbox below to be re-ticked. */}
+              <Field label="Pricing by Age Group" hint="auto-calculated from the adult price — edit any field to override, clear it to resume auto">
                 <div className="grid grid-cols-3 gap-3">
                   {AGE_TIER_FIELDS.map(({ key, field, label, sub, percent }) => (
                     <div key={key}>
@@ -1792,26 +1933,12 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                           value={form[field]}
                           onChange={(e) => {
                             set(field, e.target.value);
-                            setTierTouched((t) => ({ ...t, [key]: true }));
                             set("price_tiers_confirmed", false);
                           }}
                           placeholder={form.price || "0.00"} className="pl-7" sanitize="number"
                           style={errors[field] ? errorRingStyle : {}}
                         />
                       </div>
-                      {tierTouched[key] && form.price && (
-                        <button
-                          type="button"
-                          className="text-[11px] font-semibold mt-1 underline"
-                          style={{ color: "#4a7c5f" }}
-                          onClick={() => {
-                            setTierTouched((t) => ({ ...t, [key]: false }));
-                            set("price_tiers_confirmed", false);
-                          }}
-                        >
-                          Reset to auto ({computeAutoTierPrice(form.price, percent) || "0.00"})
-                        </button>
-                      )}
                       {errors[field] && <p className="text-xs mt-1 text-red-500">{errors[field]}</p>}
                     </div>
                   ))}
@@ -1847,6 +1974,112 @@ const CreatePackageModal = ({ isOpen, onClose, onSave, mode = "create", initialP
                 {errors.price_tiers_confirmed && (
                   <p className="text-xs mt-2 text-red-500">{errors.price_tiers_confirmed}</p>
                 )}
+              </div>
+
+              {/* Optional per-nationality pricing \u2014 the price/age-tiers above
+                  are always the default (Kenyan) price. An agent can turn on
+                  Tanzania and/or Somalia pricing here to charge those
+                  pilgrims a different amount; each works exactly like the
+                  Kenyan pricing above (adult price + auto-calculated
+                  child/infant tiers + its own confirm checkbox). Any country
+                  left off simply has no override \u2014 those pilgrims pay the
+                  default price. */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#7aaa8a" }}>
+                  Other Nationality Pricing (optional)
+                </p>
+                {COUNTRY_PRICING_OPTIONS.map(({ code, label, flag }) => {
+                  const prefix = code.toLowerCase();
+                  const enabled = !!form.country_pricing_enabled?.[code];
+                  return (
+                    <div
+                      key={code}
+                      className="rounded-2xl p-3.5"
+                      style={{ border: "1px solid #C8DFC8", background: enabled ? "#F8FCF8" : "transparent" }}
+                    >
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setForm((p) => ({
+                              ...p,
+                              country_pricing_enabled: { ...p.country_pricing_enabled, [code]: checked },
+                            }));
+                          }}
+                          className="h-4 w-4 flex-shrink-0"
+                        />
+                        <span className="text-sm font-bold" style={{ color: "#0D3D2B" }}>{flag} {label} pilgrims</span>
+                        <span className="text-xs" style={{ color: "#7aaa8a" }}>
+                          {enabled ? "has its own price" : "pays the default price above"}
+                        </span>
+                      </label>
+
+                      {enabled && (
+                        <div className="mt-3 space-y-3">
+                          <Field label={`${label} Adult Price (11+ yrs)`} required error={errors[`${prefix}_price`]}>
+                            <div className="relative">
+                              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
+                              <InputEl
+                                type="number" min="0" step="0.01"
+                                value={form[`${prefix}_price`]}
+                                onChange={(e) => set(`${prefix}_price`, e.target.value)}
+                                placeholder="0.00" className="pl-7" sanitize="number"
+                                style={errors[`${prefix}_price`] ? errorRingStyle : {}}
+                              />
+                            </div>
+                          </Field>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            {ageTierFieldsFor(prefix).map(({ key, field, label: tierLabel, sub, percent }) => (
+                              <div key={key}>
+                                <p className="text-xs font-medium mb-1.5" style={{ color: "#4a7c5f" }}>
+                                  {tierLabel} ({sub} \u00b7 {Math.round(percent * 100)}%)
+                                </p>
+                                <div className="relative">
+                                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "#7aaa8a" }}>$</span>
+                                  <InputEl
+                                    type="number" min="0" step="0.01"
+                                    value={form[field]}
+                                    onChange={(e) => {
+                                      set(field, e.target.value);
+                                      set(`${prefix}_price_tiers_confirmed`, false);
+                                    }}
+                                    placeholder={form[`${prefix}_price`] || "0.00"} className="pl-7" sanitize="number"
+                                    style={errors[field] ? errorRingStyle : {}}
+                                  />
+                                </div>
+                                {errors[field] && <p className="text-xs mt-1 text-red-500">{errors[field]}</p>}
+                              </div>
+                            ))}
+                          </div>
+
+                          <label
+                            className="flex items-start gap-2.5 rounded-2xl px-3.5 py-2.5 cursor-pointer"
+                            style={{
+                              background: form[`${prefix}_price_tiers_confirmed`] ? "#F0F8F0" : "#FEF9EC",
+                              border: `1px solid ${errors[`${prefix}_price_tiers_confirmed`] ? "#dc2626" : form[`${prefix}_price_tiers_confirmed`] ? "#C8DFC8" : "#f0d78a"}`,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!form[`${prefix}_price_tiers_confirmed`]}
+                              onChange={(e) => set(`${prefix}_price_tiers_confirmed`, e.target.checked)}
+                              className="mt-0.5 h-4 w-4 flex-shrink-0"
+                            />
+                            <p className="text-xs font-bold" style={{ color: "#0D3D2B" }}>
+                              I've reviewed and confirm the {label} pricing above
+                            </p>
+                          </label>
+                          {errors[`${prefix}_price_tiers_confirmed`] && (
+                            <p className="text-xs mt-1 text-red-500">{errors[`${prefix}_price_tiers_confirmed`]}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <PriceBreakdown price={form.price} />

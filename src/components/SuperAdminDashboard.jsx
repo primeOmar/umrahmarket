@@ -1205,6 +1205,9 @@ const StatusBadge = ({ status }) => {
     inactive:  { color: 'gray',   label: 'Inactive' },
     pending:   { color: 'yellow', label: 'Pending' },
     approved:  { color: 'green',  label: 'Approved' },
+    verified:  { color: 'green',  label: 'Verified' },
+    manual_review: { color: 'yellow', label: 'Manual Review' },
+    expired_passport: { color: 'red', label: 'Expired' },
     rejected:  { color: 'red',    label: 'Rejected' },
     suspended: { color: 'red',    label: 'Suspended' },
     closed:    { color: 'gray',   label: 'Closed' },
@@ -1425,7 +1428,7 @@ const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
                     : <Square className="h-4 w-4 text-gray-300" />}
                 </button>
               </th>
-              <Th>Agent</Th><Th>Email</Th><Th>Location</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th>
+              <Th>Agent</Th><Th>Email</Th><Th>Phone</Th><Th>Location</Th><Th>Status</Th><Th>Packages</Th><Th>Clients</Th><Th>Joined</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -1444,6 +1447,7 @@ const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
                 </Td>
                 <Td><span className="font-medium text-gray-900">{agent.name}</span></Td>
                 <Td>{agent.email}</Td>
+                <Td className="whitespace-nowrap">{agent.phone || '—'}</Td>
                 <Td>
                   {agent.officeLocationUrl ? (
                     <a href={agent.officeLocationUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-xs text-emerald-700 hover:underline">
@@ -1459,7 +1463,7 @@ const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
                 <Td className="text-gray-400">{agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : '—'}</Td>
               </ObservedRow>
             ))}
-            {filtered.length === 0 && <EmptyRow colSpan={7} message="No agents found" />}
+            {filtered.length === 0 && <EmptyRow colSpan={8} message="No agents found" />}
           </tbody>
         </table>
       </TableWrapper>
@@ -1668,6 +1672,7 @@ const ClientsTab = ({ clients, searchQuery, onViewClient }) => {
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const [passportClient, setPassportClient] = useState(null); // client whose passport modal is open
   return (
     <div className="space-y-6">
       <div>
@@ -1676,24 +1681,126 @@ const ClientsTab = ({ clients, searchQuery, onViewClient }) => {
       </div>
       <TableWrapper>
         <table className="w-full">
-          <thead><tr><Th>Client</Th><Th>Email</Th><Th>Status</Th><Th>Bookings</Th><Th>Joined</Th></tr></thead>
+          <thead><tr><Th>Client</Th><Th>Email</Th><Th>Phone</Th><Th>Status</Th><Th>Bookings</Th><Th>Joined</Th><Th>Passport</Th></tr></thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(client => (
               <ObservedRow key={client.id} id={client.id} isPending={client.status === 'pending'} onViewed={onViewClient}>
                 <Td><span className="font-medium text-gray-900">{client.name}</span></Td>
                 <Td>{client.email}</Td>
+                <Td className="whitespace-nowrap">{client.phone || '—'}</Td>
                 <Td><StatusBadge status={client.status} /></Td>
                 <Td>{client.bookingCount ?? 0}</Td>
                 <Td className="text-gray-400">{client.createdAt ? format(new Date(client.createdAt), 'MMM d, yyyy') : '—'}</Td>
+                <Td>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setPassportClient(client); }}
+                    className="text-blue-600 hover:text-blue-700 text-sm font-medium hover:underline"
+                  >
+                    View
+                  </button>
+                </Td>
               </ObservedRow>
             ))}
-            {filtered.length === 0 && <EmptyRow colSpan={5} message="No clients found" />}
+            {filtered.length === 0 && <EmptyRow colSpan={7} message="No clients found" />}
           </tbody>
         </table>
       </TableWrapper>
+
+      {passportClient && (
+        <ClientPassportModal client={passportClient} onClose={() => setPassportClient(null)} />
+      )}
     </div>
   );
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ClientPassportModal — fetches every traveler passport scan this client has
+// uploaded (across all bookings) straight from R2 via short-lived signed
+// URLs — see GET /superadmin/clients/:clientId/passports.
+// ─────────────────────────────────────────────────────────────────────────────
+const ClientPassportModal = ({ client, onClose }) => {
+  const [passports, setPassports] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const res = await saJson(await saApi.get(`/superadmin/clients/${client.id}/passports`));
+        if (!cancelled) setPassports(Array.isArray(res?.data) ? res.data : []);
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Failed to load passport records');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [client.id]);
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl overflow-hidden max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Passport documents</p>
+            <p className="text-xs text-gray-500 mt-0.5">{client.name} · {client.email}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100">
+            <X className="h-4 w-4 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading && (
+            <div className="flex items-center justify-center py-16">
+              <Loader className="h-6 w-6 animate-spin text-blue-600" />
+            </div>
+          )}
+          {!loading && error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">{error}</div>
+          )}
+          {!loading && !error && passports.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-10">No passport uploaded yet for this client.</p>
+          )}
+          {!loading && !error && passports.length > 0 && (
+            <div className="grid sm:grid-cols-2 gap-4">
+              {passports.map((p) => (
+                <div key={p.id} className="rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="aspect-[3/2] bg-gray-100 flex items-center justify-center">
+                    {p.imageUrl ? (
+                      <a href={p.imageUrl} target="_blank" rel="noreferrer" className="block w-full h-full">
+                        <img src={p.imageUrl} alt="Passport scan" className="w-full h-full object-cover" />
+                      </a>
+                    ) : (
+                      <span className="text-xs text-gray-400">No scan uploaded</span>
+                    )}
+                  </div>
+                  <div className="p-3 space-y-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-gray-900">{p.fullName || 'Traveler ' + (p.travelerIndex + 1)}</span>
+                      <StatusBadge status={p.verificationStatus} />
+                    </div>
+                    <p className="text-gray-500">Passport No: <span className="font-medium text-gray-700">{p.passportNumber || '—'}</span></p>
+                    <p className="text-gray-500">Nationality: <span className="font-medium text-gray-700">{p.nationality || '—'}</span></p>
+                    <p className="text-gray-500">Expiry: <span className="font-medium text-gray-700">{p.passportExpiry || '—'}</span></p>
+                    {p.packageName && <p className="text-gray-500">Package: <span className="font-medium text-gray-700">{p.packageName}</span></p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const ChatsTab = ({ chats, searchQuery, setSearchQuery, onSelectChat }) => {
   const filtered = chats.filter(c =>
