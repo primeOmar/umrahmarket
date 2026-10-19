@@ -35,6 +35,10 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (pageContext.errorWhileRendering) {
+    console.error('[ssr] render error:', pageContext.errorWhileRendering);
+    res.setHeader('x-ssr-debug', encodeURIComponent(String(pageContext.errorWhileRendering.stack || pageContext.errorWhileRendering).slice(0, 600)));
+  }
   res.statusCode = httpResponse.statusCode;
   httpResponse.headers.forEach(([name, value]) => res.setHeader(name, value));
 
