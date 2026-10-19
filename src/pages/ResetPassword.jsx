@@ -17,18 +17,15 @@ const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
-  // Supabase puts the recovery token in the URL hash (#access_token=...&type=recovery)
+  // Link format: /reset-password?token_hash=...
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const accessToken = params.get('access_token');
-    if (accessToken && params.get('type') === 'recovery') {
-      setToken(accessToken);
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get('token_hash');
+    if (tokenHash) {
+      setToken(tokenHash);
       window.history.replaceState(null, '', window.location.pathname);
     } else {
-      setLinkError(
-        params.get('error_description')?.replace(/\+/g, ' ') ||
-        'This reset link is invalid or has expired. Please request a new one from the sign-in form.'
-      );
+      setLinkError('This reset link is invalid or has expired. Please request a new one from the sign-in form.');
     }
   }, []);
 
