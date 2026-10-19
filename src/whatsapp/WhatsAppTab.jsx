@@ -229,7 +229,12 @@ export default function WhatsAppTab() {
           <label className="block text-sm font-medium text-gray-700 mb-1">Template</label>
           <select
             value={templateSid}
-            onChange={(e) => { setTemplateSid(e.target.value); setVars({}); }}
+            onChange={(e) => {
+              const sid = e.target.value;
+              const t = templates.find((x) => x.sid === sid);
+              setTemplateSid(sid);
+              setVars(t?.variables?.includes('1') ? { 1: '{name}' } : {});
+            }}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
           >
             <option value="">Select an approved template…</option>
@@ -271,6 +276,13 @@ export default function WhatsAppTab() {
           {sending ? <Loader className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           Send to ~{totalEstimate} recipient{totalEstimate === 1 ? '' : 's'}
         </button>
+        {!canSend && templateSid && !sending && (
+          <p className="text-xs text-amber-600">
+            {!template?.variables.every((v) => (vars[v] || '').trim()) ? 'Fill in every template variable above.'
+              : !consent ? 'Tick the consent box.'
+                : totalEstimate === 0 ? 'Select at least one recipient.' : ''}
+          </p>
+        )}
 
         {result && (
           <div className="border border-gray-200 rounded-lg p-3 text-sm space-y-1">
