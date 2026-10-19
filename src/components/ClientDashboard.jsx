@@ -27,6 +27,7 @@ import { useFxRate } from '../hooks/useFxRate';
 import EmailVerificationBanner from './EmailVerificationBanner';
 import { isEmailVerified } from '../utils/emailVerification';
 import { createPackagePath } from '../utils/packageSeo';
+import CustomPackageRequest from './CustomPackageRequest';
 
 // A package's `location` is one of three coverage tiers set by the agent in
 // CreatePackageModal ("Primary Location"), not a single free-text city —
@@ -966,7 +967,7 @@ const FilterOption = ({ label, selected, onClick, darkMode }) => (
 );
 
 // ==================== PACKAGE DISCOVERY SECTION ====================
-const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], loading = false, error = null, onRetry, favorites = [], onToggleFav, bookings = [] }) => {
+const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], loading = false, error = null, onRetry, favorites = [], onToggleFav, bookings = [], onRequestCustom }) => {
   // Shared with PackageCard's grid view — module-level cache in the hook
   // means this doesn't trigger a second network fetch. Used so the list
   // view shows the same selling-rate KES price as the grid view, instead of
@@ -1482,7 +1483,12 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
           <Search className="h-12 w-12 mx-auto mb-3 text-gray-300" />
           <p className={`font-semibold mb-1 ${darkMode ? 'text-white' : 'text-gray-800'}`}>No packages found</p>
           <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Try adjusting your filters</p>
-          <button onClick={clearFilters} className="px-5 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Clear Filters</button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button onClick={clearFilters} className="px-5 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">Clear Filters</button>
+            <button onClick={onRequestCustom} className="px-5 py-2 bg-amber-500 text-white text-sm rounded-lg hover:bg-amber-600 inline-flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4" />Request a custom package
+            </button>
+          </div>
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
@@ -1545,6 +1551,18 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {filteredAndSorted.length > 0 && (
+        <div className={`mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-4 ${darkMode ? 'bg-amber-900/20 border-amber-800' : 'bg-amber-50 border-amber-100'}`}>
+          <div>
+            <p className={`font-semibold text-sm ${darkMode ? 'text-amber-200' : 'text-amber-900'}`}>Can't find what you're looking for?</p>
+            <p className={`text-xs ${darkMode ? 'text-amber-300/80' : 'text-amber-700'}`}>Tell us your dates, hotels and budget and agents will send you offers.</p>
+          </div>
+          <button onClick={onRequestCustom} className="px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 inline-flex items-center justify-center gap-1.5 flex-shrink-0">
+            <Sparkles className="h-4 w-4" />Request custom package
+          </button>
         </div>
       )}
     </div>
@@ -1726,6 +1744,8 @@ const ClientDashboard = ({ user, onLogout }) => {
       sessionStorage.removeItem('booking_just_confirmed');
       return 'bookings';
     }
+    // Deep-link from /custom-package after sign-in
+    if (new URLSearchParams(location.search).get('tab') === 'custom') return 'custom';
     return 'packages';
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1902,13 +1922,15 @@ const ClientDashboard = ({ user, onLogout }) => {
     { id: 'favorites', icon: Heart, label: 'Favorites', count: favorites.length },
     { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount },
     { id: 'packages', icon: Home, label: 'Discover Packages', count: 0 },
+    { id: 'custom', icon: Sparkles, label: 'Custom Request', count: 0 },
     { id: 'settings', icon: Settings, label: 'Settings', count: 0 }
   ];
 
   const [bookingPkg, setBookingPkg] = useState(null);
+  const [bookingInitialTravelers, setBookingInitialTravelers] = useState(null);
 
   const handleViewPackage = (pkg) => navigate(createPackagePath(pkg));
-  const handleBookPackage = useCallback(async (pkg) => {
+  const handleBookPackage = useCallback(async (pkg, options = {}) => {
     if (!user?.id) {
       showToast('Your session has expired. Please sign in to book.', 'error');
       setTimeout(() => { onLogout?.(); navigate('/'); }, 1500);
@@ -1928,6 +1950,7 @@ const ClientDashboard = ({ user, onLogout }) => {
     // Open the booking flow — BookingFlow itself checks passport verification
     // status for this package first and shows the passport step automatically
     // if it isn't verified yet, before ever reaching payment.
+    setBookingInitialTravelers(options.initialTravelers || null);
     setBookingPkg(pkg);
   }, [bookings, navigate, onLogout, showToast, user?.id]);
   const handleViewBooking = (booking) => navigate(
@@ -1993,12 +2016,22 @@ const ClientDashboard = ({ user, onLogout }) => {
     const params = new URLSearchParams(location.search);
     const pkgId = params.get('bookPackage');
     if (!pkgId || packagesLoading || !availablePackages?.length) return;
+    const readCount = (key) => {
+      const n = Number(params.get(key));
+      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+    };
+    const initialTravelers = {
+      adult: Math.max(1, readCount('adults')),
+      child: readCount('children'),
+      minor_child: readCount('minor_children'),
+      infant: readCount('infants'),
+    };
 
     const pkg = availablePackages.find(p => String(p.id) === String(pkgId));
     navigate(location.pathname, { replace: true }); // strip the query param either way
 
     if (pkg) {
-      handleBookPackage(pkg);
+      handleBookPackage(pkg, { initialTravelers });
     } else {
       showToast('That package could not be found.', 'error');
     }
@@ -2292,7 +2325,10 @@ const ClientDashboard = ({ user, onLogout }) => {
         return <MessagesView bookings={bookings} user={user} darkMode={darkMode} onExplore={() => setActiveTab('packages')} />;
 
       case 'packages':
-        return <PackageDiscovery darkMode={darkMode} onPackageSelect={handleViewPackage} onBook={handleBookPackage} packages={availablePackages} loading={packagesLoading} error={packagesError} onRetry={refetchPackages} favorites={favorites} onToggleFav={handleToggleFavourite} bookings={bookings} />;
+        return <PackageDiscovery darkMode={darkMode} onPackageSelect={handleViewPackage} onBook={handleBookPackage} packages={availablePackages} loading={packagesLoading} error={packagesError} onRetry={refetchPackages}         favorites={favorites} onToggleFav={handleToggleFavourite} bookings={bookings} onRequestCustom={() => setActiveTab('custom')} />;
+
+      case 'custom':
+        return <CustomPackageRequest darkMode={darkMode} />;
 
       case 'settings':
         return (
@@ -2479,11 +2515,13 @@ const ClientDashboard = ({ user, onLogout }) => {
       {bookingPkg && (
         <BookingFlow
           pkg={bookingPkg}
+          initialTravelers={bookingInitialTravelers}
           user={user}
-          onClose={() => setBookingPkg(null)}
+          onClose={() => { setBookingPkg(null); setBookingInitialTravelers(null); }}
           onSuccess={handleBookingSuccess}
           onRequireAuth={() => {
             setBookingPkg(null);
+            setBookingInitialTravelers(null);
             showToast('Your session has expired. Please sign in to book.', 'error');
             onLogout?.();
           }}

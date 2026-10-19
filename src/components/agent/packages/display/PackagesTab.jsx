@@ -5,8 +5,9 @@ import {
   MoreVertical, AlertCircle, Loader2, RefreshCw,
   Package, TrendingUp, Calendar, DollarSign
 } from 'lucide-react';
-import { getAgentPackages, deletePackage } from '../services/packagesApi';
+import { getAgentPackages, deletePackage, confirmBatchPricing } from '../services/packagesApi';
 import PackagePreviewModal from '../creation/PackagePreviewModal';
+import BatchPackageModal from '../creation/BatchPackageModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -14,16 +15,19 @@ import PackagePreviewModal from '../creation/PackagePreviewModal';
 const fallbackImage =
   'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&w=800&q=80';
 
-const statusColor = (status = '') => {
+const statusColor = (status = '', expired = false) => {
+  if (expired) return 'bg-red-500/90 text-white';
   const s = status.toLowerCase();
   if (s === 'active') return 'bg-emerald-500/90 text-white';
+  if (s === 'scheduled') return 'bg-blue-500/90 text-white';
+  if (s === 'draft') return 'bg-amber-500/90 text-white';
   return 'bg-gray-400/80 text-white';
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PackageCard
 // ─────────────────────────────────────────────────────────────────────────────
-export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview }) => {
+export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview, onConfirm }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -45,6 +49,7 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview }) =
   const duration = pkg.duration ? `${pkg.duration} days` : (pkg.durationLabel ?? '');
   const bookings = pkg.bookings ?? 0;
   const inclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions : [];
+  const expired = pkg.is_expired === true;
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-300 border border-gray-100 group">
@@ -60,8 +65,9 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview }) =
 
         {/* Status + menu */}
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-          <span className={`px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${statusColor(pkg.status)}`}>
-            ● {pkg.status ?? 'Unknown'}
+          <span className={`px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${statusColor(pkg.status, expired)}`}>
+            ● {expired ? 'Expired' : (pkg.status ?? 'Unknown')}
+            {!expired && pkg.status === 'Scheduled' && pkg.activates_at ? ` · live ${pkg.activates_at}` : ''}
           </span>
 
           <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -72,7 +78,15 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview }) =
               <MoreVertical className="h-4 w-4 text-white" />
             </button>
             {showMenu && (
-              <div className="absolute right-0 mt-1 w-40 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-20">
+              <div className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-20">
+                {pkg.status === 'Draft' && onConfirm && (
+                  <button
+                    onClick={() => { onConfirm(pkg); setShowMenu(false); }}
+                    className="w-full flex items-center space-x-2 px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 transition-colors"
+                  >
+                    <Tag className="h-4 w-4" /><span>Confirm pricing</span>
+                  </button>
+                )}
                 <button
                   onClick={() => { onEdit(pkg); setShowMenu(false); }}
                   className="w-full flex items-center space-x-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
@@ -114,6 +128,16 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview }) =
 
       {/* ── Content ── */}
       <div className="p-5">
+        {expired && (
+          <div className="mb-3 flex items-start space-x-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              Expired — hidden from clients because departure
+              {pkg.available_from ? ` (${pkg.available_from})` : ''} is within 3 days or has passed.
+              Edit the package and set a new departure date to republish it.
+            </span>
+          </div>
+        )}
         <div className="mb-3">
           <h4 className="font-bold text-gray-900 text-lg leading-tight mb-1">{pkg.name}</h4>
           <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-sm text-gray-500">
@@ -168,9 +192,9 @@ export const PackageCard = ({ pkg, onEdit, onDuplicate, onDelete, onPreview }) =
           <div className="flex flex-wrap gap-1.5">
             <button
               onClick={() => onEdit(pkg)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+              className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${expired ? 'text-white bg-red-600 hover:bg-red-700' : 'text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
             >
-              <Edit className="h-3.5 w-3.5" /><span>Edit</span>
+              <Edit className="h-3.5 w-3.5" /><span>{expired ? 'Update & Republish' : 'Edit'}</span>
             </button>
             <button
               onClick={() => onDuplicate(pkg)}
@@ -244,6 +268,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refre
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [previewTarget, setPreviewTarget] = useState(null);
+  const [showBatch, setShowBatch] = useState(false);
 
   // ── Fetch agent's packages ──────────────────────────────────────────────────
   const fetchPackages = useCallback(async () => {
@@ -281,9 +306,30 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refre
     }
   };
 
+  const handleConfirmPricing = async (pkg) => {
+    try {
+      await confirmBatchPricing({ packageIds: [pkg.id] });
+      fetchPackages();
+    } catch (err) {
+      alert(err?.response?.data?.message || err.message || 'Failed to confirm pricing.');
+    }
+  };
+
+  const draftIds = packages.filter((p) => p.status === 'Draft').map((p) => p.id);
+  const handleConfirmAllDrafts = async () => {
+    if (!window.confirm(`Confirm pricing for ${draftIds.length} draft package(s)? They go live 5 months before departure.`)) return;
+    try {
+      await confirmBatchPricing({ packageIds: draftIds });
+      fetchPackages();
+    } catch (err) {
+      alert(err?.response?.data?.message || err.message || 'Failed to confirm pricing.');
+    }
+  };
+
   // ── Derived stats ───────────────────────────────────────────────────────────
-  const activeCount   = packages.filter((p) => p.status?.toLowerCase() === 'active').length;
-  const inactiveCount = packages.length - activeCount;
+  const expiredCount  = packages.filter((p) => p.is_expired === true).length;
+  const activeCount   = packages.filter((p) => p.status?.toLowerCase() === 'active' && !p.is_expired).length;
+  const inactiveCount = packages.length - activeCount - expiredCount;
   const totalBookings = packages.reduce((a, p) => a + (p.bookings ?? 0), 0);
   const avgRating     = packages.length
     ? (packages.reduce((a, p) => a + Number(p.makkah_hotel_rating ?? p.rating ?? 0), 0) / packages.length).toFixed(1)
@@ -297,7 +343,10 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refre
       pkg.description?.toLowerCase().includes(q) ||
       pkg.location?.toLowerCase().includes(q);
     const matchesStatus =
-      statusFilter === 'all' || pkg.status?.toLowerCase() === statusFilter;
+      statusFilter === 'all' ||
+      (statusFilter === 'expired'
+        ? pkg.is_expired === true
+        : pkg.status?.toLowerCase() === statusFilter && !pkg.is_expired);
     const matchesType =
       typeFilter === 'all' || pkg.type?.toLowerCase() === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
@@ -311,7 +360,7 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refre
         <div>
           <h2 className="text-2xl font-bold text-gray-900">My Packages</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            {packages.length} total · {activeCount} active · {inactiveCount} inactive
+            {packages.length} total · {activeCount} active · {inactiveCount} inactive{expiredCount > 0 ? ` · ${expiredCount} expired` : ''}
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -322,6 +371,20 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refre
             title="Refresh"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          {draftIds.length > 0 && (
+            <button
+              onClick={handleConfirmAllDrafts}
+              className="px-4 py-2.5 border border-amber-300 text-amber-700 bg-amber-50 rounded-xl text-sm font-medium hover:bg-amber-100"
+            >
+              Confirm {draftIds.length} draft{draftIds.length === 1 ? '' : 's'}
+            </button>
+          )}
+          <button
+            onClick={() => setShowBatch(true)}
+            className="flex items-center space-x-2 px-4 py-2.5 border border-emerald-300 text-emerald-700 rounded-xl text-sm font-medium hover:bg-emerald-50"
+          >
+            <Calendar className="h-4 w-4" /><span>Batch create</span>
           </button>
           <button
             onClick={onCreatePackage}
@@ -373,7 +436,10 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refre
         >
           <option value="all">All Status</option>
           <option value="active">Active</option>
+          <option value="draft">Draft (needs pricing confirmation)</option>
+          <option value="scheduled">Scheduled</option>
           <option value="inactive">Inactive</option>
+          <option value="expired">Expired</option>
         </select>
 
         <select
@@ -453,9 +519,14 @@ const PackagesTab = ({ onCreatePackage, onEditPackage, onDuplicatePackage, refre
               onDuplicate={onDuplicatePackage}
               onDelete={(p) => setDeleteTarget(p)}
               onPreview={(p) => setPreviewTarget(p)}
+              onConfirm={handleConfirmPricing}
             />
           ))}
         </div>
+      )}
+
+      {showBatch && (
+        <BatchPackageModal onClose={() => setShowBatch(false)} onDone={fetchPackages} />
       )}
 
       {/* Delete modal */}

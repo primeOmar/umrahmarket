@@ -158,6 +158,15 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
             {/* ── Right actions ── */}
             <div className="flex items-center gap-2">
 
+              {/* Custom package — 2xl+ only so the centered nav never collides */}
+              <Link
+                to="/custom-package"
+                className="hidden 2xl:flex items-center gap-1.5 px-3 py-2 rounded-full bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-all duration-300 whitespace-nowrap"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                <span className="text-xs font-semibold text-amber-700">Custom Package</span>
+              </Link>
+
               {/* Verified badge — lg+ only */}
               <Link
                 to="/verified"
@@ -347,6 +356,14 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
 
         {/* Drawer footer */}
         <div className="px-4 py-5 border-t border-gray-100 space-y-3">
+          <Link
+            to="/custom-package"
+            onClick={() => setMobileMenuOpen(false)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-100 hover:bg-amber-100 transition-colors duration-200"
+          >
+            <Sparkles className="h-4 w-4 text-amber-600" />
+            <span className="text-sm font-semibold text-amber-700">Request Custom Package</span>
+          </Link>
           <Link
             to="/verified"
             onClick={() => setMobileMenuOpen(false)}

@@ -15,7 +15,7 @@ import { processPackageImages } from "./imageProcessing";
 const STEPS = ["Basic Info", "Hotels", "Pricing", "Itinerary", "Highlights & Photos"];
 
 const CITY_MAKKAH = "makkah";
-const CITY_PRESET_OPTIONS = [
+export const CITY_PRESET_OPTIONS = [
   { value: "madinah", label: "Madinah", icon: "🕌" },
   { value: "jeddah", label: "Jeddah", icon: "🌊" },
   { value: "dubai", label: "Dubai", icon: "🏙️" },
@@ -31,7 +31,7 @@ const CITY_ALIASES = {
   makka: "makkah",
 };
 
-function normalizeCityValue(value = "") {
+export function normalizeCityValue(value = "") {
   const cleaned = String(value)
     .toLowerCase()
     .replace(/[^a-z\s-]/g, " ")
@@ -89,7 +89,7 @@ function clearCityHotelFields(obj, city) {
   return obj;
 }
 
-function cityLabelFromValue(value = "") {
+export function cityLabelFromValue(value = "") {
   const norm = normalizeCityValue(value);
   if (!norm) return "";
   if (norm === CITY_MAKKAH) return "Makkah";
@@ -107,7 +107,7 @@ const ITINERARY_TITLE_MAXLEN   = 120;
 const ITINERARY_ACT_MAXLEN     = 200;
 const ITINERARY_MAX_ACTIVITIES = 12;
 
-const HIGHLIGHT_OPTIONS = [
+export const HIGHLIGHT_OPTIONS = [
   "Guided Ziyarat (historical site visits)",
   "Daily meals included",
   "24/7 support",
@@ -128,7 +128,7 @@ const HIGHLIGHT_OPTIONS = [
   "Tawaf & Sa'i assistance",
 ];
 
-const INCLUSION_OPTIONS = [
+export const INCLUSION_OPTIONS = [
   "Return flights",
   "Saudi visa processing",
   "Makkah hotel",
@@ -155,7 +155,7 @@ const INCLUSION_OPTIONS = [
   "Meet & greet service",
 ];
 
-const EXCLUSION_OPTIONS = [
+export const EXCLUSION_OPTIONS = [
   "International flights",
   "Saudi visa fees",
   "Personal expenses",
@@ -207,13 +207,13 @@ const EMPTY = {
 // then confirm) them before the package can be created/saved.
 const AGE_TIER_PERCENTS = { child: 0.95, minor_child: 0.85, infant: 0.45 };
 
-const AGE_TIER_FIELDS = [
+export const AGE_TIER_FIELDS = [
   { key: "child",       field: "child_price",       label: "Child",       sub: "6–11 yrs", percent: 0.95 },
   { key: "minor_child", field: "minor_child_price", label: "Child",       sub: "2–5 yrs",  percent: 0.85 },
   { key: "infant",      field: "infant_price",      label: "Infant",      sub: "Under 2 yrs", percent: 0.45 },
 ];
 
-function computeAutoTierPrice(adultPrice, percent) {
+export function computeAutoTierPrice(adultPrice, percent) {
   const n = Number(adultPrice);
   if (!n || isNaN(n) || n <= 0) return "";
   return (Math.round(n * percent * 100) / 100).toFixed(2);
@@ -223,7 +223,7 @@ function computeAutoTierPrice(adultPrice, percent) {
 // plain `price`/`*_price` fields above). Each additional country an agent
 // enables gets the exact same adult + auto-calculated age-tier shape, just
 // namespaced with its lowercase code (`tz_price`, `so_child_price`, …).
-const COUNTRY_PRICING_OPTIONS = [
+export const COUNTRY_PRICING_OPTIONS = [
   { code: "TZ", label: "Tanzania", flag: "🇹🇿" },
   { code: "SO", label: "Somalia", flag: "🇸🇴" },
 ];
@@ -820,7 +820,7 @@ const CheckboxPill = ({ label, selected, onToggle, color = "green" }) => {
   );
 };
 
-const OptionGrid = ({ options, selected, onChange, color }) => {
+export const OptionGrid = ({ options, selected, onChange, color }) => {
   const toggle = (opt) =>
     onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
   return (

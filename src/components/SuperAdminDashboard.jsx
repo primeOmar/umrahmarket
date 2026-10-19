@@ -18,6 +18,7 @@ import FaqsTab from '../faq/FaqsTab';
 import AgentShopTraffic from '../visits/AgentShopTraffic'
 import BlogTab from '../agent/blog/BlogTab';
 import TasksTab from '../tasks/TasksTab';
+import WhatsAppTab from '../whatsapp/WhatsAppTab';
 
 // ─── API base (no trailing /api duplication) ──────────────────────────────────
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
@@ -691,6 +692,7 @@ const navItems = [
   { id: 'publicchat', label: 'Public Chat', icon: MessagesSquare, count: publicChatUnread },
     { id: 'visits', label: 'Agents Visits',  icon: ChartNoAxesCombined },
   { id: 'tasks',      label: 'Tasks',         icon: CheckSquare },
+  { id: 'whatsapp',   label: 'WhatsApp',      icon: Send },
   { id: 'audit',      label: 'Audit Logs',   icon: Activity },
   { id: 'accounting', label: 'Accounting',   icon: TrendingUp },
   { id: 'settings',   label: 'Settings',     icon: Settings },
@@ -831,6 +833,7 @@ const navItems = [
                 {activeTab === 'visits'       && <AgentShopTraffic />}
                     {activeTab === 'complaints' && <ComplaintsTab />}
                   {activeTab === 'tasks'      && <TasksTab />}
+                  {activeTab === 'whatsapp'   && <WhatsAppTab />}
 {activeTab === 'publicchat' && (
   <PublicChatTab
     conversations={publicChatConversations}

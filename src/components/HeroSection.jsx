@@ -3,12 +3,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Filter, ChevronDown, X, DollarSign, Star, Clock,
-  Check, Heart, AlertCircle, Loader2,SlidersHorizontal, RefreshCw
+  Check, Heart, AlertCircle, Loader2,SlidersHorizontal, RefreshCw, Sparkles
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AuthModal from './AuthModal';
 import { userStore } from '../api';
 import { createPackagePath } from '../utils/packageSeo';
+import { NationalityBadge } from './NationalityEligibility';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props:
@@ -709,7 +710,12 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
             ) : filteredPackages.length === 0 && !filterLoading ? (
               <div className="text-center py-20">
                 <p className="text-gray-500 text-sm mb-3">No packages match your filters.</p>
-                <button onClick={clearAllFilters} className="text-emerald-600 text-sm font-medium hover:underline">Clear all filters</button>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button onClick={clearAllFilters} className="text-emerald-600 text-sm font-medium hover:underline">Clear all filters</button>
+                  <button onClick={() => navigate('/custom-package')} className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-semibold hover:bg-amber-600">
+                    <Sparkles className="h-4 w-4" />Request a custom package
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -790,6 +796,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                         {[pkg.distance, pkg.hotelRating, pkg.type && (pkg.type.charAt(0).toUpperCase() + pkg.type.slice(1))].filter(Boolean).join(' · ')}
                       </p>
                       {pkg.description && <p className="text-[10px] sm:text-xs text-gray-600 line-clamp-2">{pkg.description}</p>}
+                      <NationalityBadge pkg={pkg} />
                       
                       <div className="mt-2">
                         <button
@@ -841,6 +848,16 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                     </button>
                   </div>
                 )}
+
+                <div className="mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                  <div>
+                    <p className="font-semibold text-sm text-amber-900">Can't find what you're looking for?</p>
+                    <p className="text-xs text-amber-700">Tell us your dates, hotels and budget and agents will send you offers.</p>
+                  </div>
+                  <button onClick={() => navigate('/custom-package')} className="px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 inline-flex items-center justify-center gap-1.5 flex-shrink-0">
+                    <Sparkles className="h-4 w-4" />Request custom package
+                  </button>
+                </div>
               </>
             )}
           </>

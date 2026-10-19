@@ -75,7 +75,9 @@ async function buildSitemapXml() {
   const { data: packages, error: pkgError } = await supabase
     .from('packages')
     .select('id, name, status, updated_at')
-    .eq('status', 'Active'); // exact casing as stored in the DB
+    .eq('status', 'Active') // exact casing as stored in the DB
+    // Same 3-day pre-departure expiry as the backend's utils/packageExpiry.js
+    .or(`available_from.is.null,available_from.gt.${new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)}`);
 
   if (pkgError) {
     console.error('[sitemap] failed to fetch packages:', pkgError.message);

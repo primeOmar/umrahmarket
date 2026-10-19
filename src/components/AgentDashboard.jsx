@@ -18,6 +18,8 @@ import { useMessages, useAgentConversations } from '../hooks/useMessages';
 import { useAgentClients } from '../hooks/useAgentClients';
 import { getAgentPackages } from './agent/packages/services/packagesApi';
 import DocumentsTab from './agent/documents/DocumentsTab';
+import CustomRequestsTab from './agent/packages/display/CustomRequestsTab';
+import { getIncomingUnreadCount } from './agent/packages/services/inquiriesApi';
 import AccountingTab from './AccountingTab';
 import AgentAccountingTab from './AgentAccountingTab';
 import OfficeLocationModal from './OfficeLocationModal';
@@ -1817,6 +1819,14 @@ const VerificationGateModal = ({ status, requestingReview, onRequestReview, onGo
 const AgentDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [customUnread, setCustomUnread] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const poll = () => getIncomingUnreadCount().then((r) => alive && setCustomUnread(r.unread ?? 0)).catch(() => {});
+    poll();
+    const t = setInterval(poll, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showCreatePackage, setShowCreatePackage] = useState(false);
   const [packageModalMode, setPackageModalMode] = useState('create'); // 'create' | 'edit' | 'duplicate'
@@ -2142,7 +2152,8 @@ const AgentDashboard = ({ user, onLogout }) => {
     { id: 'packages',  icon: Package,       label: 'Packages', count: packageCount },
     { id: 'analytics', icon: BarChart3,     label: 'Analytics' },
     { id: 'documents', icon: FileText,      label: 'Documents' },
-    { id: 'messages',  icon: MessageCircle, label: 'Messages', count: unreadCount || null },
+    { id: 'custom',    icon: Send,          label: 'Custom Requests', count: customUnread || null },
+  { id: 'messages',  icon: MessageCircle, label: 'Messages', count: unreadCount || null },
     { id: 'accounting', icon: DollarSign,   label: 'Accounting' }, // <-- NEW
     { id: 'settings',  icon: Settings,      label: 'Settings' },
   ];
@@ -2997,6 +3008,8 @@ const AgentDashboard = ({ user, onLogout }) => {
               <DocumentsTab agentId={profile?.id} />
             </div>
           )}
+
+          {activeTab === 'custom' && <CustomRequestsTab onUnreadChange={setCustomUnread} />}
 
           {activeTab === 'messages' && (
             <AgentMessagesTab user={user} />

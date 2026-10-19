@@ -16,6 +16,9 @@ import { request, getPassportStatus, getPassportStatusBatch, paymentGuard, token
 import PassportVerificationModal from './PassportVerificationModal';
 import { persistBookingFlow, readPendingBookingFlow, clearPendingBookingFlow } from '../utils/bookingResume';
 import { isLocalBrowser, resolveApiOrigin } from '../utils/apiBase';
+import {
+  COUNTRY_NAMES, extractNationality, canBookWithNationality, nationalityBlockMessage,
+} from '../utils/packageNationality';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS  = 4_000;
@@ -31,6 +34,20 @@ const TRAVELER_TIERS = [
   { key: 'infant',      label: 'Infants',        sub: 'Under 2 yrs', min: 0 },
 ];
 const MAX_TRAVELERS = 30;
+
+const normalizeInitialTravelers = (value) => {
+  const base = { adult: 1, child: 0, minor_child: 0, infant: 0 };
+  if (!value || typeof value !== 'object') return base;
+  const out = { ...base };
+  for (const key of Object.keys(base)) {
+    const n = Number(value[key]);
+    if (Number.isFinite(n) && n >= 0) out[key] = Math.floor(n);
+  }
+  if (out.adult < 1) out.adult = 1;
+  const total = out.adult + out.child + out.minor_child + out.infant;
+  if (total > MAX_TRAVELERS) return base;
+  return out;
+};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 // NOTE: KES conversion no longer uses a hardcoded rate — see fxRate state below,
@@ -63,17 +80,26 @@ function deriveClientCountry(phone) {
   return 'OTHER';
 }
 
-// Kenyan pilgrims (and anyone whose country couldn't be pinned to TZ/SO)
-// always book at the package's default price. A Tanzanian or Somali
-// pilgrim can only book if the agent explicitly opted that country into
-// its own pricing (see CreatePackageModal's "Other Nationality Pricing").
-function countryPricingAvailable(pkg, country) {
-  if (!country || country === 'KE' || country === 'OTHER') return true;
-  const entry = pkg?.countryPricing?.[country];
-  return !!(entry && Number(entry.adult) > 0);
-}
+// The phone dial code is only a PRICING HINT before a passport has been read —
+// it never blocks a booking. Eligibility is decided by the nationality on the
+// pilgrim's verified passport (see canBookWithNationality in
+// utils/packageNationality.js): Kenyan passports can always book; Tanzanian /
+// Somali passports can book only if the agent filled that country's price tiers.
 
-const COUNTRY_NAMES = { TZ: 'Tanzania', SO: 'Somalia' };
+// Pulls { travelerIndex: 'KE'|'TZ'|'SO'|'OTHER' } out of a batch-status response.
+// Tolerant of the row-array name/shape so it keeps working if the backend adds
+// `nationality` to each traveler row.
+function collectNationalities(data) {
+  const out = {};
+  const list = [data?.travelers, data?.results, data?.statuses, data?.items, data?.verifications]
+    .find(Array.isArray) || [];
+  list.forEach((row, i) => {
+    const idx = [row?.traveler_index, row?.travelerIndex, row?.index].find(Number.isInteger) ?? i;
+    const code = extractNationality(row);
+    if (code) out[idx] = code;
+  });
+  return out;
+}
 
 // ─── tiny shared UI ───────────────────────────────────────────────────────────
 const inputCls = (err) =>
@@ -94,28 +120,53 @@ const Field = ({ label, error, children }) => (
 );
 
 // ─── BookingModal ─────────────────────────────────────────────────────────────
-const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
+const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth, initialTravelers = null }) => {
 
   // step machine:
   // 'agent-blocked' (agents can't book — sell packages, not buy them) →
-  // 'country-unavailable' (pilgrim's country has no pricing set on this
-  //   package — see deriveClientCountry/countryPricingAvailable) →
+  // 'nationality-blocked' (a traveler's PASSPORT nationality can't book this
+  //   package — Kenya always can; Tanzania/Somalia only if the agent filled
+  //   that country's price tiers) — can be entered from any step after a
+  //   passport has been read →
   // 'travelers' (pick counts) → 'passport-check' (loading, checks EVERY
   //   traveler at once) → 'passport' (current traveler in travelerQueue needs
   //   verification, repeats until all are done) → 'select' → 'card' | 'mpesa' | 'bank'
   // any method → 'processing' → 'success' | 'error'
   // 'mpesa' → 'polling' → 'success' | 'error'
-  const clientCountry = deriveClientCountry(user?.phone);
+  const phoneCountry = deriveClientCountry(user?.phone);
   const [step,     setStep]     = useState(() => {
     if (user?.role === 'agent') return 'agent-blocked';
-    if (!countryPricingAvailable(pkg, clientCountry)) return 'country-unavailable';
     return 'travelers';
   });
+
+  // Passport nationality per traveler index, once known (OCR result or the
+  // stored verification row). Mirrored in a ref so checkPassportBatch can read
+  // the latest without re-creating itself.
+  const [passportNationalities, setPassportNationalities] = useState({});
+  const nationalitiesRef = useRef({});
+  const [blockedNationality, setBlockedNationality] = useState(null);
+
+  // Merges freshly-read nationalities and returns the first one that can't
+  // book this package (or null). Also flips the modal to the disclaimer.
+  const recordNationalities = useCallback((fresh) => {
+    if (!fresh || !Object.keys(fresh).length) return null;
+    nationalitiesRef.current = { ...nationalitiesRef.current, ...fresh };
+    setPassportNationalities(nationalitiesRef.current);
+    const bad = Object.values(nationalitiesRef.current).find((code) => !canBookWithNationality(pkg, code));
+    if (bad) setBlockedNationality(bad);
+    return bad || null;
+  }, [pkg]);
+
+  // Pricing country: the account holder's passport once known, else the
+  // phone-prefix hint (advisory only — the server prices from the passport).
+  const clientCountry = passportNationalities[0]
+    ?? Object.values(passportNationalities).find((c) => c === 'TZ' || c === 'SO')
+    ?? phoneCountry;
   const [errorMsg, setErrorMsg] = useState('');
 
   // travelers — how many people this booking is for, broken down by age
   // tier. Defaults to a single adult ("book alone"), the most common case.
-  const [travelers, setTravelers] = useState({ adult: 1, child: 0, minor_child: 0, infant: 0 });
+  const [travelers, setTravelers] = useState(() => normalizeInitialTravelers(initialTravelers));
   const [travelersError, setTravelersError] = useState('');
 
   // Every traveler on the booking gets their OWN passport verified — not
@@ -223,7 +274,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
 
   useEffect(() => {
     if (!user?.id || !pkg?.id || !travelerQueue.length) return;
-    if (['success', 'processing', 'card-waiting', 'polling'].includes(step)) {
+    if (['success', 'processing', 'card-waiting', 'polling', 'nationality-blocked'].includes(step)) {
       clearPendingBookingFlow(user.id);
       return;
     }
@@ -259,18 +310,17 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     }
   }, [user?.role, step]);
 
-  // Same defense-in-depth reasoning: if `pkg` resolves/changes after mount
-  // and turns out to have no pricing for this pilgrim's country, don't let
-  // a stale 'travelers' step slip through.
+  // Defense-in-depth: if `pkg` resolves/changes after a passport nationality is
+  // already known and that nationality can't book it, don't let a stale
+  // 'select'/'currency' step slip through to payment.
   useEffect(() => {
-    if (
-      user?.role !== 'agent' &&
-      !countryPricingAvailable(pkg, clientCountry) &&
-      !['agent-blocked', 'country-unavailable'].includes(step)
-    ) {
-      setStep('country-unavailable');
+    if (user?.role === 'agent') return;
+    const bad = Object.values(passportNationalities).find((code) => !canBookWithNationality(pkg, code));
+    if (bad && !['agent-blocked', 'nationality-blocked'].includes(step)) {
+      setBlockedNationality(bad);
+      setStep('nationality-blocked');
     }
-  }, [pkg, clientCountry, user?.role, step]);
+  }, [pkg, passportNationalities, user?.role, step]);
 
   // Passport must be verified for EVERY traveler on THIS booking before
   // payment is allowed — not just the account holder's own passport. Only
@@ -284,6 +334,12 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
     setStep('passport-check');
     try {
       const data = await getPassportStatusBatch(pkg.id, queue.length);
+      // A passport verified earlier (even for another package) may already be
+      // on file — if its nationality can't book THIS package, stop here.
+      if (recordNationalities(collectNationalities(data))) {
+        setStep('nationality-blocked');
+        return;
+      }
       if (data?.allCanProceed) {
         // Currency is a one-time, explicit choice per booking — once made,
         // later re-runs of this check (e.g. after editing traveler counts)
@@ -307,7 +363,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       // and let the user retry rather than silently granting/denying access.
       setStep('passport-check-error');
     }
-  }, [pkg.id, user, onClose, onRequireAuth, currencyConfirmed]);
+  }, [pkg.id, user, onClose, onRequireAuth, currencyConfirmed, recordNationalities]);
 
   // Called when a single traveler's passport just came back verified/
   // manual_review — advances to the next unverified traveler in the queue,
@@ -326,8 +382,15 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
       return next;
     });
 
+    // Passport just read — enforce nationality before going any further.
+    const nat = extractNationality(result);
+    if (nat && recordNationalities({ [completedIndex]: nat })) {
+      setStep('nationality-blocked');
+      return;
+    }
+
     await checkPassportBatch(travelerQueue);
-  }, [checkPassportBatch, step, travelerPos, travelerQueue]);
+  }, [checkPassportBatch, recordNationalities, step, travelerPos, travelerQueue]);
 
   // lock body scroll
   useEffect(() => {
@@ -405,7 +468,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
   // set, so this works even for packages saved before per-tier pricing
   // existed. A Tanzanian/Somali pilgrim uses that country's own price_tiers
   // instead of the default (Kenyan) ones — reaching this point already
-  // guarantees one exists (see countryPricingAvailable's gate above). This
+  // guarantees one exists (see canBookWithNationality's passport gate). This
   // total is advisory only — the backend recomputes it fresh from
   // price_tiers/country_pricing on every initiate() call and never trusts
   // this number.
@@ -782,7 +845,7 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
         </div>
 
         {/* package summary */}
-        {step !== 'success' && step !== 'agent-blocked' && step !== 'country-unavailable' && (
+        {step !== 'success' && step !== 'agent-blocked' && step !== 'nationality-blocked' && (
           <div className="px-5 py-3 bg-gray-50 border-b flex-shrink-0 space-y-2">
             <div className="flex items-center gap-3">
               <img src={pkg.image} alt={pkg.title} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
@@ -871,25 +934,29 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth }) => {
             </div>
           )}
 
-          {/* ══ COUNTRY PRICING UNAVAILABLE — pilgrim's country has no
-              price set on this package (Kenya is always fine; Tanzania/
-              Somalia need an explicit agent opt-in) ══ */}
-          {step === 'country-unavailable' && (
+          {/* ══ NATIONALITY BLOCKED — the traveler's passport can't book this
+              package (Kenya always can; Tanzania/Somalia need the agent to
+              have filled that country's price tiers) ══ */}
+          {step === 'nationality-blocked' && (
             <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
               <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
                 <Globe className="h-7 w-7 text-amber-600" />
               </div>
               <div>
-                <p className="font-bold text-gray-900">Not available for {COUNTRY_NAMES[clientCountry] || 'your country'} yet</p>
+                <p className="font-bold text-gray-900">
+                  Not available for {COUNTRY_NAMES[blockedNationality] ? `${COUNTRY_NAMES[blockedNationality]} passports` : 'this passport'}
+                </p>
                 <p className="text-sm text-gray-500 mt-1 max-w-xs">
-                  This agent hasn't set a price for {COUNTRY_NAMES[clientCountry] || 'your country'} pilgrims on this
-                  package yet. Please check back later, or explore other packages.
+                  {nationalityBlockMessage(pkg, blockedNationality)}
+                </p>
+                <p className="text-xs text-gray-400 mt-2 max-w-xs">
+                  Please choose another package that is open to your passport.
                 </p>
               </div>
               <button onClick={handleClose}
                 className="w-full max-w-xs py-3 font-bold text-white rounded-xl"
                 style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
-                Got it
+                Browse other packages
               </button>
             </div>
           )}

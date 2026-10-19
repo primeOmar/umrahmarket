@@ -93,6 +93,29 @@ export const updatePackage = async (id, formData, imageFiles = [], keepImageUrls
   return res.data;
 };
 
+export const createPackageBatch = async (template, departures, imageFiles = []) => {
+  const body = new FormData();
+  body.append('template', JSON.stringify(template));
+  body.append('departures', JSON.stringify(departures));
+  imageFiles.forEach((file) => body.append('images', file));
+  const res = await request({
+    method: 'post',
+    url: '/packages/batch',
+    data: body,
+  });
+  return res.data;
+};
+
+// prices: optional { [packageId]: { adult, child, minor_child, infant } }
+export const confirmBatchPricing = async ({ batchId, packageIds, prices } = {}) => {
+  const res = await request({
+    method: 'post',
+    url: '/packages/batch/confirm',
+    data: { batch_id: batchId, package_ids: packageIds, prices },
+  });
+  return res.data;
+};
+
 export const deletePackage = async (id) => {
   const res = await request({ method: 'delete', url: `/packages/${id}` });
   return res.data;

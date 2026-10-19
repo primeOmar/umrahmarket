@@ -15,6 +15,7 @@ import PaymentCallback from './pages/PaymentCallback';
 import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
 import SuperAdminRegister from './components/SuperAdminRegister';
 import GuidancePage from './components/GuidancePage';
+import CustomPackageGate from './components/CustomPackageGate';
 import ExperiencesPage from './components/ExperiencesPage';
 import VerifiedPage from './components/VerifiedPage';
 import AgentsPage from './components/AgentsPage';
@@ -540,6 +541,33 @@ function App({
               {/* GuidancePage.jsx renders its own <Seo> — kept as the
                   single source of truth for this route's meta tags. */}
               <GuidancePage />
+              <Footer />
+            </>
+          } />
+
+          <Route path="/custom-package" element={
+            <>
+              <Seo
+                title="Request a Custom Umrah Package | UmrahMarket"
+                description="Can't find the right Umrah package? Create a free account, describe your trip — dates, group size, hotel preferences, budget — and verified agents in Kenya will send you offers you can accept and pay for online."
+                canonical={`${SITE_ORIGIN}/custom-package`}
+              />
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <CustomPackageGate
+                authReady={authReady}
+                currentUser={currentUser}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
               <Footer />
             </>
           } />
