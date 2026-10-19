@@ -15,6 +15,7 @@ import {
   uploadAgentDocuments,
   userStore,
   goTo,
+  requestPasswordReset,
 } from '../api';   
 
 // ==================== ANIMATION STYLES ====================
@@ -541,7 +542,7 @@ const validateClientForm = (data) => {
 
 const ClientForm = React.memo(({
   formData, authType, isLoading, showPassword,
-  onInputChange, onTogglePassword, onSubmit, onToggleAuthType,
+  onInputChange, onTogglePassword, onSubmit, onToggleAuthType, onForgotPassword,
   alert,
 }) => (
   <form onSubmit={onSubmit} className="space-y-3.5">
@@ -636,7 +637,7 @@ const ClientForm = React.memo(({
           <input type="checkbox" id="remember" className="h-4 w-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500" />
           <label htmlFor="remember" className="ml-2 text-sm text-gray-700">Remember me</label>
         </div>
-        <button type="button" className="text-sm text-emerald-600 font-semibold hover:text-emerald-700 transition-colors duration-300">
+        <button type="button" onClick={onForgotPassword} disabled={isLoading} className="text-sm text-emerald-600 font-semibold hover:text-emerald-700 transition-colors duration-300 disabled:opacity-50">
           Forgot Password?
         </button>
       </div>
@@ -696,7 +697,7 @@ ClientForm.displayName = 'ClientForm';
 
 const AgentForm = React.memo(({
   formData, authType, isLoading, showPassword,
-  onInputChange, onTogglePassword, onSubmit, onToggleAuthType,
+  onInputChange, onTogglePassword, onSubmit, onToggleAuthType, onForgotPassword,
   alert,
 }) => (
   <form onSubmit={onSubmit} className="space-y-3.5">
@@ -819,7 +820,7 @@ const AgentForm = React.memo(({
           <input type="checkbox" id="remember-agent" className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
           <label htmlFor="remember-agent" className="ml-2 text-sm text-gray-700">Remember me</label>
         </div>
-        <button type="button" className="text-sm text-blue-600 font-semibold hover:text-blue-700 transition-colors duration-300">
+        <button type="button" onClick={onForgotPassword} disabled={isLoading} className="text-sm text-blue-600 font-semibold hover:text-blue-700 transition-colors duration-300 disabled:opacity-50">
           Forgot Password?
         </button>
       </div>
@@ -916,6 +917,23 @@ const AuthModal = ({ onClose, onAuthSuccess }) => {
   const showSuccess = (msg) => setAlert({ type: 'success', message: msg });
   const clearAlert = () => setAlert({ type: null, message: null });
 
+  const handleForgotPassword = async () => {
+    if (isLoading) return;
+    const email = (formData.email || '').trim();
+    if (!email) {
+      showError('Enter your email address above, then click "Forgot Password?".');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await requestPasswordReset(email);
+      showSuccess(`We've sent a password reset link to ${email}. Please check your inbox (and spam folder).`);
+    } catch (err) {
+      showError(err?.data?.error || err.message || 'Could not send the reset email. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   // Check for Google OAuth result written by GoogleCallback.jsx
 useEffect(() => {
   const raw = localStorage.getItem('google_auth_result');
@@ -1340,8 +1358,9 @@ const handleGoogleLogin = useCallback(() => {
     onTogglePassword: handleTogglePassword,
     onSubmit: handleSubmit,
     onToggleAuthType: handleToggleAuthType,
+    onForgotPassword: handleForgotPassword,
   }), [formData, authType, isLoading, showPassword, alert,
-      handleInputChange, handleTogglePassword, handleSubmit, handleToggleAuthType]);
+      handleInputChange, handleTogglePassword, handleSubmit, handleToggleAuthType, handleForgotPassword]);
 
   return (
     <>

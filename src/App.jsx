@@ -10,6 +10,7 @@ import SuperAdminLogin from './components/SuperAdminLogin';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import GoogleCallback from './pages/GoogleCallback';
 import GoogleDone from './pages/GoogleDone';
+import ResetPassword from './pages/ResetPassword';
 import { refreshToken, userStore, tokenStore, goTo, setNavigator } from './api';
 import PaymentCallback from './pages/PaymentCallback';
 import { getAllActivePackages, toggleFavourite, getFavourites, normalise } from './components/agent/packages/services/packagesApi';
@@ -677,6 +678,7 @@ function App({
               chrome here just flashes uselessly right before window.close(). */}
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
           <Route path="/auth/google/done" element={<GoogleDone />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verified" element={
             <>
               {/* VerifiedPage.jsx renders its own <Seo> — kept as the

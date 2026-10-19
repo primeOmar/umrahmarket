@@ -345,6 +345,20 @@ export const getMe = () => request({ method: 'get', url: '/auth/me' });
 export const requestPasswordReset = (email) =>
   request({ method: 'post', url: '/auth/password-reset/request', data: { email } });
 
+// Sets the new password using the recovery token from the emailed link, then signs the user in.
+export const confirmPasswordReset = async (token, password, confirmPassword) => {
+  const res = await request({
+    method: 'post',
+    url: '/auth/password-reset/confirm',
+    data: { token, password, confirmPassword },
+  });
+  const d = res?.data?.data;
+  if (d?.accessToken) tokenStore.set(d.accessToken);
+  if (d?.refreshToken) localStorage.setItem('refresh_token', d.refreshToken);
+  if (d?.user) userStore.set(d.user);
+  return res;
+};
+
 // ─── Email confirmation ─────────────────────────────────────────────────────
 // Confirms the account using the token from the emailed verification link.
 export const verifyEmail = (token) =>
