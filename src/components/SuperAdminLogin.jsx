@@ -20,7 +20,24 @@ export const SuperAdminLogin = ({ onLoginSuccess }) => {
   const [show2FA, setShow2FA]           = useState(false);
   const [twoFACode, setTwoFACode]       = useState('');
   const [sessionToken, setSessionToken] = useState(null);
+  const [showForgot, setShowForgot]     = useState(false);
+  const [forgotEmail, setForgotEmail]   = useState('');
+  const [forgotSent, setForgotSent]     = useState(false);
 
+  const handleForgot = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!forgotEmail.trim()) { setError('Enter your superadmin email address'); return; }
+    setLoading(true);
+    try {
+      await axios.post(`${BASE_API}/superadmin/forgot-password`, { email: forgotEmail.trim().toLowerCase() });
+      setForgotSent(true);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not send reset email. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
   // Countdown timer when account is locked
   useEffect(() => {
     if (!accountLocked || !lockoutTime) return;
@@ -179,7 +196,54 @@ export const SuperAdminLogin = ({ onLoginSuccess }) => {
             </div>
           </div>
 
-          {!show2FA ? (
+          {showForgot && !show2FA ? (
+            <>
+              <button
+                onClick={() => { setShowForgot(false); setForgotSent(false); setError(''); }}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-8 transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" /> Back to sign in
+              </button>
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900">Reset password</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Enter your superadmin email and we'll send you a link to set a new password.
+                </p>
+              </div>
+              {forgotSent ? (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800">
+                  If that email belongs to a superadmin account, a reset link is on its way. Check your inbox (and spam). The link expires in 1 hour.
+                </div>
+              ) : (
+                <form onSubmit={handleForgot} className="space-y-5">
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={e => setForgotEmail(e.target.value)}
+                      disabled={loading}
+                      placeholder="admin@example.com"
+                      className={fieldClass}
+                    />
+                  </div>
+                  {error && (
+                    <div className="flex gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl">
+                      <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-red-700">{error}</p>
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-all"
+                  >
+                    {loading ? <><Loader className="h-4 w-4 animate-spin" /> Sending...</> : 'Send reset link'}
+                  </button>
+                </form>
+              )}
+            </>
+          ) : !show2FA ? (
             <>
               <div className="mb-8">
                 <h2 className="text-2xl font-bold text-gray-900">Sign in</h2>
@@ -255,6 +319,15 @@ export const SuperAdminLogin = ({ onLoginSuccess }) => {
                 )}
 
                 {/* Submit */}
+                <div className="text-right -mt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowForgot(true); setForgotEmail(email); setError(''); }}
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <button
                   type="submit"
                   disabled={loading || accountLocked}
