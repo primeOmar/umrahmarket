@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/ssr.js": {
+      "includeFiles": "{dist/server/**,node_modules/react-router/**,node_modules/react-router-dom/**}"
+    }
+  },
   "rewrites": [
     { "source": "/backend-proxy/:path*", "destination": "https://api.umrahmarket.net/:path*" },
     { "source": "/api/:path*", "destination": "/api/:path*" },
