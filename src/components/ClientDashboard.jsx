@@ -1,4 +1,5 @@
 // ClientDashboard.jsx - Complete Production Ready Version
+import FlippingPrice from './FlippingPrice';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   LayoutDashboard, Calendar, Heart, Clock, Star, MapPin, 
@@ -784,7 +785,6 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
   //     formats a number that's already in KES. Passing it straight
   //     through was rendering the raw USD number with a "KES" label.
   const { fmtKes, usdToKes, fxLoading } = useFxRate();
-  const priceKes = usdToKes(pkg.price || 0);
 
   return (
     <div className="group cursor-pointer" onClick={() => onView(pkg)}>
@@ -800,20 +800,24 @@ const PackageCard = ({ pkg, darkMode, onView, onBook, isFav = false, onToggleFav
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
 
         {/* Price */}
-        <div className="absolute bottom-2 left-2">
-          <div className="flex items-baseline gap-1">
-            <span className="text-sm sm:text-base font-bold text-white leading-none">
-              {fxLoading ? `$${(pkg.price || 0).toLocaleString()}` : fmtKes(priceKes)}
-            </span>
-            <span className="text-[10px] text-white/75">/ person</span>
-          </div>
-          <span className="text-[10px] text-white/65">${(pkg.price || 0).toLocaleString()} USD</span>
-          {pkg.originalPrice > pkg.price && (
-            <span className="text-[10px] text-white/55 line-through block">
-              ${(pkg.originalPrice || 0).toLocaleString()}
-            </span>
+        <FlippingPrice pkg={pkg} className="absolute bottom-2 left-2">
+          {({ usd, code, color }) => (
+            <>
+              <div className="flex items-baseline gap-1">
+                <span className="text-sm sm:text-base font-bold leading-none" style={{ color: code === 'KE' ? '#fff' : color.soft }}>
+                  {fxLoading ? `$${(usd || 0).toLocaleString()}` : fmtKes(usdToKes(usd || 0))}
+                </span>
+                <span className="text-[10px] text-white/75">/ person</span>
+              </div>
+              <span className="text-[10px] text-white/65">${(usd || 0).toLocaleString()} USD</span>
+              {code === 'KE' && pkg.originalPrice > pkg.price && (
+                <span className="text-[10px] text-white/55 line-through block">
+                  ${(pkg.originalPrice || 0).toLocaleString()}
+                </span>
+              )}
+            </>
           )}
-        </div>
+        </FlippingPrice>
 
 
         {/* Duration badge */}
@@ -1518,14 +1522,18 @@ const PackageDiscovery = ({ darkMode, onPackageSelect, onBook, packages = [], lo
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <h3 className={`font-semibold text-sm truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{pkg.name}</h3>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="text-right">
-                      <span className="text-emerald-600 font-bold text-sm block">
-                        {fxLoading ? `$${(pkg.price || 0).toLocaleString()}` : fmtKes(usdToKes(pkg.price || 0))}
-                      </span>
-                      <span className={`text-[10px] block ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                        ${(pkg.price || 0).toLocaleString()} USD
-                      </span>
-                    </div>
+                    <FlippingPrice pkg={pkg} onDark={false} className="text-right">
+                      {({ usd, code, color }) => (
+                        <>
+                          <span className="font-bold text-sm block" style={{ color: color.solid }}>
+                            {fxLoading ? `$${(usd || 0).toLocaleString()}` : fmtKes(usdToKes(usd || 0))}
+                          </span>
+                          <span className={`text-[10px] block ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            ${(usd || 0).toLocaleString()} USD
+                          </span>
+                        </>
+                      )}
+                    </FlippingPrice>
                     {onToggleFav && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onToggleFav(pkg); }}

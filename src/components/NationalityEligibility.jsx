@@ -1,8 +1,7 @@
-
 import React from 'react';
 import { Globe } from 'lucide-react';
 import {
-  getPackageEligibility, COUNTRY_FLAGS, PASSPORT_NAMES, eligibilityLabel,
+  getPackageEligibility, countryFlag, countryName, passportName, eligibilityLabel,
 } from '../utils/packageNationality';
 
 export const NationalityBadge = ({ pkg, className = '' }) => {
@@ -14,10 +13,10 @@ export const NationalityBadge = ({ pkg, className = '' }) => {
       title={eligibilityLabel(pkg)}
     >
       <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-        {elig.allowed.map((c) => <span key={c}>{COUNTRY_FLAGS[c]}</span>)}
+        {elig.allowed.map((c) => <span key={c}>{countryFlag(c)}</span>)}
       </span>
       <span className="truncate">
-        {elig.kenyaOnly ? 'Kenyan passport only' : `Kenya${elig.TZ ? ' · Tanzania' : ''}${elig.SO ? ' · Somalia' : ''}`}
+        {elig.kenyaOnly ? 'Kenyan passport only' : elig.allowed.map(countryName).join(' · ')}
       </span>
     </p>
   );
@@ -37,25 +36,19 @@ export const NationalityNotice = ({ pkg, className = '' }) => {
           </p>
           <p className="text-xs text-amber-800 mt-0.5">
             {elig.kenyaOnly
-              ? 'This package can only be booked with a Kenyan passport. Tanzanian and Somali passport holders cannot book it.'
-              : 'Your passport is checked during booking. Only the nationalities below can book this package.'}
+              ? 'This package can only be booked with a Kenyan passport. Holders of other passports cannot book it.'
+              : 'You pay the price for the passport you upload when booking. Only the passports below can book this package.'}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
-            {['KE', 'TZ', 'SO'].map((c) => {
-              const ok = elig[c];
-              return (
-                <span
-                  key={c}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                    ok ? 'bg-white border-emerald-200 text-emerald-700'
-                       : 'bg-gray-100 border-gray-200 text-gray-400 line-through'
-                  }`}
-                >
-                  {COUNTRY_FLAGS[c]} {PASSPORT_NAMES[c]}
-                  {ok && c !== 'KE' && cp?.[c]?.adult ? ` · $${Number(cp[c].adult).toLocaleString('en-US')}` : ''}
-                </span>
-              );
-            })}
+            {elig.allowed.map((c) => (
+              <span
+                key={c}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border bg-white border-emerald-200 text-emerald-700"
+              >
+                {countryFlag(c)} {passportName(c)}
+                {c !== 'KE' && cp?.[c]?.adult ? ` · $${Number(cp[c].adult).toLocaleString('en-US')}` : ''}
+              </span>
+            ))}
           </div>
         </div>
       </div>

@@ -10,6 +10,7 @@ import AuthModal from './AuthModal';
 import { userStore } from '../api';
 import { createPackagePath } from '../utils/packageSeo';
 import { NationalityBadge } from './NationalityEligibility';
+import FlippingPrice from './FlippingPrice';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props:
@@ -748,15 +749,19 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
 
-                      <div className="absolute bottom-2 left-2">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-sm sm:text-base font-bold text-white leading-none">${formatPrice(pkg.price)}</span>
-                          <span className="text-[10px] text-white/75">/ person</span>
-                        </div>
-                        {pkg.originalPrice > pkg.price && (
-                          <span className="text-[10px] text-white/55 line-through block">${formatPrice(pkg.originalPrice)}</span>
+                      <FlippingPrice pkg={pkg} className="absolute bottom-2 left-2">
+                        {({ usd, code, color }) => (
+                          <>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-sm sm:text-base font-bold leading-none" style={{ color: code === 'KE' ? '#fff' : color.soft }}>${formatPrice(usd)}</span>
+                              <span className="text-[10px] text-white/75">/ person</span>
+                            </div>
+                            {code === 'KE' && pkg.originalPrice > pkg.price && (
+                              <span className="text-[10px] text-white/55 line-through block">${formatPrice(pkg.originalPrice)}</span>
+                            )}
+                          </>
                         )}
-                      </div>
+                      </FlippingPrice>
 
                       {pkg.duration > 0 && (
                         <div className="absolute top-2 left-2">

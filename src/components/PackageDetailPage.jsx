@@ -15,6 +15,8 @@ import BookingFlow from './BookingFlow';
 import PackageVisitTracker from '../visits/PackageVisitTracker';
 import { useFxRate } from '../hooks/useFxRate';
 import Seo from './Seo';
+import { getPackageEligibility, countryName, countryFlag, passportName, tiersForCountry } from '../utils/packageNationality';
+import { usePriceCountryCycle, countryColor } from './FlippingPrice';
 import { createPackagePath } from '../utils/packageSeo';
 import { formatDistanceMeters } from '../utils/packageUtils';
 const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
@@ -373,6 +375,27 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
   
   const [bookingPkg,      setBookingPkg]      = useState(null);
   const [showAuthModal,    setShowAuthModal]    = useState(false);
+
+  // Countries this package is priced for (Kenya is always the default tier).
+  // The price flips between them automatically (colour + animation) until the
+  // visitor picks one manually, so every nationality sees a labelled price.
+  const [priceAutoFlip, setPriceAutoFlip] = useState(true);
+  const {
+    countries: priceCountries, code: priceCountry, select: selectPriceCountry,
+  } = usePriceCountryCycle(packageData, { pause: !priceAutoFlip, intervalMs: 4000 });
+  const priceColor = countryColor(priceCountry);
+
+  const pickPriceCountry = (code) => {
+    setPriceAutoFlip(false);
+    selectPriceCountry(code);
+  };
+  // Tier prices for the selected country; missing tiers fall back to the
+  // package's default tiers so a partial override never shows $0.
+  const shownTiers = useMemo(
+    () => (packageData ? tiersForCountry(packageData, priceCountry) : {}),
+    [packageData, priceCountry]
+  );
+  const shownPrice = priceCountry === 'KE' ? Number(packageData?.price ?? 0) : shownTiers.adult;
 
   // Stores the fact that a guest tried to favourite this package before being
   // sent to login — mirrors HeroSection's pendingFavouriteId pattern so the
@@ -771,19 +794,46 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
               <div className="bg-white border border-gray-200 rounded-2xl shadow-xl p-6">
                 {/* Price */}
                 <div className="mb-6">
+                  {priceCountries.length > 1 && (
+                    <div className="mb-3">
+                      <div role="tablist" aria-label="Price by passport" className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+                        {priceCountries.map((code) => (
+                          <button
+                            key={code}
+                            type="button"
+                            role="tab"
+                            aria-selected={priceCountry === code}
+                            onClick={() => pickPriceCountry(code)}
+                            style={priceCountry === code ? { color: countryColor(code).solid } : undefined}
+                            className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-lg transition ${
+                              priceCountry === code ? 'bg-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            {countryFlag(code)} {countryName(code)}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1.5">
+                        Price for a <span className="font-semibold">{passportName(priceCountry)}</span> passport.
+                        Your final price is set by the passport you upload when booking.
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <div className="flex items-baseline">
-                        <span className="text-3xl font-bold text-gray-900">${formatPrice(packageData.price)}</span>
-                        <span className="text-gray-500 ml-2">per person</span>
+                      <div key={priceCountry} className={priceCountries.length > 1 ? 'price-flip-in' : ''} style={{ '--flip-glow': priceColor.glow }}>
+                        <div className="flex items-baseline">
+                          <span className="text-3xl font-bold" style={{ color: priceCountries.length > 1 ? priceColor.solid : '#111827' }}>${formatPrice(shownPrice)}</span>
+                          <span className="text-gray-500 ml-2">per person</span>
+                        </div>
+                        {!fxRateLoading && (
+                          <p className="text-sm text-gray-500 mt-0.5">
+                            ≈ {fmtKes(usdToKes(shownPrice || 0))} <span className="text-gray-400">at today's rate</span>
+                          </p>
+                        )}
                       </div>
-                      {!fxRateLoading && (
-                        <p className="text-sm text-gray-500 mt-0.5">
-                          ≈ {fmtKes(usdToKes(packageData.price || 0))} <span className="text-gray-400">at today's rate</span>
-                        </p>
-                      )}
                     </div>
-                    {packageData.originalPrice > packageData.price && (
+                    {priceCountry === 'KE' && packageData.originalPrice > packageData.price && (
                       <div className="text-right">
                         <span className="text-gray-500 line-through text-sm block">${formatPrice(packageData.originalPrice)}</span>
                         {packageData.discount > 0 && (
@@ -816,7 +866,7 @@ const PackageDetailPage = ({ packages = [], loading = false, favorites = [], tog
                         <div className="font-semibold text-gray-900 flex items-center gap-2"><User className="h-4 w-4 text-emerald-600" />{label}</div>
                         <div className="text-xs text-gray-500">{sub}</div>
                       </div>
-                      <div className="font-bold text-gray-900">${formatPrice(packageData.priceTiers?.[key] ?? packageData.price)}</div>
+                      <div className="font-bold text-gray-900">${formatPrice(shownTiers[key] ?? packageData.price)}</div>
                     </div>
                   ))}
                 </div>

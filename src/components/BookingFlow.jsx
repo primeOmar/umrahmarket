@@ -17,8 +17,10 @@ import PassportVerificationModal from './PassportVerificationModal';
 import { persistBookingFlow, readPendingBookingFlow, clearPendingBookingFlow } from '../utils/bookingResume';
 import { isLocalBrowser, resolveApiOrigin } from '../utils/apiBase';
 import {
-  COUNTRY_NAMES, extractNationality, canBookWithNationality, nationalityBlockMessage,
+  countryName, passportName, extractNationality, canBookWithNationality, nationalityBlockMessage, tiersForCountry,
 } from '../utils/packageNationality';
+import { getAllActivePackages, normalise as normalisePackage } from './agent/packages/services/packagesApi';
+import { createPackagePath } from '../utils/packageSeo';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS  = 4_000;
@@ -145,6 +147,27 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth, initialTra
   const [passportNationalities, setPassportNationalities] = useState({});
   const nationalitiesRef = useRef({});
   const [blockedNationality, setBlockedNationality] = useState(null);
+  const [suggestedPkgs, setSuggestedPkgs] = useState([]);
+
+  // When a passport is rejected, look up other active packages that accept it.
+  useEffect(() => {
+    if (!blockedNationality) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getAllActivePackages();
+        const raw = Array.isArray(data) ? data : (data?.packages ?? data?.data?.packages ?? data?.data ?? []);
+        const matches = raw
+          .map(normalisePackage)
+          .filter((p) => p.id !== pkg.id && canBookWithNationality(p, blockedNationality) && blockedNationality !== 'OTHER')
+          .slice(0, 3);
+        if (!cancelled) setSuggestedPkgs(matches);
+      } catch {
+        if (!cancelled) setSuggestedPkgs([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [blockedNationality, pkg.id]);
 
   // Merges freshly-read nationalities and returns the first one that can't
   // book this package (or null). Also flips the modal to the disclaimer.
@@ -472,12 +495,11 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth, initialTra
   // total is advisory only — the backend recomputes it fresh from
   // price_tiers/country_pricing on every initiate() call and never trusts
   // this number.
-  const countryOverride = (clientCountry && clientCountry !== 'KE' && clientCountry !== 'OTHER')
-    ? pkg.countryPricing?.[clientCountry]
-    : null;
-  const tierPrices = countryOverride || pkg.priceTiers || {
-    adult: pkg.price, child: pkg.price, minor_child: pkg.price, infant: pkg.price,
-  };
+  const passportKnown = Object.keys(passportNationalities).length > 0;
+  const priceBasisCountry = canBookWithNationality(pkg, clientCountry) && clientCountry !== 'OTHER' && clientCountry
+    ? clientCountry
+    : 'KE';
+  const tierPrices = tiersForCountry(pkg, priceBasisCountry);
   const totalTravelers = TRAVELER_TIERS.reduce((sum, t) => sum + (travelers[t.key] || 0), 0);
   const totalUSD = TRAVELER_TIERS.reduce(
     (sum, t) => sum + (travelers[t.key] || 0) * Number(tierPrices[t.key] ?? pkg.price ?? 0),
@@ -944,15 +966,33 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth, initialTra
               </div>
               <div>
                 <p className="font-bold text-gray-900">
-                  Not available for {COUNTRY_NAMES[blockedNationality] ? `${COUNTRY_NAMES[blockedNationality]} passports` : 'this passport'}
+                  Not available for {blockedNationality && blockedNationality !== 'OTHER' ? `${countryName(blockedNationality)} passports` : 'this passport'}
                 </p>
                 <p className="text-sm text-gray-500 mt-1 max-w-xs">
                   {nationalityBlockMessage(pkg, blockedNationality)}
                 </p>
                 <p className="text-xs text-gray-400 mt-2 max-w-xs">
-                  Please choose another package that is open to your passport.
+                  {suggestedPkgs.length > 0
+                    ? 'These packages accept your passport:'
+                    : 'Please choose another package that is open to your passport.'}
                 </p>
               </div>
+              {suggestedPkgs.length > 0 && (
+                <div className="w-full max-w-xs space-y-2 text-left">
+                  {suggestedPkgs.map((p) => (
+                    <a
+                      key={p.id}
+                      href={createPackagePath(p)}
+                      className="block p-3 rounded-xl border border-gray-200 hover:border-emerald-400 transition"
+                    >
+                      <p className="text-sm font-semibold text-gray-900 truncate">{p.title}</p>
+                      <p className="text-xs text-gray-500">
+                        {p.duration} days · from ${Number(tiersForCountry(p, blockedNationality).adult).toLocaleString('en-US')} per adult
+                      </p>
+                    </a>
+                  ))}
+                </div>
+              )}
               <button onClick={handleClose}
                 className="w-full max-w-xs py-3 font-bold text-white rounded-xl"
                 style={{ background: 'linear-gradient(135deg,#059669,#0d9488)' }}>
@@ -1006,6 +1046,13 @@ const BookingModal = ({ pkg, user, onClose, onSuccess, onRequireAuth, initialTra
               <p className="text-xs text-gray-500 -mt-2">
                 Book for yourself alone, or add family/group members. Each age tier is priced separately.
               </p>
+              {Object.keys(pkg.countryPricing || {}).length > 0 && (
+                <p className="text-xs rounded-lg bg-amber-50 border border-amber-100 text-amber-800 px-3 py-2 -mt-1">
+                  {passportKnown
+                    ? `Prices shown are for your uploaded ${passportName(priceBasisCountry)} passport.`
+                    : `Prices shown are for a ${passportName(priceBasisCountry)} passport. They are confirmed from the passport you upload next and may change if it is from another country.`}
+                </p>
+              )}
 
               <div className="space-y-2.5">
                 {TRAVELER_TIERS.map((tier) => {
