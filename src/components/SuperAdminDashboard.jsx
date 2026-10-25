@@ -1487,6 +1487,41 @@ const AgentsTab = ({ agents, searchQuery, onViewAgent }) => {
 // show a results summary. Styling matches ConfirmDisburseModal /
 // ReceiptPreviewModal in AccountingTab.jsx for consistency.
 // ─────────────────────────────────────────────────────────────────────────────
+// Short, scannable starting points — the email layout adds the hero banner,
+// button styling and footer, so copy should stay to a line or two.
+const BROADCAST_TEMPLATES = [
+  {
+    name: 'New packages',
+    subject: 'Upload your new Umrah packages',
+    message: 'Hi {{agent_name}}, new travel seasons are opening and pilgrims are searching for packages.\n\nUpload your latest packages today to get seen and booked.\n\n**Upload new packages**: [Upload new packages](https://umrahmarket.net)',
+  },
+  {
+    name: 'Announcement',
+    subject: 'Big news from UmrahMarket',
+    message: 'Hi {{agent_name}}, we have something new for you.\n\n- Faster bookings\n- Verified agents\n- Secure payments\n\n**See what’s new**: [See what’s new](https://umrahmarket.net)',
+  },
+  {
+    name: 'Upload documents',
+    subject: 'Please upload your documents',
+    message: 'Hi {{agent_name}}, we need your documents to verify your agency.\n\n- Business registration certificate\n- Valid ID or passport\n- Hajj/Umrah operating license\n\nUpload them from your dashboard to get approved.\n\n**Upload documents**: [Upload documents](https://umrahmarket.net)',
+  },
+  {
+    name: 'Create packages',
+    subject: 'Create your first Umrah package',
+    message: 'Hi {{agent_name}}, pilgrims are searching for packages right now.\n\n- Add your dates and price\n- Upload great photos\n- Publish in minutes\n\n**Create a package**: [Create a package](https://umrahmarket.net)',
+  },
+  {
+    name: 'Reminder',
+    subject: 'A quick reminder from UmrahMarket',
+    message: 'Hi {{agent_name}}, just a friendly reminder: your profile still has pending steps.\n\nComplete them today so pilgrims can find and book with you.\n\n**Complete my profile**: [Complete my profile](https://umrahmarket.net)',
+  },
+  {
+    name: 'Invite agents',
+    subject: 'Grow your Umrah business with us',
+    message: 'List your packages and reach pilgrims across Kenya.\n\nSetup takes just a few minutes.\n\n**Become an agent**: [Become an agent](https://umrahmarket.net)',
+  },
+];
+
 const BatchEmailModal = ({ agents, onClose, onSent }) => {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
@@ -1595,6 +1630,21 @@ const BatchEmailModal = ({ agents, onClose, onSent }) => {
               )}
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Quick templates</label>
+              <div className="flex flex-wrap gap-2">
+                {BROADCAST_TEMPLATES.map((t) => (
+                  <button
+                    key={t.name}
+                    type="button"
+                    onClick={() => { setSubject(t.subject); setMessage(t.message); }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Subject</label>
               <input
