@@ -53,7 +53,7 @@ const Footer = () => {
               </div>
             </div>
             <p className="text-gray-400 mb-6">
-              We are located at Al Mukaram Shopping Centre, Eastleigh, Nairobi, Kenya.
+              We are located at Travel House 5th floor, PR7C+FHV, Opposite City Hall Annexe, Muindi Mbingu St, Nairobi, Kenya.
             </p>
             <div className="flex flex-wrap gap-3">
               <a
@@ -139,6 +139,17 @@ const Footer = () => {
                   className="text-gray-400 hover:text-white"
                 >
                   +254 700 111 106
+                </a>
+              </li>
+              <li className="flex items-start space-x-2">
+                <Phone className="h-5 w-5 text-green-400 flex-shrink-0 mt-0.5" />
+                <a
+                  href="https://wa.me/254705052222"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-400 hover:text-white"
+                >
+                  +2547 0505 2222
                 </a>
               </li>
               <li className="flex items-start space-x-2">
