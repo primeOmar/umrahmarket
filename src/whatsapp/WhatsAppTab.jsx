@@ -50,6 +50,8 @@ export default function WhatsAppTab() {
   const [agents, setAgents] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [config, setConfig] = useState(null); // { ready, sender, problems[] }
+  const [openBroadcast, setOpenBroadcast] = useState(null); // { id, loading, summary, messages }
 
   const [onlyWithoutPackages, setOnlyWithoutPackages] = useState(true);
   const [reminding, setReminding] = useState(false);
@@ -66,9 +68,11 @@ export default function WhatsAppTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [a, t, ag, h] = await Promise.allSettled([
-      waFetch('/audience'), waFetch('/templates'), waFetch('/agents'), waFetch('/broadcasts'),
+    const [a, t, ag, h, c] = await Promise.allSettled([
+      waFetch('/audience'), waFetch('/templates'), waFetch('/agents'), waFetch('/broadcasts'), waFetch('/config?verify=1'),
     ]);
+    if (c.status === 'fulfilled') setConfig(c.value);
+    else setConfig({ ready: false, problems: [`Could not reach ${BASE_API}: ${c.reason?.message || 'network error'}`] });
     if (a.status === 'fulfilled') setAudienceInfo(a.value);
     if (t.status === 'fulfilled') setTemplates(t.value.templates || []);
     else toast.error('Could not load templates from Twilio');
@@ -110,7 +114,20 @@ export default function WhatsAppTab() {
     } catch (e) { toast.error(e.message); } finally { setReminding(false); }
   };
 
-  const canSend = templateSid && consent && !sending && totalEstimate > 0 &&
+  const toggleBroadcast = async (id) => {
+    if (openBroadcast?.id === id) { setOpenBroadcast(null); return; }
+    setOpenBroadcast({ id, loading: true });
+    try {
+      const r = await waFetch(`/broadcasts/${id}/messages`);
+      setOpenBroadcast({ id, loading: false, summary: r.summary, messages: r.messages });
+    } catch (e) {
+      toast.error(e.message);
+      setOpenBroadcast(null);
+    }
+  };
+
+  const configBlocked = config && !config.ready;
+  const canSend = !configBlocked && templateSid && consent && !sending && totalEstimate > 0 &&
     (!template || template.variables.every((v) => (vars[v] || '').trim()));
 
   const sendBroadcast = async () => {
@@ -121,7 +138,9 @@ export default function WhatsAppTab() {
         audience, agentIds, extraNumbers: numbers, templateSid, templateName: template?.name, variables: vars,
       });
       setResult(r);
-      toast.success(`Sent ${r.sentCount} of ${r.recipientCount}`);
+      if (r.failedCount === 0) toast.success(`Sent ${r.sentCount} of ${r.recipientCount}`);
+      else if (r.sentCount === 0) toast.error(r.abortedReason || 'No messages were sent');
+      else toast(`Sent ${r.sentCount} of ${r.recipientCount} — ${r.failedCount} failed`);
       load();
     } catch (e) { toast.error(e.message); } finally { setSending(false); }
   };
@@ -139,6 +158,33 @@ export default function WhatsAppTab() {
         </div>
         <button onClick={load} className="p-2 rounded-lg hover:bg-gray-100" title="Refresh"><RefreshCw className="h-4 w-4" /></button>
       </div>
+
+      {configBlocked && (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-4 flex gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold">WhatsApp sending is not configured on the server</p>
+            <ul className="list-disc ml-5 mt-1">{config.problems.map((p) => <li key={p}>{p}</li>)}</ul>
+            <p className="text-xs mt-2 text-red-600">
+              These settings are read by the backend at <code>{BASE_API}</code>
+              {config.build && <> (commit <code>{config.build.commit}</code>, {config.build.env})</>}. Set the variable there and restart/redeploy it.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {config && (
+        <p className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+          <span>Backend: <code>{BASE_API}</code></span>
+          {config.build && <span>Build: <code>{config.build.commit}</code> ({config.build.env})</span>}
+          <span>Sender: <code>{config.sender || 'not set'}</code></span>
+          {config.twilio && (
+            <span className={config.twilio.ok ? 'text-green-700' : 'text-red-600'}>
+              Twilio: {config.twilio.ok ? `connected (${config.twilio.accountName}, ${config.twilio.accountType})` : config.twilio.error}
+            </span>
+          )}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat icon={Briefcase} label="Agents reachable" value={audienceInfo?.agents} />
@@ -170,7 +216,7 @@ export default function WhatsAppTab() {
         </label>
         <button
           onClick={sendReminders}
-          disabled={reminding || !audienceInfo?.reminderTemplateConfigured}
+          disabled={reminding || configBlocked || !audienceInfo?.reminderTemplateConfigured}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
         >
           {reminding ? <Loader className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send reminder
@@ -286,7 +332,16 @@ export default function WhatsAppTab() {
 
         {result && (
           <div className="border border-gray-200 rounded-lg p-3 text-sm space-y-1">
-            <p className="flex items-center gap-2 font-medium text-green-700"><CheckCircle className="h-4 w-4" />Sent {result.sentCount} of {result.recipientCount}</p>
+            <p className={`flex items-center gap-2 font-medium ${result.sentCount === 0 ? 'text-red-700' : result.failedCount ? 'text-amber-700' : 'text-green-700'}`}>
+              {result.sentCount === 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+              Sent {result.sentCount} of {result.recipientCount}
+            </p>
+            {result.abortedReason && (
+              <p className="text-red-700 bg-red-50 rounded p-2">Stopped: {result.abortedReason}</p>
+            )}
+            {result.sentCount > 0 && (
+              <p className="text-xs text-gray-500">“Sent” means Twilio accepted the message. Delivery/read status updates appear under Recent broadcasts.</p>
+            )}
             {result.failedCount > 0 && (
               <details className="text-red-600">
                 <summary>{result.failedCount} failed</summary>
@@ -303,18 +358,47 @@ export default function WhatsAppTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-left">
-              <tr><th className="px-4 py-2">Date</th><th className="px-4 py-2">Template</th><th className="px-4 py-2">Audience</th><th className="px-4 py-2">Sent</th><th className="px-4 py-2">Failed</th></tr>
+              <tr><th className="px-4 py-2">Date</th><th className="px-4 py-2">Template</th><th className="px-4 py-2">Audience</th><th className="px-4 py-2">Sent</th><th className="px-4 py-2">Failed</th><th className="px-4 py-2" /></tr>
             </thead>
             <tbody className="divide-y">
-              {history.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">No broadcasts yet</td></tr>}
+              {history.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">No broadcasts yet</td></tr>}
               {history.map((b) => (
-                <tr key={b.id}>
+                <React.Fragment key={b.id}>
+                <tr>
                   <td className="px-4 py-2 whitespace-nowrap">{format(new Date(b.created_at), 'dd MMM yyyy HH:mm')}</td>
                   <td className="px-4 py-2">{b.template_name}</td>
                   <td className="px-4 py-2">{b.audience}</td>
                   <td className="px-4 py-2">{b.sent_count}/{b.recipient_count}</td>
                   <td className="px-4 py-2">{b.failed_count}</td>
+                  <td className="px-4 py-2 text-right">
+                    <button onClick={() => toggleBroadcast(b.id)} className="text-blue-600 hover:underline text-xs whitespace-nowrap">
+                      {openBroadcast?.id === b.id ? 'Hide' : 'Delivery status'}
+                    </button>
+                  </td>
                 </tr>
+                {openBroadcast?.id === b.id && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-3 bg-gray-50">
+                      {openBroadcast.loading ? <Loader className="h-4 w-4 animate-spin text-blue-600" /> : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-gray-600">
+                            {Object.entries(openBroadcast.summary || {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || 'No messages logged'}
+                          </p>
+                          <ul className="text-xs max-h-56 overflow-y-auto divide-y">
+                            {(openBroadcast.messages || []).map((m, i) => (
+                              <li key={m.twilio_sid || i} className="py-1 flex gap-3">
+                                <span className="font-mono">{m.to_number}</span>
+                                <span className={['failed', 'undelivered'].includes(m.status) ? 'text-red-600' : m.status === 'read' || m.status === 'delivered' ? 'text-green-700' : 'text-gray-600'}>{m.status}</span>
+                                {m.error_message && <span className="text-red-600 truncate">{m.error_message}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
