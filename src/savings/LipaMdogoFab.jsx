@@ -1,0 +1,170 @@
+// Floating "Lipa Mdogo Mdogo" tab that hangs from the left edge of every
+// public page (the chat launcher owns the bottom-right corner). Hover/tap
+// slides out a short pitch with a single call to action:
+//   signed-in pilgrim → straight to the savings page
+//   signed-out        → create-account modal, then straight to the savings page
+import React, { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { PiggyBank, X, ArrowRight } from 'lucide-react';
+import AuthModal from '../components/AuthModal';
+import { setPostAuthRedirect } from '../utils/postAuthRedirect';
+import { getSavingsSummary, fmtKes, SAVINGS_PATH } from './savingsApi';
+
+const HIDDEN_PREFIXES = [
+  '/agent', '/superadmin', '/payment', '/auth', '/lipa-mdogo-mdogo',
+  '/reset-password', '/verify-email',
+];
+
+export default function LipaMdogoFab({ currentUser, onAuthSuccess }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const wrapRef = useRef(null);
+
+  const isClient = currentUser?.role === 'client';
+  const hidden =
+    currentUser?.role === 'agent' ||
+    HIDDEN_PREFIXES.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`));
+
+  // Light balance fetch for signed-in pilgrims (shown in the slide-out card).
+  useEffect(() => {
+    if (!isClient || hidden) return undefined;
+    let cancelled = false;
+    getSavingsSummary()
+      .then((r) => { if (!cancelled) setSummary(r?.data || null); })
+      .catch(() => { /* card falls back to the generic pitch */ });
+    return () => { cancelled = true; };
+  }, [isClient, hidden, currentUser?.id]);
+
+  // Close the card when tapping elsewhere (mobile has no hover-out).
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
+
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+
+  if (hidden) return null;
+
+  const go = () => {
+    setOpen(false);
+    if (isClient) {
+      navigate(SAVINGS_PATH);
+      return;
+    }
+    setPostAuthRedirect(SAVINGS_PATH);
+    setShowAuth(true);
+  };
+
+  const balance = Number(summary?.account?.balanceKes) || 0;
+  const percent = summary?.progress?.percent ?? 0;
+  const unread = summary?.unreadNotifications || 0;
+
+  return (
+    <>
+      <div
+        ref={wrapRef}
+        className="pointer-events-none fixed left-0 top-1/2 -translate-y-1/2 z-[60] flex items-center print:hidden"
+        // Hover-to-open is for mouse users only; touch users tap the tab.
+        onPointerEnter={(e) => { if (e.pointerType === 'mouse') setOpen(true); }}
+        onPointerLeave={(e) => { if (e.pointerType === 'mouse') setOpen(false); }}
+      >
+        {/* The hanging tab */}
+        <button
+          type="button"
+          onClick={() => (open ? go() : setOpen(true))}
+          aria-expanded={open}
+          aria-label="Lipa Mdogo Mdogo — save for your Umrah little by little"
+          className="pointer-events-auto group relative flex flex-col items-center gap-2 rounded-r-2xl bg-gradient-to-b from-emerald-600 via-emerald-700 to-teal-800 px-2 py-3 sm:px-2.5 sm:py-4 text-white shadow-[4px_6px_24px_rgba(4,120,87,0.35)] ring-1 ring-white/20 transition-all duration-300 hover:pl-3.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300"
+        >
+          <span className="relative flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white/15">
+            <PiggyBank className="h-5 w-5 sm:h-5 sm:w-5 text-amber-200" aria-hidden="true" />
+            <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300 opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-300" />
+            </span>
+            {unread > 0 && (
+              <span className="absolute -bottom-1 -right-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
+          </span>
+          <span
+            className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.14em] [writing-mode:vertical-rl] rotate-180 whitespace-nowrap"
+          >
+            Lipa Mdogo Mdogo
+          </span>
+        </button>
+
+        {/* Slide-out card */}
+        <div
+          className={`ml-2 w-[min(17rem,calc(100vw-5rem))] origin-left rounded-2xl border border-emerald-100 bg-white p-4 shadow-2xl transition-all duration-300 ${
+            open ? 'pointer-events-auto translate-x-0 opacity-100' : 'pointer-events-none -translate-x-3 opacity-0'
+          }`}
+          role="dialog"
+          aria-label="Lipa Mdogo Mdogo"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-bold text-gray-900">Lipa Mdogo Mdogo</p>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="-mr-1 -mt-1 rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {isClient && summary ? (
+            <>
+              <p className="mt-1 text-xs text-gray-500">Your Umrah savings</p>
+              <p className="mt-1 text-2xl font-extrabold text-emerald-700">{fmtKes(balance)}</p>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-emerald-50">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-amber-400 transition-all"
+                  style={{ width: `${Math.max(3, percent)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-gray-500">{percent}% of your Umrah goal</p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs leading-relaxed text-gray-600">
+              Save for your Umrah a little at a time — from <strong>KES 100</strong> by M-Pesa or card.
+              When you have enough, pick your package and agent.
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={go}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg"
+          >
+            {isClient ? 'Save now' : 'Start saving'}
+            <ArrowRight className="h-4 w-4" />
+          </button>
+          <p className="mt-2 text-center text-[10px] italic text-gray-400">
+            “The most beloved deeds to Allah are the consistent ones, even if small.”
+          </p>
+        </div>
+      </div>
+
+      {showAuth && (
+        <AuthModal
+          initialAuthType="register"
+          onClose={() => setShowAuth(false)}
+          onAuthSuccess={(user) => {
+            setShowAuth(false);
+            onAuthSuccess?.(user);
+          }}
+        />
+      )}
+    </>
+  );
+}

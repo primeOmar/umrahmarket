@@ -13,6 +13,7 @@ import {
   BookOpen,
   Users,
   Newspaper,
+  PiggyBank,
 } from 'lucide-react';
 import logoImage from '../assets/umramarket.png';
 import AuthModal from './AuthModal';
@@ -51,6 +52,12 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
       path: '/blog',
       icon: <Newspaper className="h-4 w-4" />,
       activeIcon: <Newspaper className="h-4 w-4" fill="currentColor" />,
+    },
+    {
+      label: 'Lipa Mdogo',
+      path: '/lipa-mdogo-mdogo',
+      icon: <PiggyBank className="h-4 w-4" />,
+      activeIcon: <PiggyBank className="h-4 w-4" />,
     },
   ];
 

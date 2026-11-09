@@ -16,7 +16,8 @@ import {
   userStore,
   goTo,
   requestPasswordReset,
-} from '../api';   
+} from '../api';
+import { consumePostAuthRedirect } from '../utils/postAuthRedirect';
 
 // ==================== ANIMATION STYLES ====================
 const animationStyles = `
@@ -887,9 +888,19 @@ AgentForm.displayName = 'AgentForm';
 
 // ==================== MAIN AUTH MODAL COMPONENT ====================
 
-const AuthModal = ({ onClose, onAuthSuccess }) => {
+const AuthModal = ({ onClose, onAuthSuccess: onAuthSuccessProp, initialAuthType = 'login' }) => {
   const [authMode, setAuthMode] = useState('client');
-  const [authType, setAuthType] = useState('login');
+  const [authType, setAuthType] = useState(initialAuthType === 'register' ? 'register' : 'login');
+
+  // Every successful sign-in goes through here. If the pilgrim was headed
+  // somewhere specific before we asked them to sign in (e.g. Lipa Mdogo
+  // Mdogo), send them there — in the same tick as the auth state update so
+  // the homepage's "signed in → dashboard" redirect never wins the race.
+  const onAuthSuccess = useCallback((user) => {
+    onAuthSuccessProp?.(user);
+    const next = consumePostAuthRedirect(user);
+    if (next) goTo(next, undefined, 'AuthModal:post-auth-redirect');
+  }, [onAuthSuccessProp]);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showDocumentUpload, setShowDocumentUpload] = useState(false);
@@ -1107,8 +1118,8 @@ useEffect(() => {
             clearTimeout(redirectTimeoutRef.current);
             setOverlay(null);
             if (hasSession) {
-              onAuthSuccess(user);
-              goTo('/client/dashboard?welcome=true');
+              onAuthSuccessProp?.(user);
+              goTo(consumePostAuthRedirect(user) || '/client/dashboard?welcome=true');
               return;
             }
             onClose();

@@ -25,6 +25,7 @@ const FIXED_ROUTES = [
   { path: '/',            changefreq: 'daily',   priority: '1.0' },
   { path: '/agents',      changefreq: 'daily',   priority: '0.9' },
   { path: '/guidance',    changefreq: 'monthly', priority: '0.7' },
+  { path: '/lipa-mdogo-mdogo', changefreq: 'monthly', priority: '0.8' },
   { path: '/experiences', changefreq: 'monthly', priority: '0.6' },
   { path: '/verified',    changefreq: 'monthly', priority: '0.6' },
 ];

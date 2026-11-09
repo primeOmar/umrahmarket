@@ -29,6 +29,9 @@ import { isEmailVerified } from './utils/emailVerification';
 import Seo from './components/Seo';
 import LandingPage from './components/LandingPage';
 import { LANDING_PAGES } from './seo/landingPagesConfig.js';
+import LipaMdogoPage from './savings/LipaMdogoPage';
+import LipaMdogoFab from './savings/LipaMdogoFab';
+import SavingsCallback from './savings/SavingsCallback';
 
 // window.location.origin doesn't exist during SSR — guarded fallback to the
 // real production origin so the Home route's Seo/jsonLd props (evaluated
@@ -325,6 +328,16 @@ function App({
   return (
     <RouterComponent {...routerProps}>
       <NavigationBridge />
+      {/* Client-only: depends on auth state that doesn't exist during SSR. */}
+      {authReady && (
+        <LipaMdogoFab
+          currentUser={currentUser}
+          onAuthSuccess={(user) => {
+            setCurrentUser(user);
+            userStore.set(user);
+          }}
+        />
+      )}
       <div className="min-h-screen bg-gray-50">
         <Routes>
           {/* Home */}
@@ -572,6 +585,40 @@ function App({
               />
               <Footer />
             </>
+          } />
+
+          {/* Lipa Mdogo Mdogo — pay-little-by-little Umrah savings */}
+          <Route path="/lipa-mdogo-mdogo" element={
+            <>
+              <Header
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <LipaMdogoPage
+                currentUser={currentUser}
+                authReady={authReady}
+                onAuthSuccess={(user) => {
+                  setCurrentUser(user);
+                  userStore.set(user);
+                }}
+              />
+              <Footer />
+            </>
+          } />
+          {/* Pesapal redirects here after a card deposit. */}
+          <Route path="/lipa-mdogo-mdogo/callback" element={
+            <SavingsCallback
+              currentUser={currentUser}
+              authReady={authReady}
+              onAuthSuccess={(user) => {
+                setCurrentUser(user);
+                userStore.set(user);
+              }}
+            />
           } />
 
           <Route path="/agents" element={

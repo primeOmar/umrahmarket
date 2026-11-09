@@ -5,8 +5,9 @@ import {
   Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
   Eye, EyeOff, Lock, MapPin, BookOpen, ExternalLink,
   HelpCircle, Flag, MessagesSquare,ChartNoAxesCombined,
-  Mail, Send, CheckSquare, Square, Newspaper
+  Mail, Send, CheckSquare, Square, Newspaper, PiggyBank
 } from 'lucide-react';
+import SavingsAdminTab from '../savings/SavingsAdminTab';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -695,6 +696,7 @@ const navItems = [
   { id: 'whatsapp',   label: 'WhatsApp',      icon: Send },
   { id: 'audit',      label: 'Audit Logs',   icon: Activity },
   { id: 'accounting', label: 'Accounting',   icon: TrendingUp },
+  { id: 'savings',    label: 'Lipa Mdogo Mdogo', icon: PiggyBank },
   { id: 'settings',   label: 'Settings',     icon: Settings },
 ];
 
@@ -834,6 +836,7 @@ const navItems = [
                     {activeTab === 'complaints' && <ComplaintsTab />}
                   {activeTab === 'tasks'      && <TasksTab />}
                   {activeTab === 'whatsapp'   && <WhatsAppTab />}
+                  {activeTab === 'savings'    && <SavingsAdminTab />}
 {activeTab === 'publicchat' && (
   <PublicChatTab
     conversations={publicChatConversations}

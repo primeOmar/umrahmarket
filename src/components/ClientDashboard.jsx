@@ -13,8 +13,9 @@ import {
   Printer, Bookmark, Flag, HelpCircle, PieChart, TrendingUp,
   Home, Grid, List, SlidersHorizontal, Wifi, Coffee, Car,
   Dumbbell, Utensils, Tv, Wind, Droplets, Bed, Bath,
-  Maximize2, Minus, Plus, Headphones, Loader2, Info
+  Maximize2, Minus, Plus, Headphones, Loader2, Info, PiggyBank
 } from 'lucide-react';
+import { consumePostAuthRedirect } from '../utils/postAuthRedirect';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { userStore, tokenStore, request } from '../api';
 import { getFavourites, toggleFavourite, getAllActivePackages } from './agent/packages/services/packagesApi';
@@ -1931,8 +1932,25 @@ const ClientDashboard = ({ user, onLogout }) => {
     { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount },
     { id: 'packages', icon: Home, label: 'Discover Packages', count: 0 },
     { id: 'custom', icon: Sparkles, label: 'Custom Request', count: 0 },
+    { id: 'savings', icon: PiggyBank, label: 'Lipa Mdogo Mdogo', count: 0 },
     { id: 'settings', icon: Settings, label: 'Settings', count: 0 }
   ];
+
+  // 'savings' lives on its own page — the menu item is just a link there.
+  useEffect(() => {
+    if (activeTab === 'savings') {
+      setActiveTab('overview');
+      navigate('/lipa-mdogo-mdogo');
+    }
+  }, [activeTab, navigate]);
+
+  // Finish any "take me back there after sign-in" intent (e.g. a pilgrim who
+  // tapped Lipa Mdogo Mdogo, confirmed their email, then signed in later).
+  useEffect(() => {
+    const next = consumePostAuthRedirect(userStore.get());
+    if (next && next !== location.pathname) navigate(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [bookingPkg, setBookingPkg] = useState(null);
   const [bookingInitialTravelers, setBookingInitialTravelers] = useState(null);
@@ -2172,6 +2190,15 @@ const ClientDashboard = ({ user, onLogout }) => {
               <p className="text-emerald-100 text-sm sm:text-base mb-4">May your journey to the Holy Lands be blessed and fulfilling.</p>
               <button onClick={() => setActiveTab('packages')} className="px-4 py-2 bg-white text-emerald-600 text-sm font-semibold rounded-lg hover:shadow-lg">Explore Packages →</button>
             </div>
+
+            <button onClick={() => navigate('/lipa-mdogo-mdogo')} className={`w-full flex items-center gap-4 rounded-2xl border p-4 text-left transition hover:shadow-md ${darkMode ? 'border-gray-800 bg-gray-900' : 'border-amber-200 bg-gradient-to-r from-amber-50 to-emerald-50'}`}>
+              <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white"><PiggyBank className="h-6 w-6" /></span>
+              <span className="flex-1">
+                <span className={`block font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Lipa Mdogo Mdogo — save for Umrah little by little</span>
+                <span className={`block text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Deposit any amount by M-Pesa or card and book your package when you're ready.</span>
+              </span>
+              <ChevronRight className="h-5 w-5 text-emerald-600" />
+            </button>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard icon={Calendar} label="Active Bookings" value={stats.activeBookings || bookings.length} color="from-emerald-500 to-teal-600" darkMode={darkMode} loading={loading.bookings} />
