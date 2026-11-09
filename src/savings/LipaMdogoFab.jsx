@@ -5,7 +5,8 @@
 //   signed-out        → create-account modal, then straight to the savings page
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { PiggyBank, X, ArrowRight } from 'lucide-react';
+import { X, ArrowRight } from 'lucide-react';
+import KshIcon from './KshIcon';
 import AuthModal from '../components/AuthModal';
 import { setPostAuthRedirect } from '../utils/postAuthRedirect';
 import { getSavingsSummary, fmtKes, SAVINGS_PATH } from './savingsApi';
@@ -62,6 +63,8 @@ export default function LipaMdogoFab({ currentUser, onAuthSuccess }) {
     setShowAuth(true);
   };
 
+  // The client dashboard has its own fixed bottom menu on phones — sit above it.
+  const onDashboard = location.pathname.startsWith('/client/dashboard');
   const balance = Number(summary?.account?.balanceKes) || 0;
   const percent = summary?.progress?.percent ?? 0;
   const unread = summary?.unreadNotifications || 0;
@@ -70,42 +73,66 @@ export default function LipaMdogoFab({ currentUser, onAuthSuccess }) {
     <>
       <div
         ref={wrapRef}
-        className="pointer-events-none fixed left-0 top-1/2 -translate-y-1/2 z-[60] flex items-center print:hidden"
-        // Hover-to-open is for mouse users only; touch users tap the tab.
+        // Phones: a compact coin in the bottom-left corner (mirrors the chat
+        // launcher on the right) so it never covers page content; above the
+        // tablet bottom nav on sm. md+: the full tab hanging from the left edge.
+        className={`pointer-events-none fixed z-[45] flex flex-col-reverse items-start gap-2 print:hidden
+                   left-4 ${onDashboard ? 'bottom-20' : 'bottom-4'} sm:bottom-24
+                   md:bottom-auto md:left-0 md:top-1/2 md:-translate-y-1/2 md:flex-row md:items-center md:gap-0`}
+        // Hover-to-open is for mouse users only; touch users tap the button.
         onPointerEnter={(e) => { if (e.pointerType === 'mouse') setOpen(true); }}
         onPointerLeave={(e) => { if (e.pointerType === 'mouse') setOpen(false); }}
       >
-        {/* The hanging tab */}
+        {/* Phones: compact floating coin */}
         <button
           type="button"
           onClick={() => (open ? go() : setOpen(true))}
           aria-expanded={open}
           aria-label="Lipa Mdogo Mdogo — save for your Umrah little by little"
-          className="pointer-events-auto group relative flex flex-col items-center gap-2 rounded-r-2xl bg-gradient-to-b from-emerald-600 via-emerald-700 to-teal-800 px-2 py-3 sm:px-2.5 sm:py-4 text-white shadow-[4px_6px_24px_rgba(4,120,87,0.35)] ring-1 ring-white/20 transition-all duration-300 hover:pl-3.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300"
+          className={`lmm-float ${open ? 'lmm-paused' : ''} pointer-events-auto relative flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-emerald-700 to-teal-800 text-white shadow-[0_8px_22px_rgba(4,120,87,0.45)] ring-2 ring-amber-300/80 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300 md:hidden`}
         >
-          <span className="relative flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-white/15">
-            <PiggyBank className="h-5 w-5 sm:h-5 sm:w-5 text-amber-200" aria-hidden="true" />
-            <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300 opacity-75" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-300" />
+          <span className="absolute inset-0 overflow-hidden rounded-full" aria-hidden="true">
+            <span className="lmm-shine absolute inset-y-0 left-0 w-1/3 bg-white/35 blur-[2px]" />
+          </span>
+          <span className="lmm-sway relative"><KshIcon className="h-7 w-7 text-amber-200" /></span>
+          {unread > 0 ? (
+            <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-[18px] text-white ring-2 ring-white">
+              {unread > 9 ? '9+' : unread}
             </span>
+          ) : (
+            <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-amber-300 ring-2 ring-white" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* md+: the hanging tab */}
+        <button
+          type="button"
+          onClick={() => (open ? go() : setOpen(true))}
+          aria-expanded={open}
+          aria-label="Lipa Mdogo Mdogo — save for your Umrah little by little"
+          className={`lmm-float ${open ? 'lmm-paused' : ''} pointer-events-auto group relative hidden flex-col items-center gap-2 overflow-hidden rounded-r-2xl bg-gradient-to-b from-emerald-600 via-emerald-700 to-teal-800 px-2.5 py-4 text-white shadow-[4px_6px_24px_rgba(4,120,87,0.35)] ring-1 ring-white/20 transition-[padding] duration-300 hover:pl-3.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300 md:flex`}
+        >
+          <span className="lmm-shine pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-white/15 blur-[2px]" aria-hidden="true" />
+          <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+            <span className="lmm-sway"><KshIcon className="h-6 w-6 text-amber-200" /></span>
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-300" aria-hidden="true" />
             {unread > 0 && (
               <span className="absolute -bottom-1 -right-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
                 {unread > 9 ? '9+' : unread}
               </span>
             )}
           </span>
-          <span
-            className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.14em] [writing-mode:vertical-rl] rotate-180 whitespace-nowrap"
-          >
+          <span className="relative text-xs font-bold uppercase tracking-[0.14em] [writing-mode:vertical-rl] rotate-180 whitespace-nowrap">
             Lipa Mdogo Mdogo
           </span>
         </button>
 
-        {/* Slide-out card */}
+        {/* Info card — above the coin on phones, beside the tab on md+ */}
         <div
-          className={`ml-2 w-[min(17rem,calc(100vw-5rem))] origin-left rounded-2xl border border-emerald-100 bg-white p-4 shadow-2xl transition-all duration-300 ${
-            open ? 'pointer-events-auto translate-x-0 opacity-100' : 'pointer-events-none -translate-x-3 opacity-0'
+          className={`w-[min(17rem,calc(100vw-2rem))] origin-bottom-left rounded-2xl border border-emerald-100 bg-white p-4 shadow-2xl transition-all duration-300 md:ml-2 md:w-[17rem] md:origin-left ${
+            open
+              ? 'pointer-events-auto translate-x-0 translate-y-0 opacity-100'
+              : 'pointer-events-none translate-y-2 opacity-0 md:translate-y-0 md:-translate-x-3'
           }`}
           role="dialog"
           aria-label="Lipa Mdogo Mdogo"

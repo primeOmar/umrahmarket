@@ -3,7 +3,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
-import { PiggyBank, RefreshCw, Loader, CheckCircle, XCircle, Users, Wallet, Clock, Gift } from 'lucide-react';
+import {  RefreshCw, Loader, CheckCircle, XCircle, Users, Wallet, Clock, Gift } from 'lucide-react';
+import KshIcon from './KshIcon';
 
 const _base = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 const BASE_API = _base.endsWith('/api') ? _base : `${_base}/api`;
@@ -77,7 +78,7 @@ export default function SavingsAdminTab() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white"><PiggyBank className="h-5 w-5" /></div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white"><KshIcon className="h-5 w-5" /></div>
           <div>
             <h2 className="text-lg font-bold text-gray-900">Lipa Mdogo Mdogo</h2>
             <p className="text-xs text-gray-500">Pilgrim Umrah savings</p>
@@ -92,7 +93,7 @@ export default function SavingsAdminTab() {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Stat icon={Wallet} label="Savings held" value={kes(overview.balanceHeldKes)} sub={`${kes(overview.totalDepositedKes)} deposited all-time`} />
           <Stat icon={Users} label="Active savers" value={overview.savers} />
-          <Stat icon={PiggyBank} label="Deposits today" value={kes(overview.depositsTodayKes)} sub={`${overview.depositsTodayCount} deposits · ${kes(overview.depositsMonthKes)} this month`} />
+          <Stat icon={KshIcon} label="Deposits today" value={kes(overview.depositsTodayKes)} sub={`${overview.depositsTodayCount} deposits · ${kes(overview.depositsMonthKes)} this month`} />
           <Stat icon={Gift} label="Surplus to action" value={overview.pendingSurplusCount} sub={kes(overview.pendingSurplusKes)} />
         </div>
       )}

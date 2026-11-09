@@ -174,3 +174,29 @@ input[type="range"]::-moz-range-track {
 }
 .price-flip-in { animation: price-flip-in 0.5s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .price-flip-in { animation: none; } }
+
+/* ── Lipa Mdogo Mdogo floating button ─────────────────────────────────────
+   Gentle float + an occasional coin "sway" and shine so the button draws the
+   eye without being distracting. Disabled for users who prefer less motion. */
+@keyframes lmm-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+@keyframes lmm-sway {
+  0%, 80%, 100% { transform: rotate(0deg) scale(1); }
+  84% { transform: rotate(-14deg) scale(1.08); }
+  88% { transform: rotate(11deg) scale(1.08); }
+  92% { transform: rotate(-6deg) scale(1.04); }
+  96% { transform: rotate(3deg) scale(1); }
+}
+@keyframes lmm-shine {
+  0%, 65% { transform: translateX(-160%) skewX(-20deg); }
+  100%    { transform: translateX(260%) skewX(-20deg); }
+}
+.lmm-float { animation: lmm-float 3.4s ease-in-out infinite; }
+.lmm-sway  { animation: lmm-sway 5.5s ease-in-out infinite; transform-origin: 50% 50%; }
+.lmm-shine { animation: lmm-shine 5.5s ease-in-out infinite; }
+.lmm-paused, .lmm-paused * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  .lmm-float, .lmm-sway, .lmm-shine { animation: none !important; }
+}

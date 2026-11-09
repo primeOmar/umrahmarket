@@ -6,11 +6,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import {
-  PiggyBank, Smartphone, CreditCard, Loader2, CheckCircle2, XCircle, ShieldCheck,
+import {  Smartphone, CreditCard, Loader2, CheckCircle2, XCircle, ShieldCheck,
   ShieldAlert, Bell, Download, Target, Pencil, ArrowRight, Plane, Utensils, Gift,
   RefreshCw, Sparkles, Wallet, History, Info,
 } from 'lucide-react';
+import KshIcon from './KshIcon';
 import AuthModal from '../components/AuthModal';
 import Seo from '../components/Seo';
 import { setPostAuthRedirect } from '../utils/postAuthRedirect';
@@ -102,7 +102,7 @@ function Landing({ onAuthSuccess }) {
       <section className="container mx-auto px-4 sm:px-6 pt-10 pb-12 sm:pt-16">
         <div className="mx-auto max-w-3xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
-            <PiggyBank className="h-4 w-4" /> Lipa Mdogo Mdogo
+            <KshIcon className="h-4 w-4" /> Lipa Mdogo Mdogo
           </span>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
             Save for your Umrah, <span className="text-emerald-600">little by little</span>
@@ -160,7 +160,7 @@ function Landing({ onAuthSuccess }) {
 function AgentNotice() {
   return (
     <div className="container mx-auto px-4 py-20 text-center">
-      <PiggyBank className="mx-auto h-10 w-10 text-emerald-600" />
+      <KshIcon className="mx-auto h-10 w-10 text-emerald-600" />
       <h1 className="mt-4 text-2xl font-bold text-gray-900">Lipa Mdogo Mdogo is for pilgrims</h1>
       <p className="mx-auto mt-2 max-w-md text-gray-600">
         Savings accounts are available on pilgrim accounts. Pilgrims who save with us can book your packages directly from their savings.
@@ -230,7 +230,7 @@ function SavingsDashboard({ user }) {
         <div className="mb-6 flex items-start justify-between gap-3">
           <div>
             <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-700">
-              <PiggyBank className="h-4 w-4" /> Lipa Mdogo Mdogo
+              <KshIcon className="h-4 w-4" /> Lipa Mdogo Mdogo
             </p>
             <h1 className="mt-1 text-2xl font-extrabold text-gray-900 sm:text-3xl">
               Assalamu Alaikum, {user.firstName || 'Pilgrim'}
@@ -1044,7 +1044,7 @@ function HistorySection({ transactions }) {
           {transactions.map((t) => (
             <li key={t.id} className="flex items-center gap-3 px-4 py-3">
               <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${t.direction === 'CREDIT' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
-                {t.direction === 'CREDIT' ? <PiggyBank className="h-4 w-4" /> : <Plane className="h-4 w-4" />}
+                {t.direction === 'CREDIT' ? <KshIcon className="h-4 w-4" /> : <Plane className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-gray-900">

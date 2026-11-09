@@ -13,8 +13,9 @@ import {
   Printer, Bookmark, Flag, HelpCircle, PieChart, TrendingUp,
   Home, Grid, List, SlidersHorizontal, Wifi, Coffee, Car,
   Dumbbell, Utensils, Tv, Wind, Droplets, Bed, Bath,
-  Maximize2, Minus, Plus, Headphones, Loader2, Info, PiggyBank
+  Maximize2, Minus, Plus, Headphones, Loader2, Info
 } from 'lucide-react';
+import KshIcon from '../savings/KshIcon';
 import { consumePostAuthRedirect } from '../utils/postAuthRedirect';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { userStore, tokenStore, request } from '../api';
@@ -1932,7 +1933,7 @@ const ClientDashboard = ({ user, onLogout }) => {
     { id: 'messages', icon: MessageCircle, label: 'Messages', count: unreadCount },
     { id: 'packages', icon: Home, label: 'Discover Packages', count: 0 },
     { id: 'custom', icon: Sparkles, label: 'Custom Request', count: 0 },
-    { id: 'savings', icon: PiggyBank, label: 'Lipa Mdogo Mdogo', count: 0 },
+    { id: 'savings', icon: KshIcon, label: 'Lipa Mdogo Mdogo', count: 0 },
     { id: 'settings', icon: Settings, label: 'Settings', count: 0 }
   ];
 
@@ -2192,7 +2193,7 @@ const ClientDashboard = ({ user, onLogout }) => {
             </div>
 
             <button onClick={() => navigate('/lipa-mdogo-mdogo')} className={`w-full flex items-center gap-4 rounded-2xl border p-4 text-left transition hover:shadow-md ${darkMode ? 'border-gray-800 bg-gray-900' : 'border-amber-200 bg-gradient-to-r from-amber-50 to-emerald-50'}`}>
-              <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white"><PiggyBank className="h-6 w-6" /></span>
+              <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white"><KshIcon className="h-6 w-6" /></span>
               <span className="flex-1">
                 <span className={`block font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Lipa Mdogo Mdogo — save for Umrah little by little</span>
                 <span className={`block text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Deposit any amount by M-Pesa or card and book your package when you're ready.</span>

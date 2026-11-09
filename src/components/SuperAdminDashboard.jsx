@@ -5,8 +5,9 @@ import {
   Download, RefreshCw, CheckCircle, XCircle, Loader, AlertTriangle,
   Eye, EyeOff, Lock, MapPin, BookOpen, ExternalLink,
   HelpCircle, Flag, MessagesSquare,ChartNoAxesCombined,
-  Mail, Send, CheckSquare, Square, Newspaper, PiggyBank
+  Mail, Send, CheckSquare, Square, Newspaper
 } from 'lucide-react';
+import KshIcon from '../savings/KshIcon';
 import SavingsAdminTab from '../savings/SavingsAdminTab';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -696,7 +697,7 @@ const navItems = [
   { id: 'whatsapp',   label: 'WhatsApp',      icon: Send },
   { id: 'audit',      label: 'Audit Logs',   icon: Activity },
   { id: 'accounting', label: 'Accounting',   icon: TrendingUp },
-  { id: 'savings',    label: 'Lipa Mdogo Mdogo', icon: PiggyBank },
+  { id: 'savings',    label: 'Lipa Mdogo Mdogo', icon: KshIcon },
   { id: 'settings',   label: 'Settings',     icon: Settings },
 ];
 

@@ -12,9 +12,9 @@ import {
   Globe,
   BookOpen,
   Users,
-  Newspaper,
-  PiggyBank,
+  Newspaper, 
 } from 'lucide-react';
+import KshIcon from '../savings/KshIcon';
 import logoImage from '../assets/umramarket.png';
 import AuthModal from './AuthModal';
 
@@ -56,8 +56,8 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
     {
       label: 'Lipa Mdogo',
       path: '/lipa-mdogo-mdogo',
-      icon: <PiggyBank className="h-4 w-4" />,
-      activeIcon: <PiggyBank className="h-4 w-4" />,
+      icon: <KshIcon className="h-4 w-4" />,
+      activeIcon: <KshIcon className="h-4 w-4" />,
     },
   ];
 
