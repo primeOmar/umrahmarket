@@ -419,14 +419,14 @@ function App({
                 {initialPathname === '/' && (
                   <section className="border-t border-emerald-100/70 bg-white">
                     <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-7">
-                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-4 sm:px-5 py-4 sm:py-5">
+                      <div className="mx-auto max-w-5xl rounded-2xl border border-emerald-100 bg-emerald-50/40 px-4 sm:px-5 py-4 sm:py-5 text-center">
                         <h2 className="text-sm sm:text-base font-semibold text-gray-900">
                           Find verified Umrah packages in Kenya and Hajj packages in Kenya
                         </h2>
-                        <p className="mt-1.5 text-sm text-gray-600 leading-relaxed max-w-4xl">
+                        <p className="mx-auto mt-1.5 text-sm text-gray-600 leading-relaxed max-w-4xl">
                           Compare package prices, hotel details in Makkah and Madinah, inclusions, and verified agent credentials in one place. Popular searches include umrah packages kenya and hajj package kenya.
                         </p>
-                        <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2.5">
                           <Link
                             to="/guidance"
                             className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-white px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"

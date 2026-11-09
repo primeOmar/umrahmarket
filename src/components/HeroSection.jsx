@@ -547,7 +547,10 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
       {/* Sticky filter bar — compact single row, overlaps content via sticky+z-index */}
       <div className={`sticky top-16 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-100 transition-shadow duration-300 ${isScrolled ? 'shadow-sm' : ''}`}>
         <div className="container mx-auto px-3 sm:px-6">
-          <div className="flex items-center gap-1.5 py-2 overflow-x-auto scrollbar-none">
+          {/* Centred row. Auto margins on the first/last child (rather than
+              justify-center) keep it centred when it fits, but let it scroll
+              from the very first pill when it overflows on small screens. */}
+          <div className="flex items-center gap-1.5 py-2 overflow-x-auto scrollbar-none [&>*:first-child]:ml-auto [&>*:last-child]:mr-auto">
 
             {/* Filter group pills */}
             {filterGroups.map((group) => (
@@ -629,10 +632,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
               )}
             </div>
 
-            {/* Spacer */}
-            <div className="flex-1" />
-
-            {/* Package count + clear — always visible on right */}
+            {/* Clear — sits right after the filters so the whole row stays centred */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* <span className="text-xs text-gray-500 whitespace-nowrap">
                 {filterLoading
@@ -858,7 +858,7 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
                   </div>
                 )}
 
-                <div className="mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                <div className="mx-auto mt-8 flex max-w-3xl flex-col items-center gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-center sm:flex-row sm:justify-between sm:text-left">
                   <div>
                     <p className="font-semibold text-sm text-amber-900">Can't find what you're looking for?</p>
                     <p className="text-xs text-amber-700">Tell us your dates, hotels and budget and agents will send you offers.</p>
