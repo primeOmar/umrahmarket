@@ -56,6 +56,8 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
     {
       label: 'Lipa Mdogo',
       path: '/lipa-mdogo-mdogo',
+      // Desktop header only — on phones/tablets the floating KSh coin is the entry point.
+      desktopOnly: true,
       icon: <KshIcon className="h-4 w-4" />,
       activeIcon: <KshIcon className="h-4 w-4" />,
     },
@@ -139,21 +141,23 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
               </Link>
             </div>
 
-            {/* ── Desktop Nav (centered, lg+) ── */}
-            <nav className="hidden lg:flex absolute left-1/2 -translate-x-1/2">
-              <div className="flex space-x-1 bg-gray-50/80 backdrop-blur-sm rounded-2xl p-1.5 border border-gray-200/60 shadow-sm">
+            {/* ── Desktop Nav (lg+) — in normal flow, centred in the space between
+                 the logo and the right-hand actions, so it can never overlap them. ── */}
+            <nav className="hidden lg:flex flex-1 min-w-0 justify-center mx-3 2xl:mx-6">
+              <div className="flex gap-0.5 xl:gap-1 bg-gray-50/80 backdrop-blur-sm rounded-2xl p-1.5 border border-gray-200/60 shadow-sm">
                 {navigationItems.map((item) => (
                   <Link
                     key={item.label}
                     to={item.path}
                     onClick={() => goToNav(item)}
-                    className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${
+                    className={`flex items-center gap-2 px-3 2xl:px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${
                       activeNav === item.label
                         ? 'bg-white text-emerald-700 shadow-lg shadow-emerald-100/50 border border-emerald-100/30'
                         : 'text-gray-600 hover:text-emerald-600 hover:bg-white/50'
                     }`}
                   >
-                    <span className={activeNav === item.label ? 'text-emerald-600' : 'text-gray-400'}>
+                    {/* Icons from xl up — on smaller laptops the labels alone keep it on one line */}
+                    <span className={`hidden xl:inline ${activeNav === item.label ? 'text-emerald-600' : 'text-gray-400'}`}>
                       {activeNav === item.label ? item.activeIcon : item.icon}
                     </span>
                     <span>{item.label}</span>
@@ -163,7 +167,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
             </nav>
 
             {/* ── Right actions ── */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-shrink-0 items-center gap-2">
 
               {/* Custom package — 2xl+ only so the centered nav never collides */}
               <Link
@@ -174,10 +178,10 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
                 <span className="text-xs font-semibold text-amber-700">Custom Package</span>
               </Link>
 
-              {/* Verified badge — lg+ only */}
+              {/* Verified badge — xl+ only, so the nav has room on smaller laptops */}
               <Link
                 to="/verified"
-                className="hidden lg:flex items-center px-3 py-2 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/50 hover:border-emerald-300 hover:from-emerald-100 hover:to-teal-100/60 transition-all duration-300 cursor-pointer"
+                className="hidden xl:flex flex-shrink-0 whitespace-nowrap items-center px-3 py-2 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50/50 border border-emerald-100/50 hover:border-emerald-300 hover:from-emerald-100 hover:to-teal-100/60 transition-all duration-300 cursor-pointer"
               >
                 <Shield className="h-3.5 w-3.5 text-emerald-600 mr-1.5" />
                 <span className="text-xs font-semibold text-emerald-700">Verified</span>
@@ -273,7 +277,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
       {/* ── Tablet bottom nav (sm → lg) ── */}
       <div className="hidden sm:flex lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
         <div className="flex justify-around w-full px-2 py-2">
-          {navigationItems.map((item) => (
+          {navigationItems.filter((i) => !i.desktopOnly).map((item) => (
             <Link
               key={item.label}
               to={item.path}
@@ -342,7 +346,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
 
         {/* Nav links */}
         <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
-          {navigationItems.map((item) => (
+          {navigationItems.filter((i) => !i.desktopOnly).map((item) => (
             <Link
               key={item.label}
               to={item.path}
@@ -403,7 +407,7 @@ const Header = ({ currentUser, onLogout, onAuthSuccess }) => {
       {/* ── Mobile bottom nav bar ── */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]">
         <div className="flex justify-around px-2 py-2">
-          {navigationItems.map((item) => (
+          {navigationItems.filter((i) => !i.desktopOnly).map((item) => (
             <Link
               key={item.label}
               to={item.path}

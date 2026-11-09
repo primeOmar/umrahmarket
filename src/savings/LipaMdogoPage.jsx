@@ -22,7 +22,31 @@ import {
 } from './savingsApi';
 
 const SITE_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'https://www.umrahmarket.net';
-const QUICK_AMOUNTS = [500, 1000, 2000, 5000];
+// Suggested plans — saving weekly or monthly is far easier to keep up than daily.
+const WEEKLY_KES = 3000;
+const MONTHLY_KES = 12000;
+const QUICK_AMOUNTS = [
+  { amount: 1000 },
+  { amount: WEEKLY_KES, tag: 'Weekly' },
+  { amount: 5000 },
+  { amount: MONTHLY_KES, tag: 'Monthly' },
+];
+const SAVING_PLANS = [
+  { id: 'weekly', label: 'Weekly', amount: WEEKLY_KES, per: 'a week', periodsPerYear: 52, unit: 'week' },
+  { id: 'monthly', label: 'Monthly', amount: MONTHLY_KES, per: 'a month', periodsPerYear: 12, unit: 'month' },
+];
+
+/** "about 11 months" / "about 1 year and 2 months" for a weekly/monthly plan. */
+const timeToGoal = (remainingKes, plan) => {
+  if (remainingKes <= 0) return null;
+  const periods = Math.ceil(remainingKes / plan.amount);
+  const months = plan.unit === 'week' ? Math.ceil((periods * 12) / 52) : periods;
+  if (plan.unit === 'week' && periods < 9) return `about ${periods} week${periods === 1 ? '' : 's'}`;
+  if (months < 12) return `about ${months} month${months === 1 ? '' : 's'}`;
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return `about ${y} year${y === 1 ? '' : 's'}${m ? ` and ${m} month${m === 1 ? '' : 's'}` : ''}`;
+};
 const POLL_MS = 3000;
 const POLL_TIMEOUT_MS = 120_000;
 
@@ -72,7 +96,7 @@ export default function LipaMdogoPage({ currentUser, authReady, onAuthSuccess })
     <>
       <Seo
         title="Lipa Mdogo Mdogo — Save for Umrah Little by Little | UmrahMarket"
-        description="Save for your Umrah a little at a time with M-Pesa or card. Get a receipt on email and WhatsApp for every deposit, then book a verified Umrah package with your savings."
+        description="Save for your Umrah weekly or monthly — e.g. KES 3,000 a week — with M-Pesa or card. Get a receipt on email and WhatsApp for every deposit, then book a verified Umrah package with your savings."
         canonical={`${SITE_ORIGIN}${SAVINGS_PATH}`}
       />
       {!currentUser && <Landing onAuthSuccess={onAuthSuccess} />}
@@ -92,7 +116,7 @@ function Landing({ onAuthSuccess }) {
   };
 
   const steps = [
-    { icon: Smartphone, title: 'Save any amount', body: 'Deposit from KES 100 by M-Pesa or bank card — daily, weekly, whenever you can.' },
+    { icon: Smartphone, title: 'Save weekly or monthly', body: 'Pick a pace that suits you — like KES 3,000 every week or KES 12,000 every month — and pay by M-Pesa or bank card.' },
     { icon: Bell, title: 'Receipt every time', body: 'Get a receipt by email and WhatsApp with your new balance and a word of encouragement.' },
     { icon: Plane, title: 'Book your Umrah', body: 'When you have enough, choose a verified package and agent. We deduct it from your savings.' },
   ];
@@ -108,7 +132,7 @@ function Landing({ onAuthSuccess }) {
             Save for your Umrah, <span className="text-emerald-600">little by little</span>
           </h1>
           <p className="mx-auto mt-4 max-w-xl text-base text-gray-600 sm:text-lg">
-            Put aside a small amount whenever you can. When your savings reach the cost of a package — usually USD 1,000 to 1,500 — book your Umrah with a verified agent.
+            Set aside a fixed amount every week or month — for example <strong className="text-gray-800">KES 3,000 a week</strong>. When your savings reach the cost of a package — usually USD 1,000 to 1,500 — book your Umrah with a verified agent.
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button
@@ -135,6 +159,23 @@ function Landing({ onAuthSuccess }) {
               <p className="mt-1 text-sm text-gray-600">{body}</p>
             </div>
           ))}
+        </div>
+
+        {/* Example plans */}
+        <div className="mx-auto mt-10 max-w-4xl">
+          <h2 className="text-center text-lg font-bold text-gray-900">Choose a plan you can keep</h2>
+          <p className="mt-1 text-center text-sm text-gray-600">No need to save every day — a steady weekly or monthly amount gets you there.</p>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {SAVING_PLANS.map((plan) => (
+              <div key={plan.id} className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">{plan.label}</p>
+                <p className="mt-1 text-2xl font-extrabold text-gray-900">{fmtKes(plan.amount)} <span className="text-sm font-medium text-gray-500">{plan.per}</span></p>
+                <p className="mt-2 text-sm text-gray-600">
+                  Saves about <strong>{fmtKes(plan.amount * plan.periodsPerYear)}</strong> in a year — around the cost of a typical Umrah package.
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
 
         <figure className="mx-auto mt-10 max-w-2xl rounded-2xl border border-amber-200 bg-amber-50/60 p-5 text-center">
@@ -186,7 +227,11 @@ function SavingsDashboard({ user }) {
       setSummary(r.data);
       setLoadError(null);
     } catch (err) {
-      setLoadError(errorMessage(err, 'Could not load your savings.'));
+      // 404 = the API doesn't have the savings routes (backend not deployed
+      // yet) — say so plainly instead of the raw "Endpoint not found".
+      setLoadError(err?.status === 404
+        ? 'Lipa Mdogo Mdogo is being set up and will be available shortly. Please check back soon.'
+        : errorMessage(err, 'Could not load your savings.'));
     }
   }, []);
 
@@ -344,7 +389,7 @@ function SavingsDashboard({ user }) {
 // ── Deposit ──────────────────────────────────────────────────────────────────
 function DepositPanel({ summary, onCredited }) {
   const { limits, passport } = summary;
-  const [amount, setAmount] = useState('1000');
+  const [amount, setAmount] = useState(String(WEEKLY_KES));
   const [method, setMethod] = useState('MPESA');
   const [phone, setPhone] = useState(() => toLocalPhone(summary.registeredPhone));
   const [phase, setPhase] = useState('idle'); // idle | sending | waiting | success | failed | timeout
@@ -504,7 +549,9 @@ function DepositPanel({ summary, onCredited }) {
           <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
             <Wallet className="h-5 w-5 text-emerald-600" /> Save towards your Umrah
           </h2>
-          <p className="mt-1 text-sm text-gray-500">Any amount from {fmtKes(limits.minDepositKes)}. Small and steady wins.</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Save weekly or monthly — for example {fmtKes(WEEKLY_KES)} a week or {fmtKes(MONTHLY_KES)} a month. Any amount from {fmtKes(limits.minDepositKes)} works.
+          </p>
 
           <label htmlFor="lmm-amount" className="mt-5 block text-xs font-semibold text-gray-600">Amount (KES)</label>
           <div className="relative mt-1">
@@ -518,7 +565,7 @@ function DepositPanel({ summary, onCredited }) {
             />
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {QUICK_AMOUNTS.map((a) => (
+            {QUICK_AMOUNTS.map(({ amount: a, tag }) => (
               <button
                 key={a}
                 type="button"
@@ -526,6 +573,7 @@ function DepositPanel({ summary, onCredited }) {
                 className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${amountNum === a ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-600 hover:border-emerald-300'}`}
               >
                 {a.toLocaleString()}
+                {tag && <span className="ml-1 font-medium text-emerald-600">· {tag}</span>}
               </button>
             ))}
           </div>
@@ -635,6 +683,15 @@ function BalanceCard({ account, progress, quote, onGoalSaved }) {
             ? 'Alhamdulillah — you can book your Umrah now! Choose a package below.'
             : `${fmtKes(progress.remainingKes)} to go.`}
         </p>
+        {!progress.reached && (
+          <ul className="mt-2 space-y-0.5 text-[11px] text-emerald-100/90">
+            {SAVING_PLANS.map((plan) => (
+              <li key={plan.id}>
+                At <strong className="text-white">{fmtKes(plan.amount)} {plan.per}</strong>: {timeToGoal(progress.remainingKes, plan)}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {editing ? (

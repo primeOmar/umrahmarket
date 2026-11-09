@@ -2107,13 +2107,38 @@ const ClientDashboard = ({ user, onLogout }) => {
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const whatsappPromptShown = React.useRef(false);
 
+  // "Later" snoozes the prompt for a few days instead of re-asking every login.
+  const WHATSAPP_SNOOZE_KEY = `whatsapp_prompt_snoozed_until:${user?.id || ''}`;
+  const WHATSAPP_SNOOZE_MS = 3 * 24 * 60 * 60 * 1000;
+
   useEffect(() => {
     if (!user?.id || whatsappPromptShown.current) return;
-    if (!currentUser) return; // wait for the real profile, not just the login stub
-    if (!currentUser.phone) {
-      whatsappPromptShown.current = true;
-      setShowWhatsAppModal(true);
-    }
+    if (!currentUser) return;
+    if (currentUser.phone) return; // number already on file
+
+    try {
+      if (Number(localStorage.getItem(WHATSAPP_SNOOZE_KEY)) > Date.now()) return;
+    } catch { /* storage unavailable — fall through */ }
+
+    // The cached login user can be missing `phone` even when the profile has
+    // one (older sessions / backends didn't include it), which made this
+    // prompt reappear on every login even after the number was saved. Ask the
+    // server for the real profile before deciding.
+    whatsappPromptShown.current = true;
+    request({ method: 'get', url: '/auth/me' })
+      .then((res) => {
+        const fresh = res?.data?.data?.user;
+        if (fresh?.phone) {
+          const merged = { ...currentUser, ...fresh };
+          setCurrentUser(merged);
+          userStore.set(merged);
+          window.dispatchEvent(new Event('auth:user-updated'));
+          return;
+        }
+        setShowWhatsAppModal(true);
+      })
+      .catch(() => { /* can't confirm — don't nag */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, currentUser]);
 
   // ── Post-booking details modal (contacts / next-of-kin / passport photo) ──
@@ -2574,13 +2599,21 @@ const ClientDashboard = ({ user, onLogout }) => {
         <WhatsAppNumberModal
           onSaved={(updatedUser) => {
             if (updatedUser) {
-              setCurrentUser(updatedUser);
-              userStore.set(updatedUser);
+              // Merge so login-only fields (emailVerified, etc.) aren't lost,
+              // and tell App.jsx so its copy of the user has the phone too —
+              // otherwise the next remount of this dashboard re-asks.
+              const merged = { ...(currentUser || {}), ...updatedUser };
+              setCurrentUser(merged);
+              userStore.set(merged);
+              window.dispatchEvent(new Event('auth:user-updated'));
             }
             setShowWhatsAppModal(false);
             showToast('WhatsApp number saved', 'success');
           }}
-          onSkip={() => setShowWhatsAppModal(false)}
+          onSkip={() => {
+            try { localStorage.setItem(WHATSAPP_SNOOZE_KEY, String(Date.now() + WHATSAPP_SNOOZE_MS)); } catch { /* ignore */ }
+            setShowWhatsAppModal(false);
+          }}
         />
       )}
 

@@ -63,8 +63,6 @@ export default function LipaMdogoFab({ currentUser, onAuthSuccess }) {
     setShowAuth(true);
   };
 
-  // The client dashboard has its own fixed bottom menu on phones — sit above it.
-  const onDashboard = location.pathname.startsWith('/client/dashboard');
   const balance = Number(summary?.account?.balanceKes) || 0;
   const percent = summary?.progress?.percent ?? 0;
   const unread = summary?.unreadNotifications || 0;
@@ -73,11 +71,11 @@ export default function LipaMdogoFab({ currentUser, onAuthSuccess }) {
     <>
       <div
         ref={wrapRef}
-        // Phones: a compact coin in the bottom-left corner (mirrors the chat
-        // launcher on the right) so it never covers page content; above the
-        // tablet bottom nav on sm. md+: the full tab hanging from the left edge.
+        // Phones/tablets: a compact coin bottom-left, just above the bottom nav
+        // bar (site header and client dashboard both have one), so it never
+        // covers page content. md+: the full tab hanging from the left edge.
         className={`pointer-events-none fixed z-[45] flex flex-col-reverse items-start gap-2 print:hidden
-                   left-4 ${onDashboard ? 'bottom-20' : 'bottom-4'} sm:bottom-24
+                   left-3 bottom-[5.25rem] sm:left-4 sm:bottom-24
                    md:bottom-auto md:left-0 md:top-1/2 md:-translate-y-1/2 md:flex-row md:items-center md:gap-0`}
         // Hover-to-open is for mouse users only; touch users tap the button.
         onPointerEnter={(e) => { if (e.pointerType === 'mouse') setOpen(true); }}
@@ -91,6 +89,9 @@ export default function LipaMdogoFab({ currentUser, onAuthSuccess }) {
           aria-label="Lipa Mdogo Mdogo — save for your Umrah little by little"
           className={`lmm-float ${open ? 'lmm-paused' : ''} pointer-events-auto relative flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-emerald-700 to-teal-800 text-white shadow-[0_8px_22px_rgba(4,120,87,0.45)] ring-2 ring-amber-300/80 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300 md:hidden`}
         >
+          {/* Ripple rings that pulse outward so the coin is hard to miss */}
+          <span className="lmm-halo pointer-events-none absolute inset-0 rounded-full border-2 border-amber-300" aria-hidden="true" />
+          <span className="lmm-halo lmm-halo-delay pointer-events-none absolute inset-0 rounded-full border-2 border-emerald-400" aria-hidden="true" />
           <span className="absolute inset-0 overflow-hidden rounded-full" aria-hidden="true">
             <span className="lmm-shine absolute inset-y-0 left-0 w-1/3 bg-white/35 blur-[2px]" />
           </span>
@@ -163,7 +164,7 @@ export default function LipaMdogoFab({ currentUser, onAuthSuccess }) {
             </>
           ) : (
             <p className="mt-1 text-xs leading-relaxed text-gray-600">
-              Save for your Umrah a little at a time — from <strong>KES 100</strong> by M-Pesa or card.
+              Save for your Umrah weekly or monthly — like <strong>KES 3,000 a week</strong> — by M-Pesa or card.
               When you have enough, pick your package and agent.
             </p>
           )}

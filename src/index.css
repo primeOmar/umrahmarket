@@ -200,3 +200,23 @@ input[type="range"]::-moz-range-track {
 @media (prefers-reduced-motion: reduce) {
   .lmm-float, .lmm-sway, .lmm-shine { animation: none !important; }
 }
+
+/* Ripple that pulses out from the phone coin every few seconds. */
+@keyframes lmm-halo {
+  0%   { transform: scale(1);   opacity: 0.85; }
+  70%  { transform: scale(1.75); opacity: 0; }
+  100% { transform: scale(1.75); opacity: 0; }
+}
+.lmm-halo { animation: lmm-halo 2.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite; }
+.lmm-halo-delay { animation-delay: 1.4s; }
+@media (prefers-reduced-motion: reduce) {
+  .lmm-halo { animation: none !important; opacity: 0; }
+}
+
+/* Homepage package grid cell. The grid is a centred flex-wrap (so a short last
+   row is centred); these widths reproduce the old 2/3/4/5-column grid exactly,
+   including the gap (gap-3 = 0.75rem on phones, gap-4 = 1rem from sm). */
+.pkg-cell { width: calc((100% - 0.75rem) / 2); }
+@media (min-width: 640px)  { .pkg-cell { width: calc((100% - 2rem) / 3); } }
+@media (min-width: 1024px) { .pkg-cell { width: calc((100% - 3rem) / 4); } }
+@media (min-width: 1280px) { .pkg-cell { width: calc((100% - 4rem) / 5); } }

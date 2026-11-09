@@ -720,11 +720,15 @@ const HeroSection = ({ packages = [], loading, error, onRetry, toggleFavorite, f
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                {/* Wrapping flex instead of a fixed grid so a short last row (or a
+                    page with only a few packages) is centred instead of hugging
+                    the left edge. Card widths match the old 2/3/4/5 columns
+                    exactly, accounting for the gap, so full rows look the same. */}
+                <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
                 {paginatedPackages.map((pkg) => (
                   <div
                     key={pkg.id}
-                    className="group cursor-pointer"
+                    className="pkg-cell group cursor-pointer min-w-0"
                     onClick={() => handleViewDetails(pkg.id, pkg.title || pkg.name)}
                     role="button"
                     tabIndex={0}

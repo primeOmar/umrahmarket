@@ -297,6 +297,18 @@ function App({
     return () => window.removeEventListener('auth:email-verified', onEmailVerified);
   }, []);
 
+  // Profile changes made deep in the tree (e.g. saving a WhatsApp number on
+  // the client dashboard) write userStore and fire this, so App's copy of the
+  // user stays current and remounted pages don't re-prompt for saved details.
+  useEffect(() => {
+    const onUserUpdated = () => {
+      const refreshed = userStore.get();
+      if (refreshed) setCurrentUser(refreshed);
+    };
+    window.addEventListener('auth:user-updated', onUserUpdated);
+    return () => window.removeEventListener('auth:user-updated', onUserUpdated);
+  }, []);
+
   // ── Inactivity timeout — log out after 30 min of no interaction ───────────
   useEffect(() => {
     const TIMEOUT = 30 * 60 * 1000; // 30 minutes
