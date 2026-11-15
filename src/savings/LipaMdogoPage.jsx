@@ -117,7 +117,7 @@ function Landing({ onAuthSuccess }) {
 
   const steps = [
     { icon: Smartphone, title: 'Save weekly or monthly', body: 'Pick a pace that suits you — like KES 3,000 every week or KES 12,000 every month — and pay by M-Pesa or bank card.' },
-    { icon: Bell, title: 'Receipt every time', body: 'Get a receipt by email and WhatsApp with your new balance and a word of encouragement.' },
+    { icon: Bell, title: 'Receipt every time', body: 'Get a receipt by email and WhatsApp with your new balance.' },
     { icon: Plane, title: 'Book your Umrah', body: 'When you have enough, choose a verified package and agent. We deduct it from your savings.' },
   ];
 

@@ -1136,7 +1136,7 @@ const navItems = [
             <p className="text-sm font-medium text-red-800">This action cannot be undone</p>
           </div>
           <p className="text-sm text-gray-600 mb-1">Package: <strong>{selectedPackage?.name}</strong></p>
-          <p className="text-sm text-gray-600 mb-4">Price: <strong>KES {selectedPackage?.price?.toLocaleString()}</strong></p>
+          <p className="text-sm text-gray-600 mb-4">Price: <strong>USD {selectedPackage?.price?.toLocaleString()}</strong></p>
           <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
           <textarea
             value={closeReason}
@@ -2019,7 +2019,7 @@ const PackagesTab = ({ packages, onSelectPackage }) => (
             <tr key={pkg.id} className="hover:bg-gray-50 transition-colors">
               <Td><span className="font-medium text-gray-900">{pkg.name}</span></Td>
               <Td>{pkg.type}</Td>
-              <Td>KES {pkg.price?.toLocaleString()}</Td>
+              <Td>USD {pkg.price?.toLocaleString()}</Td>
               <Td>{pkg.bookingCount ?? 0}</Td>
               <Td>{pkg.createdByName || '—'}</Td>
               <Td>
