@@ -232,9 +232,10 @@ const CreateTaskModal = ({ admins, onClose, onCreated }) => {
   const [description, setDescription] = useState('');
   const [deadline, setDeadline] = useState('');
   const [offsets, setOffsets] = useState([72, 24, 3]);
-  const [stages, setStages] = useState([{ title: '', weightPercent: '' }]);
+  const [stages, setStages] = useState([{ title: '', weightPercent: '100' }]);
   const [assigneeIds, setAssigneeIds] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const weightSum = useMemo(() => stages.reduce((s, x) => s + (Number(x.weightPercent) || 0), 0), [stages]);
 
@@ -251,15 +252,18 @@ const CreateTaskModal = ({ admins, onClose, onCreated }) => {
   const toggleAssignee = (id) => setAssigneeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const submit = async () => {
-    if (!title.trim()) return toast.error('Title is required');
-    if (!deadline) return toast.error('Deadline is required');
-    if (stages.some(s => !s.title.trim() || !s.weightPercent)) return toast.error('Every stage needs a title and a weight');
-    if (Math.abs(weightSum - 100) > 0.01) return toast.error(`Stage weights must total 100% (currently ${weightSum}%)`);
-    if (assigneeIds.length === 0) return toast.error('Assign at least one admin');
+    const fail = (msg) => { setFormError(msg); toast.error(msg); };
+    setFormError('');
+    if (!title.trim()) return fail('Title is required');
+    if (!deadline) return fail('Deadline is required');
+    if (new Date(deadline).getTime() <= Date.now()) return fail('Deadline must be in the future');
+    if (stages.some(s => !s.title.trim())) return fail('Every stage needs a title');
+    if (stages.some(s => !(Number(s.weightPercent) > 0))) return fail('Every stage needs a weight above 0%');
+    if (Math.abs(weightSum - 100) > 0.01) return fail(`Stage weights must total 100% (currently ${Math.round(weightSum * 100) / 100}%). Tip: click "Split evenly".`);
+    if (assigneeIds.length === 0) return fail('Select at least one admin under "Assign to"');
 
     setSaving(true);
     try {
-      if (new Date(deadline).getTime() <= Date.now()) { setSaving(false); return toast.error('Deadline must be in the future'); }
       const res = await tApi.post('', {
         title: title.trim(), description: description.trim(), deadline: new Date(deadline).toISOString(),
         reminderOffsetsHours: offsets,
@@ -271,6 +275,7 @@ const CreateTaskModal = ({ admins, onClose, onCreated }) => {
       onCreated();
       onClose();
     } catch (e) {
+      setFormError(e.message || 'Failed to create task');
       toast.error(e.message || 'Failed to create task');
     } finally { setSaving(false); }
   };
@@ -335,8 +340,13 @@ const CreateTaskModal = ({ admins, onClose, onCreated }) => {
           </div>
         </div>
 
-        <button onClick={submit} disabled={saving} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-xl transition-colors">
-          {saving ? <Loader className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create Task
+        {formError && (
+          <div role="alert" className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" /> <span>{formError}</span>
+          </div>
+        )}
+        <button type="button" onClick={submit} disabled={saving} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-xl transition-colors">
+          {saving ? <Loader className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} {saving ? 'Sending…' : 'Create Task'}
         </button>
       </div>
     </Modal>
