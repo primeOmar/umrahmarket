@@ -72,6 +72,71 @@ const ProgressBar = ({ value }) => (
   </div>
 );
 
+// Turn the server's per-assignee delivery report into one readable toast so
+// the manager knows exactly who was reached and on which channel.
+const REASON_TEXT = {
+  no_phone: 'no WhatsApp number on file',
+  no_email: 'no email on file',
+  smtp_auth_failed: 'email server login failed',
+  smtp_error: 'email server error',
+  smtp_not_configured: 'email not configured',
+  template_not_configured: 'WhatsApp template not configured',
+  twilio_not_configured: 'WhatsApp not configured',
+  db_error: 'could not save notification',
+};
+const reportDelivery = (delivery) => {
+  if (!Array.isArray(delivery) || delivery.length === 0) return;
+  const n = delivery.length;
+  const emailOk = delivery.filter(d => d.email?.sent).length;
+  const waOk = delivery.filter(d => d.whatsapp?.sent).length;
+  const problems = [];
+  delivery.forEach(d => {
+    if (!d.email?.sent) problems.push(`${d.name}: email failed (${REASON_TEXT[d.email?.reason] || d.email?.reason || 'unknown'})`);
+    if (!d.whatsapp?.sent) problems.push(`${d.name}: WhatsApp skipped (${REASON_TEXT[d.whatsapp?.reason] || 'send failed'})`);
+  });
+  const summary = `Notified ${n} assignee${n !== 1 ? 's' : ''} in-app · Email ${emailOk}/${n} · WhatsApp ${waOk}/${n}`;
+  if (problems.length === 0) toast.success(summary);
+  else toast(`${summary}\n\n${problems.join('\n')}`, { icon: '⚠️', duration: 10000, style: { whiteSpace: 'pre-line', maxWidth: 460 } });
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// MY WHATSAPP NUMBER — each admin manages their own number so task
+// assignments can reach them on WhatsApp.
+// ═══════════════════════════════════════════════════════════════════════
+const WhatsAppSetting = ({ me, onSaved }) => {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(me.phone_number || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async (phone) => {
+    setSaving(true);
+    try {
+      const res = await tApi.put('/me/phone', { phone });
+      toast.success(res.message || 'Saved');
+      onSaved(res.data?.phone_number || null);
+      setEditing(false);
+    } catch (e) { toast.error(e.message); } finally { setSaving(false); }
+  };
+
+  if (!editing) {
+    return (
+      <button onClick={() => { setValue(me.phone_number || ''); setEditing(true); }}
+        className={`text-xs font-medium px-3 py-2 rounded-xl border transition-colors ${me.phone_number ? 'border-gray-200 text-gray-600 hover:bg-gray-50' : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}>
+        {me.phone_number ? `WhatsApp: ${me.phone_number}` : 'Add WhatsApp number for task alerts'}
+      </button>
+    );
+  }
+  return (
+    <form onSubmit={e => { e.preventDefault(); save(value); }} className="flex items-center gap-2">
+      <input autoFocus type="tel" value={value} onChange={e => setValue(e.target.value)} placeholder="+254712345678"
+        className="w-40 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <button type="submit" disabled={saving} className="px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded-xl disabled:opacity-50">Save</button>
+      {me.phone_number && <button type="button" disabled={saving} onClick={() => save(null)} className="px-2 py-2 text-xs text-red-600 hover:underline">Remove</button>}
+      <button type="button" onClick={() => setEditing(false)} className="p-2 text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+    </form>
+  );
+};
+
 const deadlineMeta = (task) => {
   const d = new Date(task.deadline);
   if (task.status === 'completed') return { label: 'Completed', color: 'green' };
@@ -194,13 +259,15 @@ const CreateTaskModal = ({ admins, onClose, onCreated }) => {
 
     setSaving(true);
     try {
-      await tApi.post('', {
-        title, description, deadline: new Date(deadline).toISOString(),
+      if (new Date(deadline).getTime() <= Date.now()) { setSaving(false); return toast.error('Deadline must be in the future'); }
+      const res = await tApi.post('', {
+        title: title.trim(), description: description.trim(), deadline: new Date(deadline).toISOString(),
         reminderOffsetsHours: offsets,
-        stages: stages.map(s => ({ title: s.title, weightPercent: Number(s.weightPercent) })),
+        stages: stages.map(s => ({ title: s.title.trim(), weightPercent: Number(s.weightPercent) })),
         assigneeIds,
       });
       toast.success('Task created');
+      reportDelivery(res.delivery);
       onCreated();
       onClose();
     } catch (e) {
@@ -261,7 +328,8 @@ const CreateTaskModal = ({ admins, onClose, onCreated }) => {
             {admins.map(a => (
               <label key={a.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm cursor-pointer transition-colors ${assigneeIds.includes(a.id) ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
                 <input type="checkbox" checked={assigneeIds.includes(a.id)} onChange={() => toggleAssignee(a.id)} className="rounded" />
-                <span className="truncate">{a.full_name || a.username}</span>
+                <span className="truncate flex-1">{a.full_name || a.username}</span>
+                {!a.has_whatsapp && <span title="No WhatsApp number — email and in-app only" className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded flex-shrink-0">no WhatsApp</span>}
               </label>
             ))}
           </div>
@@ -458,7 +526,8 @@ const TasksTab = () => {
           <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
           <p className="text-sm text-gray-500 mt-1">{isManager ? 'Assign work and track progress across the team' : 'Tasks assigned to you'}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {me && <WhatsAppSetting me={me} onSaved={(phone) => setMe(m => ({ ...m, phone_number: phone }))} />}
           <NotificationBell onOpenTask={setOpenTaskId} />
           {isManager && (
             <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors">

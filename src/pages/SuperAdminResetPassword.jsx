@@ -28,7 +28,10 @@ const SuperAdminResetPassword = () => {
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,128}$/.test(password)) {
+      setError('Use at least 8 characters with uppercase, lowercase, a number and a special character (@$!%*?&).');
+      return;
+    }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
     setLoading(true);
     try {
